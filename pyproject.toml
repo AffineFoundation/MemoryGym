@@ -1,0 +1,19 @@
+[project]
+name = "memorybench"
+version = "0.3.0"
+requires-python = ">=3.11"
+dependencies = [
+    "chromadb>=0.4",
+    "sentence-transformers>=2.2",
+    "inspect-ai>=0.3",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0", "ruff>=0.4"]
+
+[tool.setuptools.packages.find]
+include = ["memorybench*"]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
