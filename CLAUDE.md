@@ -33,7 +33,7 @@ Benchmark evaluating LLM agents' **memory management** ability — what to store
 3. **File Size**: Each `.py` file ≤ 1000 lines.
 4. **No Fallback**: Zero tolerance for silent error masking. If data is missing, raise explicitly.
 5. **Import Style**: Relative within `memorybench/` package, absolute for cross-package.
-6. **Commit Messages**: Concise one-liner. Describe the *why*, not the *what*. **Never add Co-Authored-By, Generated-by, or any metadata lines** — message body must be empty.
+6. **Commit Messages**: Concise one-liner. Describe the *why*, not the *what*. **Never add Co-Authored-By, Generated-by, or any metadata lines** — message body must be empty. **Only commit when explicitly asked** — never auto-commit.
 7. **Test Before Ship**: New validator logic → add test to `test_validators.py` first.
 
 ## eval.py Development Flywheel
@@ -94,6 +94,10 @@ memorybench/
 **Task phases**: 0-9 Domain A intro → 10-11 Domain A deepening → 12-19 Domain B switch → 20-24 Pressure (mixed, cross-domain).
 
 **Competency distribution** (per 25 tasks): ~10 retrieval, ~6 synthesis, ~3 update, ~3 abstention, ~2 cross_domain, ~2 trick_retrieval.
+
+## Memory Interface Principle
+
+MemoryBench should reuse memory interfaces from mainstream agent frameworks (e.g., OpenClaw) rather than inventing custom ones. Models trained on a bespoke interface have no practical value — their memory skills must transfer directly to real agent systems.
 
 ## Dead Ends — Do Not Repeat
 

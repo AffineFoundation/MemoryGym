@@ -1,13 +1,13 @@
 """MemoryBench v3 — Evaluation CLI.
 
-Evaluates simulated agent strategies on streaming memory management tasks.
+Evaluates simulated agent strategies or real LLM models on streaming
+memory management tasks.
 
 Usage:
     python eval.py                              # 30 seeds, all 5 strategies
     python eval.py --seed 42                    # Single seed
-    python eval.py --seeds 10                   # Seeds 0..9
     python eval.py --strategy strategic naive   # Subset of strategies
-    python eval.py --verbose --seed 0           # Per-task trace
+    python eval.py --model deepseek-ai/DeepSeek-V3-0324 --seed 0 -v  # Real model
     python eval.py -o results.json              # Save JSON output
     python eval.py --validate                   # Run pass/fail checks
 """
@@ -19,6 +19,10 @@ import json
 import time
 from collections import Counter, defaultdict
 from pathlib import Path
+
+from dotenv import load_dotenv
+
+load_dotenv()
 
 from memorybench.cli_display import (
     categorize_reason,
@@ -59,6 +63,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
                    help="evaluate a single seed")
     g.add_argument("--seeds", type=int, default=30, metavar="N",
                    help="number of seeds to evaluate, 0..N-1 (default: 30)")
+    p.add_argument("--model", "-m", type=str, nargs="?",
+                   const="moonshotai/Kimi-K2.5-TEE", default=None,
+                   metavar="MODEL",
+                   help="LLM model to evaluate via Chutes API "
+                        "(default: moonshotai/Kimi-K2.5-TEE when flag is used)")
     p.add_argument("--strategy", nargs="+", choices=ALL_STRATEGIES,
                    default=ALL_STRATEGIES, metavar="S",
                    help="strategies to evaluate (default: all)")
@@ -113,29 +122,43 @@ def show_registry():
 
 # ── Single seed evaluation ──
 
+def _score_run(results, writes, traces, switch_pt):
+    return {
+        "results": results,
+        "traces": traces,
+        "accuracy": compute_accuracy(results),
+        "trajectory": compute_trajectory(results),
+        "efficiency": compute_efficiency(results, max(writes, 1)),
+        "adaptability": compute_adaptability(results, switch_pt),
+        "process": compute_process_score(traces, writes),
+        "by_competency": score_by_competency(results),
+        "by_domain": score_by_domain(results),
+        "writes_used": writes,
+    }
+
+
 def run_seed(seed: int, config: EvalConfig, strategies: list[str],
-             eval_salt: int = 0):
+             eval_salt: int = 0, model: str | None = None,
+             verbose: bool = False):
     tasks, updates, kbs, dom_map, switch_pt = generate_stream(
         seed, config, eval_salt=eval_salt,
     )
     out = {}
-    for strategy in strategies:
-        results, writes, traces = simulate_agent(
-            strategy, tasks, kbs, dom_map, updates, seed,
-            config.write_budget, config.max_writes_per_task,
+
+    if model:
+        from memorybench.agents.llm_agent import run_llm_agent
+        results, writes, traces = run_llm_agent(
+            model, tasks, seed, config.write_budget, verbose=verbose,
         )
-        out[strategy] = {
-            "results": results,
-            "traces": traces,
-            "accuracy": compute_accuracy(results),
-            "trajectory": compute_trajectory(results),
-            "efficiency": compute_efficiency(results, max(writes, 1)),
-            "adaptability": compute_adaptability(results, switch_pt),
-            "process": compute_process_score(traces, writes),
-            "by_competency": score_by_competency(results),
-            "by_domain": score_by_domain(results),
-            "writes_used": writes,
-        }
+        out[strategies[0]] = _score_run(results, writes, traces, switch_pt)
+    else:
+        for strategy in strategies:
+            results, writes, traces = simulate_agent(
+                strategy, tasks, kbs, dom_map, updates, seed,
+                config.write_budget, config.max_writes_per_task,
+            )
+            out[strategy] = _score_run(results, writes, traces, switch_pt)
+
     return out, dom_map, tasks, updates
 
 
@@ -242,7 +265,11 @@ def main(argv: list[str] | None = None) -> int:
         n_entities_per_domain=args.entities,
         max_writes_per_task=args.max_writes_per_task,
     )
-    strategies = args.strategy
+    model = args.model
+    if model:
+        strategies = [model]
+    else:
+        strategies = args.strategy
     seeds = [args.seed] if args.seed is not None else list(range(args.seeds))
     n_seeds = len(seeds)
 
@@ -253,7 +280,8 @@ def main(argv: list[str] | None = None) -> int:
     print("MemoryBench v3 — Evaluation")
     print("=" * 70)
     salt_info = f"  Salt: {eval_salt}" if eval_salt else ""
-    print(f"Seeds: {n_seeds}  Strategies: {', '.join(strategies)}  "
+    label = f"Model: {model}" if model else f"Strategies: {', '.join(strategies)}"
+    print(f"Seeds: {n_seeds}  {label}  "
           f"Budget: {config.write_budget}  Entities: {config.n_entities_per_domain}"
           f"{salt_info}")
 
@@ -275,6 +303,7 @@ def main(argv: list[str] | None = None) -> int:
 
         out, dom_map, tasks, updates = run_seed(
             seed, config, strategies, eval_salt=eval_salt,
+            model=model, verbose=args.verbose,
         )
         domain_counts.update(dom_map.keys())
         for t in tasks:
