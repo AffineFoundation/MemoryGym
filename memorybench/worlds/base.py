@@ -6,12 +6,11 @@ document styles, question patterns, and ground truth computation.
 One template + one seed = one deterministic evaluation dataset.
 Combinatorial entity/attribute space makes each template effectively infinite.
 
-Anti-hack by design:
-- ALL documents share identical structure (entity + numeric attributes)
-- No structural distractors — every document is an entity profile
-- Which entities get questioned is unpredictable per seed
-- Which attributes get questioned varies per seed
-- The agent has NO signal to distinguish "will be asked" from "won't be asked"
+Design principles:
+- ALL documents share identical structure → no format-based hacking
+- Document volume >> write budget → compression is necessary
+- Corrections mutate world state → memory maintenance is testable
+- Questions test different abilities: precision, organization, maintenance
 """
 
 from __future__ import annotations
@@ -32,6 +31,7 @@ class AttrDef:
     max_val: float
     unit: str = ""   # "$M", "%", etc.
     label: str = ""  # human-readable; defaults to name
+    agg_ops: tuple[str, ...] = ("total", "average")  # valid aggregation ops
 
 
 @dataclass
@@ -54,7 +54,18 @@ class GeneratedQA:
     answer: str
     competency: str
     required_entities: list[str] = field(default_factory=list)
-    purpose: str = ""  # "recall", "coverage", "comprehension" (empty = legacy)
+    purpose: str = ""  # "recall", "coverage", "comprehension", "update", ...
+
+
+@dataclass
+class Correction:
+    """A correction event that mutates world state."""
+
+    entity_name: str
+    attr: str
+    old_val: Any
+    new_val: Any
+    notice: str  # rendered correction document
 
 
 @dataclass
@@ -78,7 +89,16 @@ class World:
 
 
 class WorldTemplate(ABC):
-    """Abstract world template — one implementation = one infinite domain."""
+    """Abstract world template — one implementation = one infinite domain.
+
+    Evaluation flow:
+      generate_world(seed) → World
+        → render_document() → agent sees narrative docs (large volume)
+        → agent stores (under write budget → must compress)
+        → generate_corrections() → correction notices → agent updates memory
+        → detect_stored_entities() → stored/missed sets
+        → gen_adaptive_questions() → questions + GT (from mutated World state)
+    """
 
     @property
     @abstractmethod
@@ -123,6 +143,11 @@ class WorldTemplate(ABC):
     def _q_text(self, attr: str, name: str,
                 rng: Random | None = None) -> str: ...
 
+    @abstractmethod
+    def _format_value(self, attr: str, val: Any) -> str:
+        """Format an attribute value for display. Subclasses must implement."""
+        ...
+
     # ── Concrete: world generation ──
 
     def generate_world(self, seed: int, n_entities: int,
@@ -132,7 +157,6 @@ class WorldTemplate(ABC):
         all_defs = self.all_attr_defs
 
         if n_active_attrs is None:
-            # Use most but not all attributes (enables abstention questions)
             n_active_attrs = max(3, len(all_defs) - rng.randint(1, 2))
         n_active_attrs = min(n_active_attrs, len(all_defs))
 
@@ -157,6 +181,71 @@ class WorldTemplate(ABC):
             if a.name == attr_name:
                 return a.label or attr_name.replace("_", " ")
         return attr_name.replace("_", " ")
+
+    # ── Concrete: compact document helper ──
+
+    def _compact_document(self, entity: EntitySpec,
+                          active_attrs: list[str]) -> str:
+        """Render entity attributes as compact key-value line.
+
+        Volume pressure comes from entity quantity, not document padding.
+        All entities share identical structure (anti-hack).
+        """
+        parts = []
+        for attr in active_attrs:
+            val = entity.get(attr)
+            if val is not None:
+                label = self.attr_label(attr)
+                parts.append(f"{label}: {self._format_value(attr, val)}")
+        return " | ".join(parts)
+
+    # ── Concrete: corrections ──
+
+    def generate_corrections(
+        self, world: World, rng: Random, n: int,
+    ) -> list[Correction]:
+        """Generate corrections and update World state in place.
+
+        Mutates entity attributes to new values. Returns correction notices.
+        After this call, world.entities hold the UPDATED values (new GT).
+        """
+        corrections: list[Correction] = []
+        candidates = [e for e in world.entities
+                      if sum(1 for a in world.active_attrs
+                             if e.get(a) is not None) >= 2]
+        if not candidates:
+            return corrections
+        targets = rng.sample(candidates, min(n, len(candidates)))
+
+        for entity in targets:
+            viable = [a for a in world.active_attrs
+                      if entity.get(a) is not None]
+            attr = rng.choice(viable)
+            old_val = entity.get(attr)
+            adef = next(a for a in world.attr_defs if a.name == attr)
+
+            # Perturb value by 10-50%
+            if adef.dtype == "int":
+                magnitude = max(1, int(abs(old_val) * rng.uniform(0.1, 0.5)))
+                new_val = old_val + rng.choice([-1, 1]) * magnitude
+                new_val = max(int(adef.min_val), min(int(adef.max_val), new_val))
+                if new_val == old_val:
+                    new_val = old_val + (1 if old_val < adef.max_val else -1)
+            else:
+                delta = old_val * rng.uniform(0.1, 0.5) * rng.choice([-1, 1])
+                new_val = round(old_val + delta, 2)
+                new_val = max(adef.min_val, min(adef.max_val, new_val))
+                if new_val == old_val:
+                    new_val = round(old_val + 0.1, 2)
+
+            notice = self.render_correction(entity, attr, old_val, new_val)
+            entity.attrs[attr] = new_val  # MUTATE world state
+            corrections.append(Correction(
+                entity_name=entity.name, attr=attr,
+                old_val=old_val, new_val=new_val, notice=notice,
+            ))
+
+        return corrections
 
     # ── Concrete: question generation ──
 
@@ -184,8 +273,30 @@ class WorldTemplate(ABC):
             str(e.get(attr)), "retrieval", [e.name],
         )
 
+    def _gq_retrieval_diverse(self, world, rng, available,
+                              used_entities: set[str],
+                              used_attrs: set[str]):
+        """Retrieval with entity and attribute deduplication."""
+        unused_attrs = [a for a in world.active_attrs if a not in used_attrs]
+        attr_pool = unused_attrs if unused_attrs else list(world.active_attrs)
+        rng.shuffle(attr_pool)
+
+        for attr in attr_pool:
+            cands = [e for e in available if e.get(attr) is not None]
+            if not cands:
+                continue
+            fresh = [e for e in cands if e.name not in used_entities]
+            pool = fresh if fresh else cands
+            e = rng.choice(pool)
+            used_attrs.add(attr)
+            return GeneratedQA(
+                self._q_text(attr, e.name, rng),
+                str(e.get(attr)), "retrieval", [e.name],
+            )
+        return None
+
     def _gq_synthesis(self, world, rng, available):
-        if len(available) < 3:
+        if len(available) < 5:
             return None
         numeric = [a for a in world.active_attrs
                    if any(isinstance(e.get(a), (int, float))
@@ -196,21 +307,31 @@ class WorldTemplate(ABC):
         label = self.attr_label(attr)
         cands = [e for e in available
                  if isinstance(e.get(attr), (int, float))]
-        if len(cands) < 3:
+        if len(cands) < 5:
             return None
-        sel = rng.sample(cands, 3)
-        best = max(sel, key=lambda e: e.get(attr))
+        sel = rng.sample(cands, 5)
+        use_max = rng.choice([True, False])
+        target = (max if use_max else min)(sel, key=lambda e: e.get(attr))
         names = [e.name for e in sel]
-        ns = f"{names[0]}, {names[1]}, and {names[2]}"
+        ns = f"{names[0]}, {names[1]}, {names[2]}, {names[3]}, and {names[4]}"
         ew = self.entity_word
-        q = rng.choice([
-            f"Among {ns}, which {ew} has the highest {label}?",
-            f"Between {ns}, which {ew} leads in {label}?",
-            f"Comparing {ns}, which ranks first in {label}?",
-        ])
+        if use_max:
+            q = rng.choice([
+                f"Among {ns}, which {ew} has the highest {label}?",
+                f"Between {ns}, which {ew} leads in {label}?",
+                f"Comparing {ns}, which ranks first in {label}?",
+            ])
+        else:
+            q = rng.choice([
+                f"Among {ns}, which {ew} has the lowest {label}?",
+                f"Between {ns}, which {ew} has the least {label}?",
+                f"Comparing {ns}, which ranks last in {label}?",
+            ])
         return GeneratedQA(
-            q, f"{best.name} ({best.get(attr)})", "synthesis", names,
+            q, f"{target.name} ({target.get(attr)})", "synthesis", names,
         )
+
+    _MAX_AGG_MEMBERS = 4
 
     def _gq_aggregation(self, world, rng, available):
         numeric = [a for a in world.active_attrs
@@ -229,7 +350,11 @@ class WorldTemplate(ABC):
             return None
         cat = rng.choice(list(eligible.keys()))
         members = eligible[cat]
-        op = rng.choice(["total", "average"])
+        if len(members) > self._MAX_AGG_MEMBERS:
+            members = rng.sample(members, self._MAX_AGG_MEMBERS)
+        adef = next((a for a in world.attr_defs if a.name == attr), None)
+        ops = list(adef.agg_ops) if adef and adef.agg_ops else ["total", "average"]
+        op = rng.choice(ops)
         values = [e.get(attr) for e in members]
         if op == "total":
             result = sum(values)
@@ -237,14 +362,16 @@ class WorldTemplate(ABC):
                 result = round(result, 2)
         else:
             result = round(sum(values) / len(values), 2)
-        ewp = self.entity_word_plural
+        names = [e.name for e in members]
+        if len(names) == 2:
+            ns = f"{names[0]} and {names[1]}"
+        else:
+            ns = ", ".join(names[:-1]) + f", and {names[-1]}"
         q = rng.choice([
-            f"What is the {op} {label} across {cat} {ewp}?",
-            f"Calculate the {op} {label} for all {cat} {ewp}.",
+            f"What is the {op} {label} across {ns}?",
+            f"Calculate the {op} {label} for {ns}.",
         ])
-        return GeneratedQA(
-            q, str(result), "aggregation", [e.name for e in members],
-        )
+        return GeneratedQA(q, str(result), "aggregation", names)
 
     def _gq_conditional(self, world, rng, available):
         numeric = [a for a in world.active_attrs
@@ -277,6 +404,42 @@ class WorldTemplate(ABC):
             "conditional", [best.name],
         )
 
+    def _gq_update(self, world, rng, corrections):
+        """Ask about a corrected attribute. GT = updated (current) value."""
+        if not corrections:
+            return None
+        c = rng.choice(corrections)
+        entity = world.get_entity(c.entity_name)
+        if not entity:
+            return None
+        # GT is the current (corrected) value in world state
+        current_val = entity.get(c.attr)
+        if current_val is None:
+            return None
+        return GeneratedQA(
+            self._q_text(c.attr, c.entity_name, rng),
+            str(current_val), "update", [c.entity_name],
+        )
+
+    def _gq_abstention(self, world, rng, available):
+        """Ask about a fictitious entity using an active attribute.
+
+        The agent cannot distinguish "entity I didn't store" from
+        "entity that never existed" — only high-coverage agents can
+        confidently answer ABSTAIN.
+        """
+        existing = {e.name for e in world.entities}
+        decoy_rng = Random(rng.randint(0, 2**31))
+        for _ in range(100):
+            candidates = self._generate_names(decoy_rng, 1)
+            if candidates[0] not in existing:
+                attr = rng.choice(world.active_attrs)
+                return GeneratedQA(
+                    self._q_text(attr, candidates[0], rng),
+                    "ABSTAIN", "abstention", [candidates[0]],
+                )
+        return None
+
     # ── Concrete: post-storage adaptive questioning ──
 
     def detect_stored_entities(
@@ -284,19 +447,38 @@ class WorldTemplate(ABC):
     ) -> tuple[set[str], set[str]]:
         """Scan stored contents and detect which World entities were stored.
 
-        Default: case-insensitive substring match on entity names.
-        Subclasses can override for abbreviations / transformations.
-
-        Returns: (stored_names, missed_names)
+        Anti-hack: requires entity name AND at least one attribute value
+        to appear in the SAME stored entry. Name-only packing without
+        values won't inflate coverage. Checks both formatted values
+        (as they appear in documents) and raw/rounded numerics (as an
+        agent might compress them).
         """
-        blob = "\n".join(stored_contents).lower()
         stored: set[str] = set()
         missed: set[str] = set()
         for e in world.entities:
-            if e.name.lower() in blob:
-                stored.add(e.name)
-            else:
-                missed.add(e.name)
+            name_lower = e.name.lower()
+            found = False
+            for content in stored_contents:
+                cl = content.lower().replace(",", "")
+                if name_lower not in content.lower():
+                    continue
+                for a in world.active_attrs:
+                    val = e.get(a)
+                    if val is None:
+                        continue
+                    # Formatted value (matches full document renders)
+                    fmt = self._format_value(a, val).lower().replace(",", "")
+                    if fmt in cl:
+                        found = True
+                        break
+                    # Rounded integer (matches compressed storage)
+                    if isinstance(val, (int, float)):
+                        if str(int(round(val))) in cl:
+                            found = True
+                            break
+                if found:
+                    break
+            (stored if found else missed).add(e.name)
         return stored, missed
 
     def gen_adaptive_questions(
@@ -304,47 +486,61 @@ class WorldTemplate(ABC):
         introduced: list[EntitySpec],
         stored_names: set[str],
         n_questions: int,
+        corrections: list[Correction] | None = None,
     ) -> list[GeneratedQA]:
         """Generate post-storage adaptive questions.
 
-        Question allocation:
-        - recall  (~40%): retrieve stored entities (tests retrieval)
-        - coverage (~30%): retrieve random entities incl. missed (tests storage quality)
-        - comprehension (~30%): synthesis/aggregation/conditional (tests reasoning)
+        Budget allocation (with corrections):
+          retrieval 40% | comprehension 25% | update 20% | abstention 15%
+        Budget allocation (without corrections):
+          retrieval 50% | comprehension 40% | abstention 10%
 
-        Recall and coverage both use _gq_retrieval → identical wording → agent
-        cannot distinguish them. Final list is shuffled to remove ordering signal.
+        Update questions use the same _q_text as retrieval → agent cannot
+        distinguish them by wording. The GT is the CORRECTED value.
         """
-        stored_ents = [e for e in introduced if e.name in stored_names]
-        missed_ents = [e for e in introduced if e.name not in stored_names]
+        has_corrections = bool(corrections)
 
-        # Budget allocation (handle edge cases)
-        n_recall = round(n_questions * 0.4) if stored_ents else 0
-        n_coverage = round(n_questions * 0.3) if missed_ents else 0
-        n_comprehension = n_questions - n_recall - n_coverage
-        # Redistribute surplus when one pool is empty
-        if not stored_ents:
-            n_comprehension = n_questions - n_coverage
-        if not missed_ents:
-            n_comprehension = n_questions - n_recall
+        if has_corrections:
+            n_update = max(1, round(n_questions * 0.2))
+            n_update = min(n_update, len(corrections))
+            n_retrieval = round(n_questions * 0.4)
+            n_abstention = max(1, round(n_questions * 0.15))
+            n_comprehension = n_questions - n_retrieval - n_update - n_abstention
+        else:
+            n_update = 0
+            n_retrieval = round(n_questions * 0.5)
+            n_abstention = max(1, round(n_questions * 0.1))
+            n_comprehension = n_questions - n_retrieval - n_abstention
 
         questions: list[GeneratedQA] = []
 
-        # Recall: from stored pool
-        for _ in range(n_recall):
-            q = self._gq_retrieval(world, rng, stored_ents)
+        # Retrieval: deduped entities and attributes
+        used_entities: set[str] = set()
+        used_attrs: set[str] = set()
+        for _ in range(n_retrieval):
+            q = self._gq_retrieval_diverse(
+                world, rng, introduced, used_entities, used_attrs)
             if q:
-                q.purpose = "recall"
+                name = q.required_entities[0]
+                q.purpose = "recall" if name in stored_names else "coverage"
+                used_entities.add(name)
                 questions.append(q)
 
-        # Coverage: from missed pool
-        for _ in range(n_coverage):
-            q = self._gq_retrieval(world, rng, missed_ents)
+        # Update: ask about corrected values (same wording as retrieval!)
+        used_correction_entities: set[str] = set()
+        for _ in range(n_update):
+            # Avoid asking same corrected entity twice
+            remaining = [c for c in (corrections or [])
+                         if c.entity_name not in used_correction_entities]
+            if not remaining:
+                break
+            q = self._gq_update(world, rng, remaining)
             if q:
-                q.purpose = "coverage"
+                q.purpose = "update"
+                used_correction_entities.add(q.required_entities[0])
                 questions.append(q)
 
-        # Comprehension: synthesis/aggregation/conditional from all
+        # Comprehension: synthesis/aggregation/conditional
         comp_types = ["synthesis", "aggregation", "conditional"]
         for i in range(n_comprehension):
             ctype = comp_types[i % len(comp_types)]
@@ -356,24 +552,12 @@ class WorldTemplate(ABC):
                 q.purpose = "comprehension"
                 questions.append(q)
 
-        # Abstention: 1-2 questions
-        for _ in range(rng.randint(1, 2)):
+        # Abstention
+        for _ in range(n_abstention):
             q = self._gq_abstention(world, rng, introduced)
             if q:
-                q.purpose = "comprehension"
+                q.purpose = "abstention"
                 questions.append(q)
 
         rng.shuffle(questions)
         return questions
-
-    def _gq_abstention(self, world, rng, available):
-        all_names = {a.name for a in self.all_attr_defs}
-        inactive = list(all_names - set(world.active_attrs))
-        if not inactive or not available:
-            return None
-        e = rng.choice(available)
-        attr = rng.choice(inactive)
-        return GeneratedQA(
-            self._q_text(attr, e.name, rng),
-            "ABSTAIN", "abstention", [e.name],
-        )

@@ -15,7 +15,6 @@ class MemoryBudget:
 
     total_writes: int = 30
     max_content_tokens: int = 500
-    max_total_entries: int = 100
     writes_used: int = 0
 
     def can_write(self) -> bool:

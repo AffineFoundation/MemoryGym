@@ -1,4 +1,4 @@
-"""Inspect AI tools for MemoryBench memory operations."""
+"""Inspect AI tools for MemoryBench memory operations (mem0 interface)."""
 
 from __future__ import annotations
 
@@ -13,35 +13,47 @@ def create_memory_tools(
     budget: int = 30,
     backend_type: str = "chromadb",
     collection_name: str = "memorybench",
-) -> tuple[list[Tool], MemoryBudget]:
-    """Create all 5 memory tools backed by a shared backend.
+    backend: ChromaDBBackend | MockBackend | None = None,
+) -> tuple[list[Tool], MemoryBudget, ChromaDBBackend | MockBackend]:
+    """Create all memory tools backed by a shared backend.
 
     Returns:
-        (list_of_tools, budget) — budget is returned for scorer access.
+        (list_of_tools, budget, backend) — budget and backend are returned
+        for scorer / solver access.
     """
-    if backend_type == "chromadb":
-        backend = ChromaDBBackend(collection_name=collection_name)
-    else:
-        backend = MockBackend()
+    if backend is None:
+        if backend_type == "chromadb":
+            backend = ChromaDBBackend(collection_name=collection_name)
+        else:
+            backend = MockBackend()
 
     mem_budget = MemoryBudget(total_writes=budget)
 
     @tool
-    def memory_write() -> Tool:
-        """Store a new memory entry. Costs 1 write from your budget."""
-        async def execute(content: str) -> str:
-            """Save information to memory.
+    def memory_store() -> Tool:
+        """Store or update a memory entry. Costs 1 write from your budget."""
+        async def execute(content: str, memory_id: str | None = None) -> str:
+            """Save information to memory, or update an existing entry by ID.
 
             Args:
                 content: The information to store.
+                memory_id: Optional ID of an existing memory to update.
             """
+            if len(content.split()) > mem_budget.max_content_tokens:
+                raise ToolError(
+                    f"Content exceeds {mem_budget.max_content_tokens} token limit."
+                )
             if not mem_budget.can_write():
                 raise ToolError(
                     f"Write budget exhausted "
                     f"({mem_budget.writes_used}/{mem_budget.total_writes})."
                 )
+            if memory_id is not None:
+                existing = backend.get(memory_id)
+                if not existing:
+                    raise ToolError(f"Memory {memory_id} not found.")
             mem_budget.consume_write()
-            entry_id = backend.add(content)
+            entry_id = backend.store(content, memory_id=memory_id)
             return (
                 f"Stored (id={entry_id}). "
                 f"Budget: {mem_budget.remaining()} writes remaining."
@@ -68,32 +80,22 @@ def create_memory_tools(
         return execute
 
     @tool
-    def memory_update() -> Tool:
-        """Update an existing memory. Costs 1 write from your budget."""
-        async def execute(memory_id: str, content: str) -> str:
-            """Replace an existing memory's content.
+    def memory_get() -> Tool:
+        """Retrieve a single memory by ID. Free operation."""
+        async def execute(memory_id: str) -> str:
+            """Get a specific memory entry by its ID.
 
             Args:
-                memory_id: The ID of the memory to update.
-                content: The new content.
+                memory_id: The ID of the memory to retrieve.
             """
-            if not mem_budget.can_write():
-                raise ToolError(
-                    f"Write budget exhausted "
-                    f"({mem_budget.writes_used}/{mem_budget.total_writes})."
-                )
-            mem_budget.consume_write()
-            success = backend.update(memory_id, content)
-            if not success:
-                mem_budget.writes_used -= 1  # refund
+            entry = backend.get(memory_id)
+            if not entry:
                 raise ToolError(f"Memory {memory_id} not found.")
-            return (
-                f"Updated. Budget: {mem_budget.remaining()} writes remaining."
-            )
+            return f"[{entry['id']}] {entry['content']}"
         return execute
 
     @tool
-    def memory_delete() -> Tool:
+    def memory_forget() -> Tool:
         """Delete a memory. Free operation (does NOT refund write budget)."""
         async def execute(memory_id: str) -> str:
             """Remove a memory entry.
@@ -101,7 +103,7 @@ def create_memory_tools(
             Args:
                 memory_id: The ID of the memory to delete.
             """
-            success = backend.delete(memory_id)
+            success = backend.forget(memory_id)
             if not success:
                 raise ToolError(f"Memory {memory_id} not found.")
             return "Deleted."
@@ -112,7 +114,7 @@ def create_memory_tools(
         """List all stored memories. Free operation."""
         async def execute() -> str:
             """List all memories currently stored."""
-            entries = backend.list_all()
+            entries = backend.list()
             if not entries:
                 return "No memories stored yet."
             parts = []
@@ -122,13 +124,13 @@ def create_memory_tools(
         return execute
 
     tools = [
-        memory_write(),
+        memory_store(),
         memory_search(),
-        memory_update(),
-        memory_delete(),
+        memory_get(),
+        memory_forget(),
         memory_list(),
     ]
-    return tools, mem_budget
+    return tools, mem_budget, backend
 
 
 @tool
