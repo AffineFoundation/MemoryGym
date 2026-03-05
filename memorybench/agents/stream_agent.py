@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import time
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -165,27 +166,40 @@ def _parse_and_execute(
     return results, answer, n_writes, n_searches
 
 
+@dataclass
+class _LoopStats:
+    """Stats from one tool loop invocation."""
+    answer: str | None = None
+    writes: int = 0
+    searches: int = 0
+    api_calls: int = 0
+    elapsed: float = 0.0
+
+
 def _run_tool_loop(
     client: OpenAI, model: str, messages: list[dict],
     backend: MockBackend, budget: MemoryBudget,
     max_turns: int = 10,
-) -> tuple[str | None, int, int]:
+) -> _LoopStats:
     """Run text-based tool loop until submit_answer or max_turns."""
-    total_writes = total_searches = 0
+    stats = _LoopStats()
+    t0 = time.time()
 
-    for _ in range(max_turns):
+    for turn in range(max_turns):
         response = client.chat.completions.create(
             model=model, messages=messages,
         )
+        stats.api_calls += 1
         text = response.choices[0].message.content or ""
         messages.append({"role": "assistant", "content": text})
 
         results, answer, n_w, n_s = _parse_and_execute(text, backend, budget)
-        total_writes += n_w
-        total_searches += n_s
+        stats.writes += n_w
+        stats.searches += n_s
 
         if answer is not None:
-            return answer, total_writes, total_searches
+            stats.answer = answer
+            break
 
         if not results:
             break
@@ -195,7 +209,8 @@ def _run_tool_loop(
             "content": "Tool results:\n" + "\n".join(results),
         })
 
-    return None, total_writes, total_searches
+    stats.elapsed = time.time() - t0
+    return stats
 
 
 def run_stream_agent(
@@ -248,12 +263,19 @@ def run_stream_agent(
     }]
 
     results: list[AgentResult] = []
+    total_api_calls = 0
+    run_t0 = time.time()
 
     for event_idx, event in enumerate(stream):
         msg_start = len(messages)
         event_type = event["type"]
+        event_label = f"[{event_idx+1}/{total_events}]"
 
         if event_type == "ingest":
+            n_ents = len(event.get("entity_names", []))
+            print(f"  {event_label} INGEST  {n_ents} entities ...",
+                  end="", flush=True)
+
             docs_text = _format_documents(event["documents"])
             content = (
                 f"=== Event {event_idx+1}/{total_events} [DOCUMENTS] ===\n\n"
@@ -261,47 +283,64 @@ def run_stream_agent(
                 "No question. Store important entity data."
             )
             messages.append({"role": "user", "content": content})
-            _run_tool_loop(client, model, messages, backend, budget)
+            stats = _run_tool_loop(client, model, messages, backend, budget)
+            total_api_calls += stats.api_calls
 
-            if verbose:
-                n_ents = len(event.get("entity_names", []))
-                print(f"  E{event_idx+1:02d} [INGEST] "
-                      f"entities={n_ents} budget={budget.remaining()}")
+            print(f" {stats.api_calls} calls {stats.elapsed:.1f}s "
+                  f"budget={budget.remaining()}")
 
         elif event_type == "correction":
+            entity_attr = f"{event['entity_name']}.{event['attr']}"
+            print(f"  {event_label} CORRECT {entity_attr} ...",
+                  end="", flush=True)
+
             content = (
                 f"=== Event {event_idx+1}/{total_events} [CORRECTION] ===\n\n"
                 f"**Correction Notice:**\n{event['notice']}\n\n"
                 "Update your stored memories with the corrected value."
             )
             messages.append({"role": "user", "content": content})
-            _run_tool_loop(client, model, messages, backend, budget)
+            stats = _run_tool_loop(client, model, messages, backend, budget)
+            total_api_calls += stats.api_calls
 
-            if verbose:
-                print(f"  E{event_idx+1:02d} [CORRECTION] "
-                      f"{event['entity_name']}.{event['attr']} "
-                      f"budget={budget.remaining()}")
+            print(f" {stats.api_calls} calls {stats.elapsed:.1f}s "
+                  f"budget={budget.remaining()}")
 
         elif event_type == "question":
+            print(f"  {event_label} QUESTION [{event['competency']:12s}] ...",
+                  end="", flush=True)
+
             content = (
                 f"=== Event {event_idx+1}/{total_events} [QUESTION] ===\n\n"
                 f"**Question:**\n{event['question']}\n\n"
                 "Search your memory and call submit_answer(answer=\"...\")."
             )
             messages.append({"role": "user", "content": content})
-            answer, n_writes, n_searches = _run_tool_loop(
+            stats = _run_tool_loop(
                 client, model, messages, backend, budget)
+            total_api_calls += stats.api_calls
 
-            agent_answer = answer or ""
+            agent_answer = stats.answer or ""
             gt = str(event["answer"])
 
+            judge_t0 = time.time()
             is_correct, reason = llm_judge_validate_sync(
                 judge_client,
                 event["question"], gt, agent_answer,
                 event["competency"],
             )
-            if verbose and reason:
-                print(f"    Judge: {reason}")
+            judge_elapsed = time.time() - judge_t0
+
+            mark = "+" if is_correct else "-"
+            print(f" {mark} {stats.api_calls} calls {stats.elapsed:.1f}s "
+                  f"judge={judge_elapsed:.1f}s "
+                  f"budget={budget.remaining()}")
+
+            if verbose:
+                print(f"           A={agent_answer[:60]}")
+                print(f"          GT={gt[:60]}")
+                if reason:
+                    print(f"       Judge: {reason}")
 
             results.append(AgentResult(
                 question=event["question"],
@@ -310,17 +349,10 @@ def run_stream_agent(
                 competency=event["competency"],
                 purpose=event.get("purpose", ""),
                 correct=is_correct,
-                n_writes=n_writes,
-                n_searches=n_searches,
+                n_writes=stats.writes,
+                n_searches=stats.searches,
                 required_entities=event.get("required_entities", []),
             ))
-
-            if verbose:
-                mark = "+" if is_correct else "-"
-                print(f"  E{event_idx+1:02d} [QUESTION] {mark} "
-                      f"[{event['competency']:12s}] "
-                      f"A={agent_answer[:40]} GT={gt[:40]} "
-                      f"budget={budget.remaining()}")
 
         # Nuclear redaction after each event
         del messages[msg_start:]
@@ -329,6 +361,15 @@ def run_stream_agent(
             "content": f"[Event {event_idx+1}/{total_events} completed.]",
         })
         messages.append({"role": "assistant", "content": "Understood."})
+
+    total_elapsed = time.time() - run_t0
+    correct_count = sum(r.correct for r in results)
+    total_q = len(results)
+    print(f"  --- Summary: {correct_count}/{total_q} correct "
+          f"({correct_count/total_q:.0%}) | "
+          f"{total_api_calls} API calls | "
+          f"{budget.writes_used} writes | "
+          f"{total_elapsed:.1f}s total ---")
 
     stored_contents = [e["content"] for e in backend.list()]
     return results, budget.writes_used, stored_contents

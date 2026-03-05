@@ -490,18 +490,37 @@ def main(argv: list[str] | None = None) -> int:
             if is_model_eval:
                 # Real LLM agent evaluation
                 from memorybench.agents.stream_agent import run_stream_agent
+
+                print(f"\n  [{tmpl.name}] seed={seed} — Generating world ...",
+                      end="", flush=True)
                 world = tmpl.generate_world(seed=seed, n_entities=args.entities,
                                             eval_salt=args.eval_salt)
+                print(f" {len(world.entities)} entities")
+
                 rng = Random(seed)
+                print(f"  [{tmpl.name}] seed={seed} — Generating corrections ...",
+                      end="", flush=True)
                 corrections = tmpl.generate_corrections(
                     world, rng, args.corrections)
+                print(f" {len(corrections)} corrections")
+
+                print(f"  [{tmpl.name}] seed={seed} — Building stream ...",
+                      end="", flush=True)
                 stream = tmpl.generate_stream(
                     world, rng, corrections,
                     stored_names=set(),
                     n_questions=args.questions,
                     entities_per_batch=10,
                 )
+                n_ingest = sum(1 for e in stream if e["type"] == "ingest")
+                n_correct = sum(1 for e in stream if e["type"] == "correction")
+                n_question = sum(1 for e in stream if e["type"] == "question")
+                print(f" {len(stream)} events "
+                      f"({n_ingest} ingest, {n_correct} correction, "
+                      f"{n_question} question)")
 
+                print(f"  [{tmpl.name}] seed={seed} — Running agent "
+                      f"({args.model}) ...")
                 agent_results, writes_used, stored = run_stream_agent(
                     model=args.model,
                     stream=stream,
@@ -548,11 +567,6 @@ def main(argv: list[str] | None = None) -> int:
                     "details": details,
                 }
                 agg[args.model].append(result)
-
-                if args.verbose:
-                    print(f"  [{tmpl.name}] seed={seed} "
-                          f"{args.model} {result['accuracy']:.0%} "
-                          f"stored={result['stored']} writes={writes_used}")
 
             else:
                 # Simulation mode
