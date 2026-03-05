@@ -151,8 +151,15 @@ class WorldTemplate(ABC):
     # ── Concrete: world generation ──
 
     def generate_world(self, seed: int, n_entities: int,
-                       n_active_attrs: int | None = None) -> World:
-        """Generate a complete world. Deterministic for a given seed."""
+                       n_active_attrs: int | None = None,
+                       eval_salt: int = 0) -> World:
+        """Generate a complete world. Deterministic for a given seed+salt.
+
+        Args:
+            eval_salt: Perturb numeric values to invalidate pre-computed
+                answers for a given seed. Same seed + different salt →
+                same entities/structure but different numeric values.
+        """
         rng = Random(seed)
         all_defs = self.all_attr_defs
 
@@ -169,11 +176,46 @@ class WorldTemplate(ABC):
             cat = rng.choice(self.all_categories)
             entities.append(self.generate_entity(rng, nm, cat, active))
 
+        # Apply eval_salt perturbation
+        if eval_salt:
+            self._apply_eval_salt(entities, selected, active, eval_salt)
+
         return World(
             entities=entities, attr_defs=selected,
             active_attrs=active, categories=self.all_categories,
             seed=seed,
         )
+
+    def _apply_eval_salt(self, entities: list[EntitySpec],
+                         attr_defs: list[AttrDef],
+                         active_attrs: list[str],
+                         salt: int) -> None:
+        """Perturb numeric attribute values deterministically by salt.
+
+        Maintains relative ordering and value ranges, but shifts values
+        enough that pre-computed answers for salt=0 become wrong.
+        """
+        salt_rng = Random(salt)
+        for entity in entities:
+            for adef in attr_defs:
+                if adef.name not in active_attrs:
+                    continue
+                val = entity.get(adef.name)
+                if val is None:
+                    continue
+                # Perturb by 5-15% of the range
+                range_size = adef.max_val - adef.min_val
+                delta = salt_rng.uniform(0.05, 0.15) * range_size
+                direction = salt_rng.choice([-1, 1])
+                new_val = val + direction * delta
+                new_val = max(adef.min_val, min(adef.max_val, new_val))
+                if adef.dtype == "int":
+                    new_val = int(round(new_val))
+                    if new_val == val:
+                        new_val = val + (1 if val < adef.max_val else -1)
+                else:
+                    new_val = round(new_val, 2)
+                entity.attrs[adef.name] = new_val
 
     def attr_label(self, attr_name: str) -> str:
         """Human-readable attribute label."""
@@ -440,6 +482,25 @@ class WorldTemplate(ABC):
                 )
         return None
 
+    def _gq_trick_retrieval(self, world, rng, available):
+        """Ask about a real entity using abstention-like phrasing.
+
+        Phrased as if the agent might want to abstain ("Do you have
+        any data on..."), but the GT is a real value from a real entity.
+        Defeats always-abstain strategies: if the agent always says
+        "I don't know", it will fail these questions.
+        """
+        attr = rng.choice(world.active_attrs)
+        cands = [e for e in available if e.get(attr) is not None]
+        if not cands:
+            return None
+        e = rng.choice(cands)
+        # Use the standard _q_text — identical wording to retrieval/update
+        return GeneratedQA(
+            self._q_text(attr, e.name, rng),
+            str(e.get(attr)), "retrieval", [e.name],
+        )
+
     # ── Concrete: post-storage adaptive questioning ──
 
     def detect_stored_entities(
@@ -481,6 +542,143 @@ class WorldTemplate(ABC):
             (stored if found else missed).add(e.name)
         return stored, missed
 
+    def generate_stream(
+        self, world: World, rng: Random,
+        corrections: list[Correction],
+        stored_names: set[str],
+        n_questions: int,
+        entities_per_batch: int = 10,
+    ) -> list[dict]:
+        """Generate an interleaved evaluation stream.
+
+        Returns a list of events, each a dict with:
+          type: "ingest" | "correction" | "question"
+          + type-specific fields
+
+        Stream structure:
+          - Entities arrive in batches of entities_per_batch
+          - After batch 2+, questions may appear (30% per batch)
+          - Corrections arrive at ~60% through entity batches
+          - Remaining questions come after all entities are ingested
+          - Agent never knows what event comes next
+
+        This adds uncertainty pressure: the agent can't adopt
+        "store everything first, answer later" because questions
+        arrive during ingest.
+        """
+        events: list[dict] = []
+        entities = list(world.entities)
+        n_batches = max(1, len(entities) // entities_per_batch)
+        correction_batch = max(1, int(n_batches * 0.6))
+
+        # Track introduced entities for question generation
+        introduced: list[EntitySpec] = []
+        questions_emitted = 0
+
+        # Decide how many questions to emit during ingest (~40%)
+        n_mid_questions = max(1, int(n_questions * 0.4))
+        mid_q_schedule: set[int] = set()
+        if n_batches > 2:
+            # Distribute mid-stream questions across batches 2+
+            possible = list(range(2, n_batches))
+            rng_sched = Random(rng.randint(0, 2**31))
+            rng_sched.shuffle(possible)
+            for i in range(min(n_mid_questions, len(possible))):
+                mid_q_schedule.add(possible[i])
+
+        for batch_idx in range(n_batches):
+            start = batch_idx * entities_per_batch
+            end = min(start + entities_per_batch, len(entities))
+            batch_entities = entities[start:end]
+
+            # Render and emit ingest event
+            docs = [self.render_document(e, world.active_attrs, rng)
+                    for e in batch_entities]
+            events.append({
+                "type": "ingest",
+                "batch": batch_idx + 1,
+                "total_batches": n_batches,
+                "documents": docs,
+                "entity_names": [e.name for e in batch_entities],
+            })
+            introduced.extend(batch_entities)
+
+            # Emit corrections at correction_batch
+            if batch_idx == correction_batch and corrections:
+                for c in corrections:
+                    events.append({
+                        "type": "correction",
+                        "notice": c.notice,
+                        "entity_name": c.entity_name,
+                        "attr": c.attr,
+                    })
+
+            # Emit a question if scheduled
+            if batch_idx in mid_q_schedule and len(introduced) >= 5:
+                q = self._generate_one_question(
+                    world, rng, introduced, stored_names,
+                    corrections if batch_idx > correction_batch else None,
+                )
+                if q:
+                    events.append({
+                        "type": "question",
+                        "question": q.question,
+                        "answer": q.answer,
+                        "competency": q.competency,
+                        "purpose": q.purpose,
+                        "required_entities": q.required_entities,
+                    })
+                    questions_emitted += 1
+
+        # Emit remaining questions after all ingest
+        remaining = n_questions - questions_emitted
+        remaining_qs = self.gen_adaptive_questions(
+            world, rng, introduced, stored_names, remaining, corrections,
+        )
+        for q in remaining_qs:
+            events.append({
+                "type": "question",
+                "question": q.question,
+                "answer": q.answer,
+                "competency": q.competency,
+                "purpose": q.purpose,
+                "required_entities": q.required_entities,
+            })
+
+        return events
+
+    def _generate_one_question(
+        self, world: World, rng: Random,
+        introduced: list[EntitySpec],
+        stored_names: set[str],
+        corrections: list[Correction] | None,
+    ) -> GeneratedQA | None:
+        """Generate a single random question for mid-stream emission."""
+        # Weighted choice: retrieval-heavy during mid-stream
+        roll = rng.random()
+        if roll < 0.5:
+            q = self._gq_retrieval(world, rng, introduced)
+            if q:
+                name = q.required_entities[0]
+                q.purpose = "recall" if name in stored_names else "coverage"
+                return q
+        elif roll < 0.75 and corrections:
+            q = self._gq_update(world, rng, corrections)
+            if q:
+                q.purpose = "update"
+                return q
+        elif roll < 0.90 and len(introduced) >= 5:
+            q = self._gq_synthesis(world, rng, introduced)
+            if q:
+                q.purpose = "comprehension"
+                return q
+        # Fallback: abstention
+        q = self._gq_abstention(world, rng, introduced)
+        if q:
+            q.purpose = "abstention"
+            return q
+        return None
+
     def gen_adaptive_questions(
         self, world: World, rng: Random,
         introduced: list[EntitySpec],
@@ -500,17 +698,21 @@ class WorldTemplate(ABC):
         """
         has_corrections = bool(corrections)
 
+        # Trick retrieval: ~2 per evaluation — phrased like abstention
+        # but with real GT. Defeats always-abstain strategy.
+        n_trick = min(2, max(1, n_questions // 10))
+
         if has_corrections:
             n_update = max(1, round(n_questions * 0.2))
             n_update = min(n_update, len(corrections))
-            n_retrieval = round(n_questions * 0.4)
+            n_retrieval = round(n_questions * 0.4) - n_trick
             n_abstention = max(1, round(n_questions * 0.15))
-            n_comprehension = n_questions - n_retrieval - n_update - n_abstention
+            n_comprehension = n_questions - n_retrieval - n_update - n_abstention - n_trick
         else:
             n_update = 0
-            n_retrieval = round(n_questions * 0.5)
+            n_retrieval = round(n_questions * 0.5) - n_trick
             n_abstention = max(1, round(n_questions * 0.1))
-            n_comprehension = n_questions - n_retrieval - n_abstention
+            n_comprehension = n_questions - n_retrieval - n_abstention - n_trick
 
         questions: list[GeneratedQA] = []
 
@@ -557,6 +759,14 @@ class WorldTemplate(ABC):
             q = self._gq_abstention(world, rng, introduced)
             if q:
                 q.purpose = "abstention"
+                questions.append(q)
+
+        # Trick retrieval: looks like abstention, but GT is real
+        for _ in range(n_trick):
+            q = self._gq_trick_retrieval(world, rng, introduced)
+            if q:
+                name = q.required_entities[0]
+                q.purpose = "trick_retrieval"
                 questions.append(q)
 
         rng.shuffle(questions)

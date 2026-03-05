@@ -72,11 +72,11 @@ Unlike v1/v2's "read-then-answer" model, v3 uses **streaming**: each task simult
 
 | Tool | Cost | Description |
 |------|------|-------------|
-| `memory_write(content)` | 1 write | Store new entry (max 500 tokens) |
-| `memory_update(id, content)` | 1 write | Replace existing entry |
+| `memory_store(content, memory_id?)` | 1 write | Store or update entry (max 500 tokens) |
 | `memory_search(query, top_k)` | Free | Semantic search |
+| `memory_get(memory_id)` | Free | Retrieve single entry by ID |
 | `memory_list()` | Free | List all entries |
-| `memory_delete(id)` | Free | Delete entry (no budget refund) |
+| `memory_forget(memory_id)` | Free | Delete entry (no budget refund) |
 
 **Budget constraints**: 30 writes, 500 tokens/entry, 100 max entries. With ~40 entities across 2 domains, selectivity is forced.
 

@@ -1,1 +1,3 @@
-"""MemoryBench: Streaming Memory Management Evaluation for LLMs."""
+"""MemoryBench: Memory Management Evaluation for LLM Agents."""
+
+__version__ = "0.3.0"

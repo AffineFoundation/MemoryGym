@@ -32,7 +32,24 @@ class ChromaDBBackend:
             embedding_function=self._ef,
         )
 
-    def add(self, content: str) -> str:
+    def store(self, content: str, memory_id: str | None = None) -> str:
+        """Store or update a memory entry. Returns the entry ID."""
+        if memory_id is not None:
+            existing = self._collection.get(ids=[memory_id])
+            if existing["ids"]:
+                self._collection.update(
+                    ids=[memory_id],
+                    documents=[content],
+                )
+                return memory_id
+            # ID not found — create new entry with this ID
+            now = datetime.now(timezone.utc).isoformat()
+            self._collection.add(
+                ids=[memory_id],
+                documents=[content],
+                metadatas=[{"created_at": now}],
+            )
+            return memory_id
         entry_id = str(uuid.uuid4())
         now = datetime.now(timezone.utc).isoformat()
         self._collection.add(
@@ -59,30 +76,31 @@ class ChromaDBBackend:
             })
         return entries
 
-    def update(self, entry_id: str, content: str) -> bool:
+    def get(self, memory_id: str) -> dict | None:
+        """Retrieve a single entry by ID."""
         try:
-            existing = self._collection.get(ids=[entry_id])
+            results = self._collection.get(ids=[memory_id])
+            if not results["ids"]:
+                return None
+            return {
+                "id": results["ids"][0],
+                "content": results["documents"][0],
+                "created_at": results["metadatas"][0].get("created_at", ""),
+            }
+        except Exception:
+            return None
+
+    def forget(self, memory_id: str) -> bool:
+        try:
+            existing = self._collection.get(ids=[memory_id])
             if not existing["ids"]:
                 return False
-            self._collection.update(
-                ids=[entry_id],
-                documents=[content],
-            )
+            self._collection.delete(ids=[memory_id])
             return True
         except Exception:
             return False
 
-    def delete(self, entry_id: str) -> bool:
-        try:
-            existing = self._collection.get(ids=[entry_id])
-            if not existing["ids"]:
-                return False
-            self._collection.delete(ids=[entry_id])
-            return True
-        except Exception:
-            return False
-
-    def list_all(self) -> list[dict]:
+    def list(self) -> list[dict]:
         count = self._collection.count()
         if count == 0:
             return []

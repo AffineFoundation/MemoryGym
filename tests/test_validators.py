@@ -85,9 +85,9 @@ class TestEntityMatch:
     def test_with_title_in_answer(self):
         assert V._entity_match("Dr. Kelan Frostwick", "Kelan Frostwick")
 
-    def test_partial_name_passes_threshold(self):
-        """'Frostwick' = 1/2 words of 'Kelan Frostwick' = 50% → pass."""
-        assert V._entity_match("Frostwick", "Kelan Frostwick")
+    def test_partial_name_rejected(self):
+        """'Frostwick' = 1/2 words of 'Kelan Frostwick' = 50% < 67% → reject."""
+        assert not V._entity_match("Frostwick", "Kelan Frostwick")
 
     def test_single_title_rejected(self):
         """Bug #1 vector: 'Dr.' alone must NOT match 'Dr. Kelan Frostwick'.
@@ -127,9 +127,9 @@ class TestSynthesisMatch:
         )
 
     def test_natural_language_answer(self):
-        """LLM-style answer with entity name and value."""
+        """LLM-style answer with entity name and exact value."""
         assert V._synthesis_match(
-            "Frostwick earns $145,000",
+            "Kelan Frostwick earns $145,000",
             "Kelan Frostwick (145000)",
         )
 
@@ -160,10 +160,17 @@ class TestSynthesisMatch:
             "Kelan Frostwick (145000)",
         )
 
-    def test_value_within_tolerance(self):
-        """Value within 5%: 145000 × 1.04 = 150800."""
+    def test_value_within_tolerance_float(self):
+        """Float GT: 2% tolerance applies. 145000.0 × 1.01 = 146450."""
         assert V._synthesis_match(
-            "Frostwick earns $150,000",
+            "Kelan Frostwick earns $146,000",
+            "Kelan Frostwick (145000.0)",
+        )
+
+    def test_integer_value_exact_required(self):
+        """V14: Integer GT in synthesis requires exact numeric match."""
+        assert not V._synthesis_match(
+            "Kelan Frostwick earns $150,000",
             "Kelan Frostwick (145000)",
         )
 

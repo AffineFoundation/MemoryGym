@@ -1,0 +1,334 @@
+"""LLM agent for WorldTemplate stream evaluation.
+
+Processes interleaved event streams (ingest/correction/question) using
+text-based tool calling via OpenAI-compatible API.
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import re
+from dataclasses import dataclass, field
+from typing import Any
+
+from dotenv import load_dotenv
+from openai import OpenAI
+
+load_dotenv()
+
+from memorybench.evaluation.llm_judge import llm_judge_validate_sync
+from memorybench.memory.backends.mock_backend import MockBackend
+from memorybench.memory.budget import MemoryBudget
+
+SYSTEM_PROMPT = """You are participating in a memory management evaluation.
+
+You will receive a stream of events in unpredictable order:
+
+1. **DOCUMENTS**: Entity data. Read and store what seems important.
+2. **CORRECTIONS**: Data correction notices. Update your stored memories.
+3. **QUESTIONS**: Answer from your stored memories.
+
+## Memory Tools
+
+Call tools by outputting JSON blocks:
+
+**memory_store** — Store info (costs 1 write, budget: {budget}):
+<tool_call>{{"name": "memory_store", "arguments": {{"content": "info to store"}}}}</tool_call>
+
+**memory_search** — Search stored memories (free, uses substring matching):
+<tool_call>{{"name": "memory_search", "arguments": {{"query": "entity name"}}}}</tool_call>
+
+**memory_forget** — Delete entry by ID (free):
+<tool_call>{{"name": "memory_forget", "arguments": {{"memory_id": "id"}}}}</tool_call>
+
+**memory_list** — List all memories (free):
+<tool_call>{{"name": "memory_list", "arguments": {{}}}}</tool_call>
+
+**submit_answer** — Submit your final answer:
+<tool_call>{{"name": "submit_answer", "arguments": {{"answer": "your answer"}}}}</tool_call>
+
+## Strategy
+
+- Store entity data compactly: "EntityName | attr1: val1, attr2: val2, ..."
+- When corrections arrive, search for the entity, delete old entry, store corrected data.
+- For questions, search by entity name, then submit_answer.
+- For comparison questions, answer as "EntityName (value)".
+- If data is not in memory, submit "I don't have enough information".
+- Write budget: {budget} total. Be selective.
+- ALWAYS call submit_answer when there is a question.
+"""
+
+_TOOL_CALL_RE = re.compile(
+    r"<tool_call>\s*(\{.*?\})\s*</tool_call>", re.DOTALL,
+)
+
+
+@dataclass
+class AgentResult:
+    """Result of processing one question event."""
+    question: str
+    answer: str
+    ground_truth: str
+    competency: str
+    purpose: str
+    correct: bool
+    n_writes: int
+    n_searches: int
+    required_entities: list[str] = field(default_factory=list)
+
+
+def _format_documents(docs: list[str]) -> str:
+    parts = []
+    for i, doc in enumerate(docs, 1):
+        parts.append(f"[Document {i}]\n{doc}")
+    return "\n\n".join(parts)
+
+
+def _execute_tool(
+    name: str, args: dict, backend: MockBackend, budget: MemoryBudget,
+) -> tuple[str, str | None]:
+    """Execute a tool call. Returns (result_text, submitted_answer_or_None)."""
+    if name == "submit_answer":
+        return f"ANSWER_SUBMITTED: {args.get('answer', '')}", args.get("answer", "")
+
+    if name == "memory_store":
+        content = args.get("content", "")
+        if len(content.split()) > budget.max_content_tokens:
+            return f"Content exceeds {budget.max_content_tokens} token limit.", None
+        if not budget.can_write():
+            return f"Budget exhausted ({budget.writes_used}/{budget.total_writes}).", None
+        memory_id = args.get("memory_id")
+        if memory_id:
+            existing = backend.get(memory_id)
+            if not existing:
+                return "Entry not found.", None
+        budget.consume_write()
+        entry_id = backend.store(content, memory_id=memory_id)
+        return f"Stored (id={entry_id}). {budget.remaining()} writes left.", None
+
+    if name == "memory_search":
+        results = backend.search(args.get("query", ""), args.get("top_k", 5))
+        if not results:
+            return "No results found.", None
+        lines = [f"[{r['id']}] {r['content'][:200]}" for r in results]
+        return "\n".join(lines), None
+
+    if name == "memory_get":
+        entry = backend.get(args.get("memory_id", ""))
+        if not entry:
+            return "Entry not found.", None
+        return f"[{entry['id']}] {entry['content']}", None
+
+    if name == "memory_forget":
+        ok = backend.forget(args.get("memory_id", ""))
+        return ("Deleted." if ok else "Entry not found."), None
+
+    if name == "memory_list":
+        entries = backend.list()
+        if not entries:
+            return "Memory is empty.", None
+        lines = [f"[{e['id']}] {e['content'][:200]}" for e in entries]
+        return "\n".join(lines), None
+
+    return f"Unknown tool: {name}", None
+
+
+def _parse_and_execute(
+    text: str, backend: MockBackend, budget: MemoryBudget,
+) -> tuple[list[str], str | None, int, int]:
+    """Parse tool_call blocks and execute. Returns (results, answer, writes, searches)."""
+    results = []
+    answer = None
+    n_writes = n_searches = 0
+
+    for match in _TOOL_CALL_RE.finditer(text):
+        try:
+            call = json.loads(match.group(1))
+        except json.JSONDecodeError:
+            continue
+
+        name = call.get("name", "")
+        args = call.get("arguments", {})
+
+        if name == "memory_store":
+            n_writes += 1
+        elif name in ("memory_search", "memory_list", "memory_get"):
+            n_searches += 1
+
+        result_text, submitted = _execute_tool(name, args, backend, budget)
+        results.append(f"[{name}] {result_text}")
+
+        if submitted is not None:
+            answer = submitted
+
+    return results, answer, n_writes, n_searches
+
+
+def _run_tool_loop(
+    client: OpenAI, model: str, messages: list[dict],
+    backend: MockBackend, budget: MemoryBudget,
+    max_turns: int = 10,
+) -> tuple[str | None, int, int]:
+    """Run text-based tool loop until submit_answer or max_turns."""
+    total_writes = total_searches = 0
+
+    for _ in range(max_turns):
+        response = client.chat.completions.create(
+            model=model, messages=messages,
+        )
+        text = response.choices[0].message.content or ""
+        messages.append({"role": "assistant", "content": text})
+
+        results, answer, n_w, n_s = _parse_and_execute(text, backend, budget)
+        total_writes += n_w
+        total_searches += n_s
+
+        if answer is not None:
+            return answer, total_writes, total_searches
+
+        if not results:
+            break
+
+        messages.append({
+            "role": "user",
+            "content": "Tool results:\n" + "\n".join(results),
+        })
+
+    return None, total_writes, total_searches
+
+
+def run_stream_agent(
+    model: str,
+    stream: list[dict],
+    write_budget: int = 30,
+    api_base: str | None = None,
+    api_key: str | None = None,
+    verbose: bool = False,
+) -> tuple[list[AgentResult], int, list[dict]]:
+    """Run a real LLM agent on a WorldTemplate event stream.
+
+    Args:
+        model: Model name (OpenAI-compatible).
+        stream: List of events from WorldTemplate.generate_stream().
+        write_budget: Total memory writes allowed.
+        api_base: API base URL (default: OpenAI).
+        api_key: API key (default: from env).
+        verbose: Print per-event details.
+
+    Returns:
+        (results, writes_used, stored_contents)
+    """
+    if api_key is None:
+        api_key = os.environ.get("OPENAI_API_KEY") or os.environ.get("CHUTES_API_KEY")
+    if not api_key:
+        raise RuntimeError(
+            "Set OPENAI_API_KEY or CHUTES_API_KEY environment variable")
+
+    kwargs: dict[str, Any] = {"api_key": api_key}
+    if api_base:
+        kwargs["base_url"] = api_base
+
+    client = OpenAI(**kwargs)
+
+    # Judge client: always uses Chutes API for cheap multi-model judging
+    judge_api_key = os.environ.get("CHUTES_API_KEY") or api_key
+    judge_client = OpenAI(
+        api_key=judge_api_key,
+        base_url="https://llm.chutes.ai/v1",
+    )
+
+    backend = MockBackend()
+    budget = MemoryBudget(total_writes=write_budget)
+
+    total_events = len(stream)
+    messages: list[dict] = [{
+        "role": "system",
+        "content": SYSTEM_PROMPT.format(budget=write_budget),
+    }]
+
+    results: list[AgentResult] = []
+
+    for event_idx, event in enumerate(stream):
+        msg_start = len(messages)
+        event_type = event["type"]
+
+        if event_type == "ingest":
+            docs_text = _format_documents(event["documents"])
+            content = (
+                f"=== Event {event_idx+1}/{total_events} [DOCUMENTS] ===\n\n"
+                f"**Documents:**\n{docs_text}\n\n"
+                "No question. Store important entity data."
+            )
+            messages.append({"role": "user", "content": content})
+            _run_tool_loop(client, model, messages, backend, budget)
+
+            if verbose:
+                n_ents = len(event.get("entity_names", []))
+                print(f"  E{event_idx+1:02d} [INGEST] "
+                      f"entities={n_ents} budget={budget.remaining()}")
+
+        elif event_type == "correction":
+            content = (
+                f"=== Event {event_idx+1}/{total_events} [CORRECTION] ===\n\n"
+                f"**Correction Notice:**\n{event['notice']}\n\n"
+                "Update your stored memories with the corrected value."
+            )
+            messages.append({"role": "user", "content": content})
+            _run_tool_loop(client, model, messages, backend, budget)
+
+            if verbose:
+                print(f"  E{event_idx+1:02d} [CORRECTION] "
+                      f"{event['entity_name']}.{event['attr']} "
+                      f"budget={budget.remaining()}")
+
+        elif event_type == "question":
+            content = (
+                f"=== Event {event_idx+1}/{total_events} [QUESTION] ===\n\n"
+                f"**Question:**\n{event['question']}\n\n"
+                "Search your memory and call submit_answer(answer=\"...\")."
+            )
+            messages.append({"role": "user", "content": content})
+            answer, n_writes, n_searches = _run_tool_loop(
+                client, model, messages, backend, budget)
+
+            agent_answer = answer or ""
+            gt = str(event["answer"])
+
+            is_correct, reason = llm_judge_validate_sync(
+                judge_client,
+                event["question"], gt, agent_answer,
+                event["competency"],
+            )
+            if verbose and reason:
+                print(f"    Judge: {reason}")
+
+            results.append(AgentResult(
+                question=event["question"],
+                answer=agent_answer,
+                ground_truth=gt,
+                competency=event["competency"],
+                purpose=event.get("purpose", ""),
+                correct=is_correct,
+                n_writes=n_writes,
+                n_searches=n_searches,
+                required_entities=event.get("required_entities", []),
+            ))
+
+            if verbose:
+                mark = "+" if is_correct else "-"
+                print(f"  E{event_idx+1:02d} [QUESTION] {mark} "
+                      f"[{event['competency']:12s}] "
+                      f"A={agent_answer[:40]} GT={gt[:40]} "
+                      f"budget={budget.remaining()}")
+
+        # Nuclear redaction after each event
+        del messages[msg_start:]
+        messages.append({
+            "role": "user",
+            "content": f"[Event {event_idx+1}/{total_events} completed.]",
+        })
+        messages.append({"role": "assistant", "content": "Understood."})
+
+    stored_contents = [e["content"] for e in backend.list()]
+    return results, budget.writes_used, stored_contents

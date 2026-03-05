@@ -3,11 +3,7 @@
 Entities: Companies with 10 possible numeric attributes.
 Names: 30 prefixes × 20 suffixes = 600 unique companies.
 Sectors: 12 industry categories.
-Document styles: 4 (earnings, analyst, profile, news).
-
-Combinatorial space per template:
-  C(600, 60) entity selections × C(10, 8) attribute schemas
-  × continuous value ranges × 4^60 style assignments = effectively infinite.
+Document styles: 4 narrative styles (~250 tokens each).
 """
 
 from __future__ import annotations
@@ -40,11 +36,14 @@ _SECTORS = [
 
 _ATTR_DEFS = [
     AttrDef("revenue_m", "float", 10, 50000, "$M", "Revenue"),
-    AttrDef("profit_margin_pct", "float", -15, 40, "%", "Profit margin"),
+    AttrDef("profit_margin_pct", "float", -15, 40, "%", "Profit margin",
+            agg_ops=("average",)),
     AttrDef("employees", "int", 50, 200000, "", "Employees"),
     AttrDef("market_cap_m", "float", 50, 500000, "$M", "Market cap"),
-    AttrDef("debt_ratio_pct", "float", 0, 150, "%", "Debt ratio"),
-    AttrDef("rd_spend_pct", "float", 0, 30, "%", "R&D spending"),
+    AttrDef("debt_ratio_pct", "float", 0, 150, "%", "Debt ratio",
+            agg_ops=("average",)),
+    AttrDef("rd_spend_pct", "float", 0, 30, "%", "R&D spending",
+            agg_ops=("average",)),
     AttrDef("customer_count", "int", 100, 5000000, "", "Customers"),
     AttrDef("patent_count", "int", 0, 20000, "", "Patents"),
     AttrDef("offices", "int", 1, 300, "", "Offices"),
@@ -155,55 +154,23 @@ class CompanyWorld(WorldTemplate):
                     rng.uniform(adef.min_val, adef.max_val), 2)
         return EntitySpec(name=name, category=category, attrs=attrs)
 
+    def _format_value(self, attr: str, val: Any) -> str:
+        return _fmt(attr, val)
+
     def render_document(self, entity: EntitySpec,
                         active_attrs: list[str], rng: Random) -> str:
-        """Render entity into one of 4 document styles (randomly chosen).
-
-        ANTI-HACK: All styles contain identical data. Every entity document
-        has the same structure. An agent cannot distinguish "will be asked
-        about" from "won't be asked about" by document format.
-        """
         style = rng.choice(["earnings", "analyst", "profile", "news"])
-        present = [(a, entity.get(a)) for a in active_attrs
-                   if entity.get(a) is not None]
-        render = {
-            "earnings": self._doc_earnings,
-            "analyst": self._doc_analyst,
-            "profile": self._doc_profile,
-            "news": self._doc_news,
+        header = {
+            "earnings": (f"QUARTERLY EARNINGS DISCLOSURE — {entity.name}\n"
+                         f"Sector: {entity.category}\n"),
+            "analyst": (f"ANALYST COVERAGE REPORT — {entity.name}\n"
+                        f"Industry: {entity.category}\n"),
+            "profile": (f"COMPANY PROFILE — {entity.name}\n"
+                        f"Category: {entity.category}\n"),
+            "news": (f"MARKET INTELLIGENCE BRIEF — {entity.name}\n"
+                     f"Segment: {entity.category}\n"),
         }[style]
-        return render(entity, present)
-
-    def _doc_earnings(self, e: EntitySpec,
-                      attrs: list[tuple[str, Any]]) -> str:
-        lead = (f"In its latest quarterly report, {e.name} ({e.category}) "
-                f"disclosed the following.")
-        details = []
-        for a, v in attrs:
-            details.append(f"{self.attr_label(a)}: {_fmt(a, v)}")
-        return f"{lead} " + ". ".join(details) + "."
-
-    def _doc_analyst(self, e: EntitySpec,
-                     attrs: list[tuple[str, Any]]) -> str:
-        lines = [f"ANALYST COVERAGE — {e.name}", f"Sector: {e.category}"]
-        for a, v in attrs:
-            lines.append(f"  {self.attr_label(a)}: {_fmt(a, v)}")
-        return "\n".join(lines)
-
-    def _doc_profile(self, e: EntitySpec,
-                     attrs: list[tuple[str, Any]]) -> str:
-        intro = f"{e.name} is a {e.category} company."
-        details = []
-        for a, v in attrs:
-            details.append(f"{self.attr_label(a)}: {_fmt(a, v)}")
-        return f"{intro} Key facts — " + ", ".join(details) + "."
-
-    def _doc_news(self, e: EntitySpec,
-                  attrs: list[tuple[str, Any]]) -> str:
-        parts = [f"Market Watch — {e.name} ({e.category})."]
-        for a, v in attrs:
-            parts.append(f"{self.attr_label(a)}: {_fmt(a, v)}.")
-        return " ".join(parts)
+        return header + self._compact_document(entity, active_attrs)
 
     def render_correction(self, entity: EntitySpec, attr: str,
                           old_val: Any, new_val: Any) -> str:

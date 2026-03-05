@@ -2,6 +2,6 @@
 
 import sys
 
-from memorybench.cli import main
+from memorybench.bench import main
 
 sys.exit(main())

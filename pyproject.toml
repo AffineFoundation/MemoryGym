@@ -1,6 +1,7 @@
 [project]
 name = "memorybench"
 version = "0.3.0"
+description = "Memory management evaluation for LLM agents"
 requires-python = ">=3.11"
 dependencies = [
     "chromadb>=0.4",
@@ -12,6 +13,10 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = ["pytest>=8.0", "ruff>=0.4"]
+mem0 = ["mem0ai>=0.1"]
+
+[project.scripts]
+memorybench = "memorybench.bench:_cli_entry"
 
 [tool.setuptools.packages.find]
 include = ["memorybench*"]
@@ -19,3 +24,7 @@ include = ["memorybench*"]
 [build-system]
 requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "strict"

@@ -40,10 +40,13 @@ def _tokenize(text: str) -> list[str]:
 class AnswerValidator:
     """4-layer answer matching: exact → numeric → synthesis → abstention."""
 
-    # V13: tighter tolerance for large values to prevent year-guessing.
-    # Guessing 2000 for founded_year covered entire [1950,2023] at 5%.
-    _TOL_SMALL = 0.05   # |gt| ≤ 500
-    _TOL_LARGE = 0.005  # |gt| > 500
+    # V14: Integer-exact, float-tolerant matching.
+    # - Integer GT: exact match only. Years, counts, employees are integers
+    #   and the agent should return the precise value. This completely
+    #   prevents year/count guessing attacks.
+    # - Float GT: 2% relative tolerance. Handles display rounding
+    #   ($1,234.5M → 1234.5 or 1235) and aggregation imprecision.
+    _TOL_FLOAT = 0.02  # 2% relative tolerance for floats only
 
     def validate(self, answer: str, ground_truth: Any,
                  question_type: str) -> bool:
@@ -66,17 +69,37 @@ class AnswerValidator:
 
         return False
 
-    def _effective_tolerance(self, gt_num: float) -> float:
-        return self._TOL_LARGE if abs(gt_num) > 500 else self._TOL_SMALL
-
     def _numeric_match(self, answer: str, gt: Any) -> bool:
-        """Extract numbers and compare within adaptive tolerance."""
+        """Match answer against ground truth numerically.
+
+        V14: Integer-exact, float-tolerant.
+        - Integer GT (years, counts, employees): exact match required.
+          Completely prevents guessing attacks on year ranges.
+        - Float GT (revenue, percentages, rates): 2% relative tolerance.
+          Handles display rounding and aggregation imprecision.
+
+        V15: Suffix disambiguation. When an LLM writes "$481,921.1M" it
+        may mean the literal value 481921.1 (M as unit label) rather than
+        481921.1 × 10^6. We try both interpretations and pick the one
+        closer to GT, preventing false negatives on correct answers.
+        """
         try:
-            ans_num = self._extract_number(answer)
             gt_num = float(gt) if not isinstance(gt, (int, float)) else gt
-            if gt_num == 0:
-                return ans_num == 0
-            return abs(ans_num - gt_num) / abs(gt_num) <= self._effective_tolerance(gt_num)
+            is_int_gt = isinstance(gt, int) or (isinstance(gt, str) and '.' not in gt)
+
+            # Try both with and without suffix multiplier
+            candidates = self._extract_number_candidates(answer)
+            for ans_num in candidates:
+                if is_int_gt:
+                    if int(round(ans_num)) == int(round(gt_num)):
+                        return True
+                else:
+                    if gt_num == 0:
+                        if ans_num == 0:
+                            return True
+                    elif abs(ans_num - gt_num) / abs(gt_num) <= self._TOL_FLOAT:
+                        return True
+            return False
         except (ValueError, ZeroDivisionError):
             return False
 
@@ -149,10 +172,32 @@ class AnswerValidator:
         has_number = bool(re.search(r"\d", a))
         return not has_number
 
-    def _extract_number(self, text: str) -> float:
-        """Extract a number from text. Handles $, K, M, commas."""
+    def _extract_number_candidates(self, text: str) -> list[float]:
+        """Extract number candidates: with and without suffix multiplier.
+
+        V15: LLMs often write "$481,921.1M" meaning the value IS 481921.1
+        (M is a unit label), not 481921.1 × 10^6. Return both
+        interpretations so _numeric_match can pick the correct one.
+        """
         text = text.replace(",", "").replace("$", "").strip()
-        # Require at least one digit to avoid matching bare dots (e.g. "Dr.")
+        match = re.search(r"(\d[\d]*\.?\d*)\s*([KkMm])?", text)
+        if not match:
+            return []
+        raw = float(match.group(1))
+        suffix = (match.group(2) or "").upper()
+        if not suffix:
+            return [raw]
+        # Return both: with multiplier and without (raw value)
+        multiplied = raw * (1000 if suffix == "K" else 1_000_000)
+        return [raw, multiplied]
+
+    def _extract_number(self, text: str) -> float:
+        """Extract a number from text. Handles $, K, M, commas.
+
+        Always applies suffix multiplier (K=×1000, M=×10^6).
+        For disambiguation, use _extract_number_candidates instead.
+        """
+        text = text.replace(",", "").replace("$", "").strip()
         match = re.search(r"(\d[\d]*\.?\d*)\s*([KkMm])?", text)
         if not match:
             raise ValueError(f"No number found in: {text}")

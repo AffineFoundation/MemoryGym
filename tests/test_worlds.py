@@ -22,7 +22,9 @@ from memorybench.worlds.base import (
 )
 from memorybench.worlds.city import CityWorld
 from memorybench.worlds.company import CompanyWorld
+from memorybench.worlds.hospital import HospitalWorld
 from memorybench.worlds.research import ResearchWorld
+from memorybench.worlds.sport import SportWorld
 
 
 @dataclass
@@ -320,24 +322,26 @@ def test_determinism():
 
 
 def test_edge_all_stored():
-    """100% storage → all retrieval tagged recall."""
+    """100% storage → all retrieval tagged recall or trick_retrieval."""
     tmpl = CompanyWorld()
     world = tmpl.generate_world(seed=7, n_entities=40)
     all_names = {e.name for e in world.entities}
     rng = Random(7 + 7777)
     qs = tmpl.gen_adaptive_questions(world, rng, world.entities, all_names, 10)
     retrieval_qs = [q for q in qs if q.competency == "retrieval"]
-    assert all(q.purpose == "recall" for q in retrieval_qs)
+    assert all(q.purpose in ("recall", "trick_retrieval")
+               for q in retrieval_qs)
 
 
 def test_edge_none_stored():
-    """0% storage → all retrieval tagged coverage."""
+    """0% storage → all retrieval tagged coverage or trick_retrieval."""
     tmpl = CompanyWorld()
     world = tmpl.generate_world(seed=7, n_entities=40)
     rng = Random(7 + 7777)
     qs = tmpl.gen_adaptive_questions(world, rng, world.entities, set(), 10)
     retrieval_qs = [q for q in qs if q.competency == "retrieval"]
-    assert all(q.purpose == "coverage" for q in retrieval_qs)
+    assert all(q.purpose in ("coverage", "trick_retrieval")
+               for q in retrieval_qs)
 
 
 def test_gt_from_world():
@@ -381,7 +385,7 @@ def test_corrections_mutate_world():
 
 def test_abstraction_generality():
     """All WorldTemplate implementations must produce consistent evaluation."""
-    for TmplClass in [CompanyWorld, ResearchWorld, CityWorld]:
+    for TmplClass in [CompanyWorld, ResearchWorld, CityWorld, HospitalWorld, SportWorld]:
         tmpl = TmplClass()
         accs = {}
         for seed in range(5):
@@ -419,7 +423,7 @@ def test_question_quality():
     2. Synthesis direction diversity: both max and min present
     3. Update questions present when corrections exist
     """
-    for TmplClass in [CompanyWorld, ResearchWorld, CityWorld]:
+    for TmplClass in [CompanyWorld, ResearchWorld, CityWorld, HospitalWorld, SportWorld]:
         tmpl = TmplClass()
         entity_uniq_rates = []
         has_max = False
@@ -467,7 +471,7 @@ def test_document_volume():
     At 200 entities, total volume should exceed 40K chars.
     Volume pressure comes from entity quantity, not prose filler.
     """
-    for TmplClass in [CompanyWorld, ResearchWorld, CityWorld]:
+    for TmplClass in [CompanyWorld, ResearchWorld, CityWorld, HospitalWorld, SportWorld]:
         tmpl = TmplClass()
         world = tmpl.generate_world(seed=42, n_entities=200)
         rng = Random(42)
@@ -524,7 +528,7 @@ def test_abstention_not_identifiable():
 
 def test_fictitious_entity_not_in_world():
     """Verify abstention uses fictitious entities across all templates."""
-    for TmplClass in [CompanyWorld, ResearchWorld, CityWorld]:
+    for TmplClass in [CompanyWorld, ResearchWorld, CityWorld, HospitalWorld, SportWorld]:
         tmpl = TmplClass()
         for seed in range(3):
             world = tmpl.generate_world(seed=seed, n_entities=60)
@@ -621,38 +625,40 @@ def test_detect_stored_requires_values():
 
 
 def test_year_guessing_fails():
-    """V13: Blind year guessing must not pass numeric validation.
+    """V14: Integer GT requires exact match; float GT uses 2% tolerance.
 
-    Before fix, guessing 2000 for founded_year covered entire range
-    [1950,2023] due to 5% relative tolerance. After fix (0.5% for
-    |gt| > 500), only values within ±10 of GT pass.
+    Integer-exact matching completely prevents year/count guessing.
+    Float tolerance handles display rounding (e.g., $1234.5M → 1235).
     """
     from memorybench.evaluation.validators import AnswerValidator
     v = AnswerValidator()
 
-    # Blind guess 2000 must fail for extreme years
-    assert not v._numeric_match("2000", 1950), (
-        "Guess 2000 should fail for gt=1950 with V13 fix")
-    assert not v._numeric_match("2000", 1960), (
-        "Guess 2000 should fail for gt=1960 with V13 fix")
+    # Integer GT: exact match only
+    assert not v._numeric_match("2000", 1950), "Year guess must fail"
+    assert not v._numeric_match("2000", 1990), "Close year guess must fail"
+    assert v._numeric_match("1990", 1990), "Exact year must pass"
+    assert not v._numeric_match("1991", 1990), "Off-by-one year must fail"
+    assert v._numeric_match("150000", 150000), "Exact employee count must pass"
+    assert not v._numeric_match("150001", 150000), "Off-by-one count must fail"
+    assert v._numeric_match("150,000", 150000), "Comma-formatted must pass"
 
-    # Close guesses should still pass
-    assert v._numeric_match("1988", 1987), (
-        "1988 should pass for gt=1987 (0.05% error)")
-    assert v._numeric_match("2001", 2000), (
-        "2001 should pass for gt=2000 (0.05% error)")
+    # Float GT: 2% relative tolerance
+    assert v._numeric_match("1234", 1234.5), "Rounded float must pass"
+    assert v._numeric_match("25500", 25000.5), "~2% off float must pass"
+    assert not v._numeric_match("26000", 25000.5), "~4% off float must fail"
 
-    # Small values retain standard 5% tolerance
-    assert v._numeric_match("52", 50), (
-        "52 should pass for gt=50 (4% error, small value)")
-    assert v._numeric_match("105", 100), (
-        "105 should pass for gt=100 (5% error, small value)")
+    # String GT that looks like int (no decimal point)
+    assert v._numeric_match("42", "42"), "String int exact must pass"
+    assert not v._numeric_match("43", "42"), "String int off-by-one must fail"
 
-    # Large non-year values: 0.5% tolerance still allows format variations
-    assert v._numeric_match("100500", 100000), (
-        "100500 should pass for gt=100000 (0.5% error)")
-    assert not v._numeric_match("106000", 100000), (
-        "106000 should fail for gt=100000 (6% error, |gt| > 500)")
+    # String GT with decimal point → float tolerance
+    assert v._numeric_match("42", "42.0"), "Close to float GT must pass"
+    assert v._numeric_match("43", "42.5"), "~1% off float GT must pass"
+
+    # Large integer values: exact match required
+    assert v._numeric_match("100000", 100000), "Exact large int must pass"
+    assert not v._numeric_match("100500", 100000), (
+        "Off-by-500 integer must fail (V14 integer-exact)")
 
 
 def test_seed_not_in_visible_ids():
@@ -692,6 +698,201 @@ def test_judge_skips_abstention():
         or not any(c.isdigit() for c in agent_answer)
     )
     assert not skip2, "Retrieval with digits should reach judge"
+
+
+def test_stream_interleave():
+    """Interleaved stream must produce questions mid-ingest."""
+    for TmplClass in [CompanyWorld, ResearchWorld, CityWorld, HospitalWorld, SportWorld]:
+        tmpl = TmplClass()
+        for seed in range(5):
+            world = tmpl.generate_world(seed=seed, n_entities=60)
+            rng = Random(seed)
+            corrections = tmpl.generate_corrections(world, rng, 5)
+            stream = tmpl.generate_stream(
+                world, rng, corrections,
+                stored_names=set(), n_questions=20, entities_per_batch=10)
+
+            types = [e["type"] for e in stream]
+            q_count = types.count("question")
+            assert q_count == 20, (
+                f"{tmpl.name} seed={seed}: expected 20 questions, "
+                f"got {q_count}")
+
+            # Mid-stream questions: at least 1 question before last ingest
+            last_ingest = max(i for i, t in enumerate(types)
+                              if t == "ingest")
+            mid_q = sum(1 for i, t in enumerate(types)
+                        if t == "question" and i < last_ingest)
+            assert mid_q >= 1, (
+                f"{tmpl.name} seed={seed}: no mid-stream questions")
+
+
+def test_stream_invariants():
+    """Stream mode must preserve core invariants: perfect=100%, guesser=0%."""
+    from memorybench.bench import simulate_one_stream, STRATEGIES
+    for TmplClass in [CompanyWorld, ResearchWorld, CityWorld, HospitalWorld, SportWorld]:
+        tmpl = TmplClass()
+        accs = {}
+        for seed in range(5):
+            for profile in STRATEGIES:
+                r = simulate_one_stream(tmpl, seed, profile, 60, 20, 5)
+                accs.setdefault(profile["name"], []).append(r["accuracy"])
+        avgs = {n: sum(v) / len(v) for n, v in accs.items()}
+        assert avgs["perfect"] == 1.0, (
+            f"{tmpl.name}: stream perfect={avgs['perfect']:.0%} != 100%")
+        assert avgs["guesser"] == 0.0, (
+            f"{tmpl.name}: stream guesser={avgs['guesser']:.0%} != 0%")
+        assert avgs["strategic"] > avgs["naive"] + 0.10, (
+            f"{tmpl.name}: stream strategic={avgs['strategic']:.0%} "
+            f"not > naive={avgs['naive']:.0%} + 10%")
+
+
+def test_stream_determinism():
+    """Same seed must produce identical stream."""
+    tmpl = CompanyWorld()
+    for seed in range(3):
+        w1 = tmpl.generate_world(seed=seed, n_entities=60)
+        r1 = Random(seed)
+        c1 = tmpl.generate_corrections(w1, r1, 5)
+        s1 = tmpl.generate_stream(w1, r1, c1, set(), 20, 10)
+
+        w2 = tmpl.generate_world(seed=seed, n_entities=60)
+        r2 = Random(seed)
+        c2 = tmpl.generate_corrections(w2, r2, 5)
+        s2 = tmpl.generate_stream(w2, r2, c2, set(), 20, 10)
+
+        assert len(s1) == len(s2), f"seed={seed}: stream length differs"
+        for i, (a, b) in enumerate(zip(s1, s2)):
+            assert a["type"] == b["type"], (
+                f"seed={seed} event {i}: type {a['type']} != {b['type']}")
+            if a["type"] == "question":
+                assert a["question"] == b["question"], (
+                    f"seed={seed} event {i}: question differs")
+                assert a["answer"] == b["answer"], (
+                    f"seed={seed} event {i}: answer differs")
+
+
+def test_trick_retrieval():
+    """Trick retrieval questions exist and have real (non-ABSTAIN) GT."""
+    for TmplClass in [CompanyWorld, ResearchWorld, CityWorld, HospitalWorld, SportWorld]:
+        tmpl = TmplClass()
+        trick_found = 0
+        for seed in range(10):
+            world = tmpl.generate_world(seed=seed, n_entities=60)
+            rng = Random(seed + 7777)
+            corrections = tmpl.generate_corrections(world, Random(seed + 3333), 5)
+            qs = tmpl.gen_adaptive_questions(
+                world, rng, world.entities, set(), 20, corrections)
+            tricks = [q for q in qs if q.purpose == "trick_retrieval"]
+            for q in tricks:
+                # GT must be a real value, not ABSTAIN
+                assert q.answer != "ABSTAIN", (
+                    f"trick_retrieval GT should be real, got ABSTAIN")
+                # Competency is retrieval
+                assert q.competency == "retrieval"
+                # Required entity must exist in world
+                entity = world.get_entity(q.required_entities[0])
+                assert entity is not None, (
+                    f"trick_retrieval entity {q.required_entities[0]} not in world")
+            trick_found += len(tricks)
+        assert trick_found > 0, (
+            f"{tmpl.name}: no trick_retrieval questions across 10 seeds")
+
+
+def test_eval_salt():
+    """eval_salt changes values but preserves entity names and structure."""
+    for TmplClass in [CompanyWorld, ResearchWorld, CityWorld, HospitalWorld, SportWorld]:
+        tmpl = TmplClass()
+        w0 = tmpl.generate_world(seed=42, n_entities=20, eval_salt=0)
+        w1 = tmpl.generate_world(seed=42, n_entities=20, eval_salt=99)
+
+        # Same entity names
+        names0 = [e.name for e in w0.entities]
+        names1 = [e.name for e in w1.entities]
+        assert names0 == names1, f"{tmpl.name}: names differ with salt"
+
+        # Same active attrs
+        assert w0.active_attrs == w1.active_attrs
+
+        # Values must differ
+        changed = 0
+        total = 0
+        for e0, e1 in zip(w0.entities, w1.entities):
+            for attr in w0.active_attrs:
+                v0, v1 = e0.get(attr), e1.get(attr)
+                if v0 is not None:
+                    total += 1
+                    if v0 != v1:
+                        changed += 1
+        assert changed > total * 0.8, (
+            f"{tmpl.name}: only {changed}/{total} values changed with salt")
+
+        # Determinism: same salt → same values
+        w2 = tmpl.generate_world(seed=42, n_entities=20, eval_salt=99)
+        for e1, e2 in zip(w1.entities, w2.entities):
+            for attr in w1.active_attrs:
+                assert e1.get(attr) == e2.get(attr), (
+                    f"{tmpl.name}: same salt produces different values")
+
+
+def test_always_abstain_fails():
+    """An always-abstain strategy must score 0% on trick_retrieval.
+
+    This is the key anti-hack property: answering "I don't know" to
+    everything cannot score perfectly because trick_retrieval questions
+    have real answers.
+    """
+    from memorybench.evaluation.validators import AnswerValidator
+    validator = AnswerValidator()
+
+    for TmplClass in [CompanyWorld, ResearchWorld, CityWorld, HospitalWorld, SportWorld]:
+        tmpl = TmplClass()
+        for seed in range(5):
+            world = tmpl.generate_world(seed=seed, n_entities=60)
+            rng = Random(seed + 7777)
+            corrections = tmpl.generate_corrections(world, Random(seed + 3333), 5)
+            qs = tmpl.gen_adaptive_questions(
+                world, rng, world.entities, set(), 20, corrections)
+            tricks = [q for q in qs if q.purpose == "trick_retrieval"]
+            for q in tricks:
+                # Always-abstain answer
+                result = validator.validate(
+                    "I don't have enough information",
+                    q.answer, q.competency)
+                assert not result, (
+                    f"always-abstain scored on trick_retrieval: "
+                    f"GT={q.answer}, comp={q.competency}")
+
+
+def test_smart_guesser_ceiling():
+    """Midpoint/common-value guessing must stay below 5% accuracy.
+
+    The smart_guesser uses domain knowledge about attribute ranges to
+    make plausible guesses (midpoints, quartiles). V14's integer-exact
+    matching defeats this: random integers almost never match exact GT.
+    """
+    from memorybench.bench import _smart_guess, _VALIDATOR
+
+    for TmplClass in [CompanyWorld, ResearchWorld, CityWorld, HospitalWorld, SportWorld]:
+        tmpl = TmplClass()
+        correct_total = 0
+        question_total = 0
+        for seed in range(5):
+            world = tmpl.generate_world(seed=seed, n_entities=60)
+            rng_q = Random(seed + 7777)
+            corrections = tmpl.generate_corrections(world, Random(seed + 3333), 5)
+            qs = tmpl.gen_adaptive_questions(
+                world, rng_q, world.entities, set(), 20, corrections)
+            guess_rng = Random(seed + 9999)
+            for q in qs:
+                guess = _smart_guess(q, world, guess_rng)
+                if guess and _VALIDATOR.validate(guess, q.answer, q.competency):
+                    correct_total += 1
+                question_total += 1
+
+        accuracy = correct_total / question_total if question_total else 0
+        assert accuracy < 0.05, (
+            f"{tmpl.name} smart_guesser accuracy {accuracy:.1%} >= 5%")
 
 
 if __name__ == "__main__":
@@ -745,4 +946,18 @@ if __name__ == "__main__":
     print("  ✓ seed_not_in_visible_ids")
     test_judge_skips_abstention()
     print("  ✓ judge_skips_abstention")
+    test_stream_interleave()
+    print("  ✓ stream_interleave")
+    test_stream_invariants()
+    print("  ✓ stream_invariants")
+    test_stream_determinism()
+    print("  ✓ stream_determinism")
+    test_trick_retrieval()
+    print("  ✓ trick_retrieval")
+    test_always_abstain_fails()
+    print("  ✓ always_abstain_fails")
+    test_eval_salt()
+    print("  ✓ eval_salt")
+    test_smart_guesser_ceiling()
+    print("  ✓ smart_guesser_ceiling")
     print("ALL TESTS PASSED")

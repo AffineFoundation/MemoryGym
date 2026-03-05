@@ -15,12 +15,25 @@ class MemoryEntry:
 
 
 class MockBackend:
-    """Substring-based memory backend matching PoC behavior."""
+    """Substring-based memory backend matching mem0 interface."""
 
     def __init__(self) -> None:
         self.entries: list[MemoryEntry] = []
 
-    def add(self, content: str) -> str:
+    def store(self, content: str, memory_id: str | None = None) -> str:
+        """Store or update a memory entry. Returns the entry ID."""
+        if memory_id is not None:
+            for e in self.entries:
+                if e.id == memory_id:
+                    e.content = content
+                    return memory_id
+            # ID not found — fall through to create new entry with this ID
+            self.entries.append(MemoryEntry(
+                id=memory_id,
+                content=content,
+                created_at=datetime.now(timezone.utc).isoformat(),
+            ))
+            return memory_id
         entry_id = str(uuid.uuid4())
         self.entries.append(MemoryEntry(
             id=entry_id,
@@ -40,21 +53,24 @@ class MockBackend:
                 })
         return results[:top_k]
 
-    def update(self, entry_id: str, content: str) -> bool:
+    def get(self, memory_id: str) -> dict | None:
+        """Retrieve a single entry by ID."""
         for e in self.entries:
-            if e.id == entry_id:
-                e.content = content
-                return True
-        return False
+            if e.id == memory_id:
+                return {
+                    "id": e.id, "content": e.content,
+                    "created_at": e.created_at,
+                }
+        return None
 
-    def delete(self, entry_id: str) -> bool:
+    def forget(self, memory_id: str) -> bool:
         for i, e in enumerate(self.entries):
-            if e.id == entry_id:
+            if e.id == memory_id:
                 self.entries.pop(i)
                 return True
         return False
 
-    def list_all(self) -> list[dict]:
+    def list(self) -> list[dict]:
         return [
             {"id": e.id, "content": e.content, "created_at": e.created_at}
             for e in self.entries
