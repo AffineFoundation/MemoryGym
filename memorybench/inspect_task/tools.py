@@ -4,28 +4,41 @@ from __future__ import annotations
 
 from inspect_ai.tool import Tool, ToolError, tool
 
+from typing import Any
+
 from memorybench.memory.backends.chromadb_backend import ChromaDBBackend
-from memorybench.memory.backends.mock_backend import MockBackend
 from memorybench.memory.budget import BudgetExhaustedError, MemoryBudget
+
+# Type alias for any backend implementing store/search/get/forget/list
+MemoryBackend = Any
 
 
 def create_memory_tools(
     budget: int = 30,
     backend_type: str = "chromadb",
     collection_name: str = "memorybench",
-    backend: ChromaDBBackend | MockBackend | None = None,
-) -> tuple[list[Tool], MemoryBudget, ChromaDBBackend | MockBackend]:
+    backend: MemoryBackend | None = None,
+    mem0_config: dict | None = None,
+) -> tuple[list[Tool], MemoryBudget, MemoryBackend]:
     """Create all memory tools backed by a shared backend.
+
+    Args:
+        budget: Total write budget.
+        backend_type: "chromadb" (default) or "mem0".
+        collection_name: Collection name for ChromaDB backend.
+        backend: Pre-created backend (overrides backend_type).
+        mem0_config: Config dict for mem0 backend (only if backend_type="mem0").
 
     Returns:
         (list_of_tools, budget, backend) — budget and backend are returned
         for scorer / solver access.
     """
     if backend is None:
-        if backend_type == "chromadb":
-            backend = ChromaDBBackend(collection_name=collection_name)
+        if backend_type == "mem0":
+            from memorybench.memory.backends.mem0_backend import Mem0Backend
+            backend = Mem0Backend(config=mem0_config)
         else:
-            backend = MockBackend()
+            backend = ChromaDBBackend(collection_name=collection_name)
 
     mem_budget = MemoryBudget(total_writes=budget)
 

@@ -1,9 +1,16 @@
 """Real mem0 backend using the mem0ai Python SDK.
 
 Requires: pip install mem0ai
+
+mem0 uses an LLM to automatically extract and consolidate facts from
+raw text. This means a single store() call may create multiple memory
+entries (one per extracted fact). This is fundamentally different from
+ChromaDB which stores content verbatim.
 """
 
 from __future__ import annotations
+
+from typing import Any
 
 from mem0 import Memory
 
@@ -13,25 +20,67 @@ class Mem0Backend:
 
     Delegates all operations to the mem0 SDK, mapping the MemoryBench
     backend interface to mem0's API.
+
+    Args:
+        config: mem0 config dict. If None, uses defaults (requires
+            OPENAI_API_KEY). Example config for custom LLM/embedder::
+
+                {
+                    "llm": {"provider": "openai", "config": {
+                        "model": "deepseek-ai/DeepSeek-V3",
+                        "api_key": "...",
+                        "openai_base_url": "https://llm.chutes.ai/v1",
+                    }},
+                    "embedder": {"provider": "huggingface", "config": {
+                        "model": "all-MiniLM-L6-v2",
+                    }},
+                    "vector_store": {"provider": "qdrant", "config": {
+                        "collection_name": "memorybench",
+                        "path": "/tmp/mem0_qdrant",
+                        "embedding_model_dims": 384,
+                    }},
+                }
+        user_id: mem0 user ID for scoping memories.
     """
 
-    def __init__(self, user_id: str = "memorybench") -> None:
-        self._m = Memory()
+    def __init__(
+        self,
+        config: dict[str, Any] | None = None,
+        user_id: str = "memorybench",
+    ) -> None:
+        if config is not None:
+            self._m = Memory.from_config(config)
+        else:
+            self._m = Memory()
         self._user_id = user_id
 
     def store(self, content: str, memory_id: str | None = None) -> str:
-        """Store or update a memory entry. Returns the entry ID."""
+        """Store or update a memory entry. Returns the entry ID.
+
+        Note: mem0 uses LLM to extract facts. A single store() may
+        create multiple entries. Returns the first entry's ID.
+        """
         if memory_id is not None:
             self._m.update(memory_id, content)
             return memory_id
         result = self._m.add(content, user_id=self._user_id)
-        return result["id"]
+        # mem0 v1.0+ returns {"results": [{"id": ..., "memory": ...}, ...]}
+        entries = result.get("results", [])
+        if entries:
+            return entries[0]["id"]
+        return "unknown"
 
     def search(self, query: str, top_k: int = 5) -> list[dict]:
-        results = self._m.search(query, user_id=self._user_id, limit=top_k)
+        result = self._m.search(query, user_id=self._user_id, limit=top_k)
+        # mem0 v1.0+ returns {"results": [...]}
+        entries = result.get("results", []) if isinstance(result, dict) else result
         return [
-            {"id": r["id"], "content": r["memory"], "created_at": r.get("created_at", "")}
-            for r in results
+            {
+                "id": r["id"],
+                "content": r.get("memory", ""),
+                "created_at": r.get("created_at", ""),
+            }
+            for r in entries
         ]
 
     def get(self, memory_id: str) -> dict | None:
@@ -40,7 +89,11 @@ class Mem0Backend:
             r = self._m.get(memory_id)
             if not r:
                 return None
-            return {"id": r["id"], "content": r["memory"], "created_at": r.get("created_at", "")}
+            return {
+                "id": r["id"],
+                "content": r.get("memory", ""),
+                "created_at": r.get("created_at", ""),
+            }
         except Exception:
             return None
 
@@ -52,10 +105,15 @@ class Mem0Backend:
             return False
 
     def list(self) -> list[dict]:
-        results = self._m.get_all(user_id=self._user_id)
+        result = self._m.get_all(user_id=self._user_id)
+        entries = result.get("results", []) if isinstance(result, dict) else result
         return [
-            {"id": r["id"], "content": r["memory"], "created_at": r.get("created_at", "")}
-            for r in results
+            {
+                "id": r["id"],
+                "content": r.get("memory", ""),
+                "created_at": r.get("created_at", ""),
+            }
+            for r in entries
         ]
 
     def clear(self) -> None:

@@ -186,9 +186,9 @@ def _fmt(attr: str, val: Any) -> str:
     if attr == "budget_m":
         return f"${val:,.1f}M"
     if attr in ("readmission_pct", "mortality_rate"):
-        return f"{val:.1f}%"
+        return f"{val:.2f}%"
     if attr == "satisfaction_score":
-        return f"{val:.1f}/10"
+        return f"{val:.2f}/10"
     if attr == "wait_time_min":
         return f"{val} min"
     if attr == "accreditation_year":

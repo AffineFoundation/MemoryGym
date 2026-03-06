@@ -19,13 +19,19 @@ from random import Random
 
 from memorybench.evaluation.validators import AnswerValidator
 from memorybench.worlds import ALL_TEMPLATES
-from memorybench.worlds.base import Correction, GeneratedQA, World, WorldTemplate
+from memorybench.worlds.base import (
+    Correction, EntitySpec, GeneratedQA, World, WorldTemplate,
+)
 
 TEMPLATES = ALL_TEMPLATES
 
 STRATEGIES = [
     {"name": "perfect", "store_ratio": 1.0, "applies_updates": True},
     {"name": "strategic", "store_ratio": 0.7, "applies_updates": True},
+    {"name": "priority_strategic", "store_ratio": 0.5,
+     "applies_updates": True, "priority_store": True},
+    {"name": "random_strategic", "store_ratio": 0.5,
+     "applies_updates": True},
     {"name": "naive", "store_ratio": 0.4, "applies_updates": False},
     {"name": "guesser", "store_ratio": 0.0, "applies_updates": False},
     {"name": "abstainer", "store_ratio": 1.0, "applies_updates": True,
@@ -76,6 +82,46 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 
 _VALIDATOR = AnswerValidator()
+
+
+def _entity_priority_score(entity: EntitySpec, world: World) -> float:
+    """Score entity by question likelihood.
+
+    Higher score = more likely to appear in questions.
+    Factors:
+    - Category population: entities in larger categories are more likely
+      to appear in aggregation/synthesis/comparison questions.
+    - Attribute completeness: entities with more non-None attributes
+      are more useful for ratio/conditional questions.
+    - Extremeness: entities with extreme values (top/bottom 20%) are
+      more likely targets for synthesis (max/min) and outlier questions.
+    """
+    score = 0.0
+    # Category population bonus
+    cat_size = len(world.entities_in_category(entity.category))
+    score += min(cat_size, 10)  # cap at 10
+
+    # Attribute completeness
+    n_attrs = sum(1 for a in world.active_attrs
+                  if entity.get(a) is not None)
+    score += n_attrs * 0.5
+
+    # Extremeness: count how many attributes this entity ranks in
+    # top/bottom 20% among all entities
+    for attr in world.active_attrs:
+        val = entity.get(attr)
+        if not isinstance(val, (int, float)):
+            continue
+        all_vals = sorted(e.get(attr) for e in world.entities
+                          if isinstance(e.get(attr), (int, float)))
+        if len(all_vals) < 5:
+            continue
+        rank = sum(1 for v in all_vals if v <= val)
+        percentile = rank / len(all_vals)
+        if percentile <= 0.2 or percentile >= 0.8:
+            score += 2.0  # extreme value bonus
+
+    return score
 
 
 def _smart_guess(q: GeneratedQA, world: World, rng: Random) -> str | None:
@@ -197,6 +243,15 @@ def simulate_one(
         stored_docs = [doc for _, doc in all_docs]
     elif ratio <= 0.0:
         stored_docs = []
+    elif profile.get("priority_store"):
+        # Priority storage: score entities by question likelihood,
+        # store the top-N. Proves WHAT you store matters.
+        n_store = max(1, int(len(all_docs) * ratio))
+        scored = [(i, _entity_priority_score(e, world))
+                  for i, (e, _) in enumerate(all_docs)]
+        scored.sort(key=lambda x: -x[1])
+        indices = [i for i, _ in scored[:n_store]]
+        stored_docs = [all_docs[i][1] for i in indices]
     else:
         n_store = max(1, int(len(all_docs) * ratio))
         indices = rng_store.sample(range(len(all_docs)), n_store)
@@ -298,6 +353,13 @@ def simulate_one_stream(
         stored_docs = [doc for _, doc in all_docs]
     elif ratio <= 0.0:
         stored_docs = []
+    elif profile.get("priority_store"):
+        n_store = max(1, int(len(all_docs) * ratio))
+        scored = [(i, _entity_priority_score(e, world))
+                  for i, (e, _) in enumerate(all_docs)]
+        scored.sort(key=lambda x: -x[1])
+        indices = [i for i, _ in scored[:n_store]]
+        stored_docs = [all_docs[i][1] for i in indices]
     else:
         n_store = max(1, int(len(all_docs) * ratio))
         indices = rng_store.sample(range(len(all_docs)), n_store)
@@ -421,6 +483,14 @@ def run_validation(agg: dict, templates_used: list[str]) -> dict[str, bool]:
         checks[prefix + "guesser < 5%"] = g < 0.05
         checks[prefix + "strategic update > naive update"] = (
             comp_acc("strategic", "update") > comp_acc("naive", "update"))
+
+    # Priority vs random storage: WHAT you store matters
+    for tmpl_name in templates_used:
+        prefix = f"[{tmpl_name}] "
+        ps = avg_acc("priority_strategic")
+        rs = avg_acc("random_strategic")
+        if ps > 0 and rs > 0:
+            checks[prefix + "priority > random (same ratio)"] = ps > rs
 
     # Abstainer ceiling: always-abstain must stay below 20%
     for tmpl_name in templates_used:

@@ -194,9 +194,9 @@ def _fmt(attr: str, val: Any) -> str:
     if attr == "avg_temp_c":
         return f"{val:.1f}°C"
     if attr == "crime_rate":
-        return f"{val:.1f}/1K"
+        return f"{val:.2f}/1K"
     if attr == "green_space_pct":
-        return f"{val:.1f}%"
+        return f"{val:.2f}%"
     if attr == "transit_score":
         return f"{val}/100"
     if isinstance(val, int):

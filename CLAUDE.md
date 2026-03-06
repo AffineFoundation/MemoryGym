@@ -76,8 +76,8 @@ memorybench/
 ├── memory/
 │   ├── budget.py          # MemoryBudget (write limit enforcement)
 │   ├── backends/
-│   │   ├── mock_backend.py    # Substring search (for testing/simulation)
-│   │   └── chromadb_backend.py # Vector search (for real evaluation)
+│   │   ├── chromadb_backend.py # Vector search (default backend)
+│   │   └── mem0_backend.py     # mem0 SDK wrapper (optional: pip install mem0ai)
 │   ├── store.py           # MemoryStore (legacy, used by V3 simulation)
 │   └── mcp_server.py      # FastMCP server
 ├── inspect_task/

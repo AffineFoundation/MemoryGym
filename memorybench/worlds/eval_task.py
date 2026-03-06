@@ -5,9 +5,9 @@ Usage:
     inspect eval memorybench/worlds/eval_task.py -M openai/gpt-4o \
         -T seed=42 -T template=company
 
-    # Run with mock backend (faster, for testing):
+    # Run with mem0 backend:
     inspect eval memorybench/worlds/eval_task.py -M openai/gpt-4o \
-        -T seed=42 -T backend=mock -T n_entities=60
+        -T seed=42 -T backend=mem0
 """
 
 from __future__ import annotations
@@ -272,7 +272,7 @@ def worldbench(
         n_corrections: Number of correction events.
         n_questions: Number of questions to generate.
         write_budget: Total memory writes allowed.
-        backend: Memory backend ("chromadb" or "mock").
+        backend: Memory backend ("chromadb" or "mem0").
         entities_per_batch: Entities per ingest batch.
     """
     if seed is None:

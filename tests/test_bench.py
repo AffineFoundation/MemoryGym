@@ -163,9 +163,10 @@ class TestRunValidation:
         from collections import defaultdict
         agg = defaultdict(list)
         tmpl = TEMPLATES["company"]()
-        for s in STRATEGIES:
-            result = simulate_one(tmpl, seed=0, profile=s)
-            agg[s["name"]].append(result)
+        for seed in range(3):
+            for s in STRATEGIES:
+                result = simulate_one(tmpl, seed=seed, profile=s)
+                agg[s["name"]].append(result)
         checks = run_validation(dict(agg), ["company"])
         for check, passed in checks.items():
             assert passed, f"Validation failed: {check}"

@@ -8,7 +8,9 @@ from __future__ import annotations
 
 import pytest
 
-from memorybench.evaluation.validators import AnswerValidator, _normalize_entity
+from memorybench.evaluation.validators import (
+    AnswerValidator, _normalize_entity, validate_with_fallback,
+)
 
 V = AnswerValidator()
 
@@ -64,9 +66,24 @@ class TestExtractNumber:
         """_extract_number returns the first number found."""
         assert V._extract_number("3 items, salary $50,000") == 3.0
 
-    def test_negative_not_captured(self):
-        """Current regex does not capture sign; absolute value returned."""
-        assert V._extract_number("-42") == 42.0
+    def test_negative_captured(self):
+        """Negative sign is captured for temperature and similar values."""
+        assert V._extract_number("-42") == -42.0
+
+    def test_negative_decimal(self):
+        assert V._extract_number("-6.45") == -6.45
+
+    def test_negative_with_unit_suffix(self):
+        """Negative with non-K/M trailing chars (°C) — suffix ignored."""
+        assert V._extract_number("-6.5°C") == -6.5
+
+    def test_negative_match_float(self):
+        """Negative float GT: -6.5 vs -6.45 within 2% tolerance."""
+        assert V._numeric_match("-6.5", "-6.45")
+
+    def test_negative_wrong_sign_fails(self):
+        """Positive answer vs negative GT must fail."""
+        assert not V._numeric_match("6.5", "-6.45")
 
 
 # ── _entity_match ──
@@ -316,3 +333,126 @@ class TestNormalizeEntity:
         """'Dr.' alone → NOT stripped (regex requires trailing space + name)."""
         result = _normalize_entity("Dr.")
         assert result == "Dr."
+
+
+# ── K/M suffix handling ──
+
+
+class TestKMSuffixHandling:
+    """K/M as decorative labels vs multipliers — both interpretations tried."""
+
+    def test_m_label_on_retrieval(self):
+        """Agent copies display format '$498,985.9M' — M is a label, not ×10^6."""
+        assert V.validate("$498,985.9M", "498985.9", "retrieval")
+
+    def test_m_multiplier_on_retrieval(self):
+        """Agent uses M as multiplier: '2.5M' means 2,500,000."""
+        assert V.validate("2.5M", "2500000", "retrieval")
+
+    def test_k_label_on_retrieval(self):
+        """Agent copies display format '150K' where GT is 150000."""
+        assert V.validate("150K", "150000", "retrieval")
+
+    def test_k_label_raw_on_retrieval(self):
+        """Agent writes '150K' but GT is raw 150 (K is label)."""
+        assert V.validate("150K", "150", "retrieval")
+
+    def test_m_label_float_gt(self):
+        """Float GT with M-label answer within 2% tolerance."""
+        assert V.validate("$1,234.5M", "1234.5", "retrieval")
+
+    def test_m_label_integer_gt(self):
+        """Integer GT with M-label answer — exact match on raw digits."""
+        assert V.validate("$1987M", "1987", "retrieval")
+
+    def test_no_suffix_unchanged(self):
+        """Plain number without suffix — behavior unchanged."""
+        assert V.validate("498985.9", "498985.9", "retrieval")
+        assert V.validate("498986", "498985.9", "retrieval")  # ~0% off float
+
+    def test_guesser_still_fails(self):
+        """K/M suffix doesn't help guesser: wrong number is still wrong."""
+        assert not V.validate("$999,999.9M", "498985.9", "retrieval")
+        assert not V.validate("100K", "498985.9", "retrieval")
+
+    def test_extract_number_apply_suffix_false(self):
+        """apply_suffix=False ignores K/M."""
+        assert V._extract_number("2.5M", apply_suffix=False) == 2.5
+        assert V._extract_number("50K", apply_suffix=False) == 50.0
+
+    def test_extract_number_apply_suffix_true(self):
+        """apply_suffix=True applies K/M (default behavior)."""
+        assert V._extract_number("2.5M", apply_suffix=True) == 2500000.0
+        assert V._extract_number("50K", apply_suffix=True) == 50000.0
+
+
+# ── validate_with_fallback ──
+
+
+class TestValidateWithFallback:
+    """Rule-first, judge-fallback pipeline."""
+
+    def test_rule_pass_skips_judge(self):
+        """If rule passes, judge is never called."""
+        calls = []
+        def spy_judge(q, gt, ans, comp):
+            calls.append(1)
+            return True, "judge"
+        ok, reason = validate_with_fallback(
+            "50000", "50000", "retrieval", judge_fn=spy_judge)
+        assert ok
+        assert reason == "rule:pass"
+        assert len(calls) == 0
+
+    def test_rule_fail_calls_judge(self):
+        """If rule fails, judge is consulted."""
+        def fake_judge(q, gt, ans, comp):
+            return True, "format_variant"
+        ok, reason = validate_with_fallback(
+            "about fifty thousand", "50000", "retrieval",
+            question="What is X?", judge_fn=fake_judge)
+        assert ok
+        assert "judge:" in reason
+
+    def test_judge_fail_closed(self):
+        """Judge exception → fail closed (INCORRECT)."""
+        def broken_judge(q, gt, ans, comp):
+            raise RuntimeError("API down")
+        ok, reason = validate_with_fallback(
+            "about fifty thousand", "50000", "retrieval",
+            judge_fn=broken_judge)
+        assert not ok
+        assert "failed" in reason
+
+    def test_no_judge_rule_only(self):
+        """Without judge, pure rule-based."""
+        ok, reason = validate_with_fallback("50000", "50000", "retrieval")
+        assert ok
+        assert reason == "rule:pass"
+
+        ok, reason = validate_with_fallback("wrong", "50000", "retrieval")
+        assert not ok
+        assert reason == "rule:fail"
+
+    def test_abstention_always_rule(self):
+        """Abstention never calls judge (V10 authoritative)."""
+        calls = []
+        def spy_judge(q, gt, ans, comp):
+            calls.append(1)
+            return True, "judge"
+        ok, _ = validate_with_fallback(
+            "I don't know", "ABSTAIN", "abstention", judge_fn=spy_judge)
+        assert ok
+        assert len(calls) == 0
+
+    def test_km_label_passes_rule(self):
+        """K/M label fix means rule handles it — no judge needed."""
+        calls = []
+        def spy_judge(q, gt, ans, comp):
+            calls.append(1)
+            return True, "judge"
+        ok, reason = validate_with_fallback(
+            "$498,985.9M", "498985.9", "retrieval", judge_fn=spy_judge)
+        assert ok
+        assert reason == "rule:pass"
+        assert len(calls) == 0

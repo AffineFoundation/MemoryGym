@@ -7,8 +7,14 @@ from memorybench.agents.stream_agent import (
     SYSTEM_PROMPT,
     _TOOL_CALL_RE,
 )
-from memorybench.memory.backends.mock_backend import MockBackend
+from memorybench.memory.backends.chromadb_backend import ChromaDBBackend
 from memorybench.memory.budget import MemoryBudget
+
+
+def _fresh_backend():
+    """Create a fresh ChromaDB backend for each test."""
+    import uuid
+    return ChromaDBBackend(collection_name=f"test_{uuid.uuid4().hex[:8]}")
 
 
 def test_tool_call_regex():
@@ -39,7 +45,7 @@ def test_tool_call_regex_multiple():
 
 def test_execute_store():
     """memory_store creates an entry and consumes budget."""
-    backend = MockBackend()
+    backend = _fresh_backend()
     budget = MemoryBudget(total_writes=5)
     result, answer = _execute_tool(
         "memory_store", {"content": "Alice | salary: 100k"}, backend, budget)
@@ -52,7 +58,7 @@ def test_execute_store():
 
 def test_execute_store_budget_exhausted():
     """memory_store fails when budget is exhausted."""
-    backend = MockBackend()
+    backend = _fresh_backend()
     budget = MemoryBudget(total_writes=1, writes_used=1)
     result, answer = _execute_tool(
         "memory_store", {"content": "data"}, backend, budget)
@@ -63,7 +69,7 @@ def test_execute_store_budget_exhausted():
 
 def test_execute_search():
     """memory_search returns matching entries."""
-    backend = MockBackend()
+    backend = _fresh_backend()
     budget = MemoryBudget()
     backend.store("Alice | salary: 100k")
     backend.store("Bob | salary: 200k")
@@ -75,7 +81,7 @@ def test_execute_search():
 
 def test_execute_search_empty():
     """memory_search returns no results message."""
-    backend = MockBackend()
+    backend = _fresh_backend()
     budget = MemoryBudget()
     result, answer = _execute_tool(
         "memory_search", {"query": "nonexistent"}, backend, budget)
@@ -84,7 +90,7 @@ def test_execute_search_empty():
 
 def test_execute_forget():
     """memory_forget deletes an entry."""
-    backend = MockBackend()
+    backend = _fresh_backend()
     budget = MemoryBudget()
     entry_id = backend.store("Alice | salary: 100k")
     result, answer = _execute_tool(
@@ -95,7 +101,7 @@ def test_execute_forget():
 
 def test_execute_list():
     """memory_list returns all entries."""
-    backend = MockBackend()
+    backend = _fresh_backend()
     budget = MemoryBudget()
     backend.store("Alice | salary: 100k")
     backend.store("Bob | salary: 200k")
@@ -107,7 +113,7 @@ def test_execute_list():
 
 def test_execute_submit_answer():
     """submit_answer returns the answer."""
-    backend = MockBackend()
+    backend = _fresh_backend()
     budget = MemoryBudget()
     result, answer = _execute_tool(
         "submit_answer", {"answer": "42"}, backend, budget)
@@ -117,7 +123,7 @@ def test_execute_submit_answer():
 
 def test_parse_and_execute_store_then_answer():
     """Full parse+execute: store data, then submit answer."""
-    backend = MockBackend()
+    backend = _fresh_backend()
     budget = MemoryBudget(total_writes=5)
 
     text = (
@@ -134,7 +140,7 @@ def test_parse_and_execute_store_then_answer():
 
 def test_parse_and_execute_search_then_answer():
     """Parse+execute: search, then answer."""
-    backend = MockBackend()
+    backend = _fresh_backend()
     budget = MemoryBudget()
     backend.store("Alice | salary: 100k")
 
@@ -150,7 +156,7 @@ def test_parse_and_execute_search_then_answer():
 
 def test_parse_invalid_json_skipped():
     """Invalid JSON in tool_call is silently skipped."""
-    backend = MockBackend()
+    backend = _fresh_backend()
     budget = MemoryBudget()
     text = '<tool_call>{invalid json}</tool_call>'
     results, answer, n_w, n_s = _parse_and_execute(text, backend, budget)
@@ -177,7 +183,7 @@ def test_system_prompt_budget():
 
 def test_store_with_memory_id_update():
     """memory_store with memory_id updates existing entry."""
-    backend = MockBackend()
+    backend = _fresh_backend()
     budget = MemoryBudget(total_writes=5)
     entry_id = backend.store("Alice | salary: 100k")
     result, answer = _execute_tool(
@@ -193,7 +199,7 @@ def test_store_with_memory_id_update():
 
 def test_content_character_limit():
     """memory_store rejects content exceeding 2000 character limit."""
-    backend = MockBackend()
+    backend = _fresh_backend()
     budget = MemoryBudget(total_writes=5)
     long_content = "x" * 2001
     result, answer = _execute_tool(
@@ -204,7 +210,7 @@ def test_content_character_limit():
 
 def test_content_within_character_limit():
     """memory_store accepts content within 2000 character limit."""
-    backend = MockBackend()
+    backend = _fresh_backend()
     budget = MemoryBudget(total_writes=5)
     content = "x" * 2000
     result, answer = _execute_tool(

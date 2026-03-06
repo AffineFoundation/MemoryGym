@@ -187,7 +187,7 @@ def _fmt(attr: str, val: Any) -> str:
     if attr in ("revenue_m", "market_cap_m"):
         return f"${val:,.1f}M"
     if attr in ("profit_margin_pct", "debt_ratio_pct", "rd_spend_pct"):
-        return f"{val:.1f}%"
+        return f"{val:.2f}%"
     if attr in ("employees", "customer_count", "patent_count"):
         return f"{val:,}"
     return str(val)

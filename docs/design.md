@@ -14,7 +14,7 @@ MemoryBench evaluates LLM agents' **memory management** ability — the capacity
 |-------|--------|---------|
 | Evaluation framework | [Inspect AI](https://github.com/UKGovernmentBEIS/inspect_ai) | Task definition, agent loop, scoring |
 | Tool protocol | [MCP](https://modelcontextprotocol.io/) | Standardized agent-memory interaction |
-| Memory backend | ChromaDB / MockBackend | Vector storage for memory entries |
+| Memory backend | ChromaDB / mem0 | Vector storage for memory entries |
 | Simulation | Built-in agents | 5 strategy baselines (perfect, strategic, fixed, naive, guesser) |
 
 ## 2. Three-Layer Generation Pipeline

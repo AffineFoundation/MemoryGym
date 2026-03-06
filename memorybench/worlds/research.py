@@ -176,7 +176,7 @@ def _fmt(attr: str, val: Any) -> str:
     if attr == "funding_k":
         return f"${val:,.1f}K"
     if attr == "review_score":
-        return f"{val:.1f}/10"
+        return f"{val:.2f}/10"
     if isinstance(val, int):
         return f"{val:,}"
     return str(val)

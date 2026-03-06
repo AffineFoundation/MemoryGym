@@ -117,8 +117,8 @@ memorybench/
 │   └── stream_agent.py            # 真实 LLM Agent 运行器
 ├── memory/
 │   ├── backends/
-│   │   ├── mock_backend.py        # 子串搜索（测试用）
-│   │   └── chromadb_backend.py    # 向量搜索（生产用）
+│   │   ├── chromadb_backend.py    # 向量搜索（默认后端）
+│   │   └── mem0_backend.py        # mem0 SDK 封装（可选）
 │   └── budget.py                  # 写入预算管理
 └── inspect_task/
     └── tools.py                   # Inspect AI 工具定义

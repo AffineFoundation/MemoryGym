@@ -63,11 +63,12 @@ employees) require exact match. Float values allow ±2% tolerance.
 - synthesis/cross_domain/conditional: The agent must name the correct entity \
 AND provide the correct numeric value. Both must be present.
 
-IMPORTANT: Unit suffixes like "M" or "K" in agent answers are often just \
-labels, NOT multipliers. "$498,985.9M" means the value IS 498985.9, not \
-498985.9 million. Compare the raw number against the ground truth directly. \
-If the raw number (ignoring M/K suffix) matches the ground truth within \
-tolerance, the answer is CORRECT.
+IMPORTANT: Unit suffixes like "M" or "K" in agent answers may be decorative \
+labels matching the document format. Strip commas, $, and any trailing M/K \
+before comparing the raw numeric digits against the ground truth. \
+Example: GT=498985.9, answer="$498,985.9M" → digits are 498985.9 → CORRECT. \
+Example: GT=50000, answer="50K" → 50×1000=50000 → CORRECT. \
+Accept whichever interpretation (label or multiplier) matches the GT.
 
 Respond with ONLY these 2 lines (no reasoning, no explanation before):
 VERDICT_CORRECT or VERDICT_INCORRECT

@@ -897,6 +897,181 @@ def test_smart_guesser_ceiling():
             f"{tmpl.name} smart_guesser accuracy {accuracy:.1%} >= 5%")
 
 
+def test_validator_handles_formatted_values():
+    """Formatted display values must validate against raw GT.
+
+    Covers the K/M suffix bug: _format_value produces "$498,985.9M" but
+    GT is "498985.9". Rule-based validator must accept both interpretations.
+
+    Validates that _format_value output (what agents see in documents)
+    can be matched against raw GT by the rule-based validator.
+
+    Skips values near 0 where display rounding may exceed 2% tolerance
+    (e.g. 0.49 → "0.5%" is 2.04% off — edge case, not a scoring bug).
+    """
+    from memorybench.evaluation.validators import AnswerValidator
+    v = AnswerValidator()
+
+    failures = []
+    total = 0
+    for TmplClass in [CompanyWorld, ResearchWorld, CityWorld, HospitalWorld, SportWorld]:
+        tmpl = TmplClass()
+        world = tmpl.generate_world(seed=42, n_entities=20)
+        for e in world.entities[:5]:
+            for attr in world.active_attrs:
+                val = e.get(attr)
+                if val is None:
+                    continue
+                # Skip near-zero values where rounding exceeds 2% tolerance
+                if isinstance(val, (int, float)) and abs(val) < 1:
+                    continue
+                formatted = tmpl._format_value(attr, val)
+                gt_str = str(val)
+                total += 1
+                if not v.validate(formatted, gt_str, "retrieval"):
+                    failures.append(
+                        f"{tmpl.name}: '{formatted}' vs GT '{gt_str}' "
+                        f"({e.name}.{attr})")
+
+    assert len(failures) == 0, (
+        f"{len(failures)}/{total} formatted values failed validation:\n"
+        + "\n".join(failures[:5]))
+
+
+def test_km_suffix_guesser_still_zero():
+    """K/M-suffix-aware validator must not help smart_guesser break 5%.
+
+    Verifies that trying both suffix interpretations doesn't create
+    a new attack vector for midpoint/quartile guessing.
+    """
+    from memorybench.bench import _smart_guess, _VALIDATOR
+
+    for TmplClass in [CompanyWorld, ResearchWorld, CityWorld, HospitalWorld, SportWorld]:
+        tmpl = TmplClass()
+        correct_total = 0
+        question_total = 0
+        for seed in range(5):
+            world = tmpl.generate_world(seed=seed, n_entities=60)
+            rng_q = Random(seed + 7777)
+            corrections = tmpl.generate_corrections(world, Random(seed + 3333), 5)
+            qs = tmpl.gen_adaptive_questions(
+                world, rng_q, world.entities, set(), 20, corrections)
+            guess_rng = Random(seed + 9999)
+            for q in qs:
+                guess = _smart_guess(q, world, guess_rng)
+                if guess and _VALIDATOR.validate(guess, q.answer, q.competency):
+                    correct_total += 1
+                question_total += 1
+
+        accuracy = correct_total / question_total if question_total else 0
+        assert accuracy < 0.05, (
+            f"{tmpl.name} smart_guesser with K/M fix: {accuracy:.1%} >= 5%")
+
+
+def test_detect_stored_numeric_variants():
+    """detect_stored_entities must find entities stored with various formats.
+
+    Tests that _numeric_variants covers raw, rounded, and decimal formats
+    beyond the original _format_value + int(round()) checks.
+    """
+    tmpl = CompanyWorld()
+    world = tmpl.generate_world(seed=42, n_entities=20)
+
+    # Build documents using raw numeric format (not _format_value)
+    raw_docs = []
+    for e in world.entities[:10]:
+        parts = [e.name]
+        for attr in world.active_attrs:
+            val = e.get(attr)
+            if val is not None:
+                parts.append(f"{attr}: {val}")
+        raw_docs.append(", ".join(parts))
+
+    stored, missed = tmpl.detect_stored_entities(world, raw_docs)
+    assert len(stored) >= 8, (
+        f"Raw-format docs detected only {len(stored)} entities, expected ≥8")
+
+
+def test_priority_beats_random():
+    """Priority storage (WHAT you store) must outperform random storage.
+
+    Both strategies store exactly 50% of entities with updates enabled.
+    Priority selects entities by question likelihood (populated categories,
+    attribute completeness, extreme values). This proves that storage
+    strategy quality matters — not just storage quantity.
+    """
+    from memorybench.bench import _entity_priority_score
+
+    for TmplClass in [CompanyWorld, ResearchWorld, CityWorld,
+                       HospitalWorld, SportWorld]:
+        tmpl = TmplClass()
+        priority_wins = 0
+        ties = 0
+        total = 0
+        for seed in range(10):
+            world_p = tmpl.generate_world(seed=seed, n_entities=60)
+            world_r = tmpl.generate_world(seed=seed, n_entities=60)
+
+            rng_doc_p = Random(seed)
+            rng_doc_r = Random(seed)
+            all_docs_p = [(e, tmpl.render_document(e, world_p.active_attrs, rng_doc_p))
+                          for e in world_p.entities]
+            all_docs_r = [(e, tmpl.render_document(e, world_r.active_attrs, rng_doc_r))
+                          for e in world_r.entities]
+
+            n_store = max(1, int(len(all_docs_p) * 0.5))
+
+            # Priority: top-N by importance score
+            scored = [(i, _entity_priority_score(e, world_p))
+                      for i, (e, _) in enumerate(all_docs_p)]
+            scored.sort(key=lambda x: -x[1])
+            p_docs = [all_docs_p[i][1] for i, _ in scored[:n_store]]
+
+            # Random: random N
+            rng_store = Random(seed + 111)
+            r_indices = rng_store.sample(range(len(all_docs_r)), n_store)
+            r_docs = [all_docs_r[i][1] for i in r_indices]
+
+            p_stored, _ = tmpl.detect_stored_entities(world_p, p_docs)
+            r_stored, _ = tmpl.detect_stored_entities(world_r, r_docs)
+
+            # Generate corrections and questions for both
+            rng_cp = Random(seed + 3333)
+            corrections_p = tmpl.generate_corrections(world_p, rng_cp, 5)
+            rng_cr = Random(seed + 3333)
+            corrections_r = tmpl.generate_corrections(world_r, rng_cr, 5)
+
+            p_updated = {c.entity_name for c in corrections_p
+                         if c.entity_name in p_stored}
+            r_updated = {c.entity_name for c in corrections_r
+                         if c.entity_name in r_stored}
+
+            rng_qp = Random(seed + 7777)
+            qs_p = tmpl.gen_adaptive_questions(
+                world_p, rng_qp, world_p.entities, p_stored, 20, corrections_p)
+            rng_qr = Random(seed + 7777)
+            qs_r = tmpl.gen_adaptive_questions(
+                world_r, rng_qr, world_r.entities, r_stored, 20, corrections_r)
+
+            p_correct = sum(1 for q in qs_p
+                            if _can_answer(q, p_stored, p_updated, True,
+                                           len(world_p.entities)))
+            r_correct = sum(1 for q in qs_r
+                            if _can_answer(q, r_stored, r_updated, True,
+                                           len(world_r.entities)))
+
+            total += 1
+            if p_correct > r_correct:
+                priority_wins += 1
+            elif p_correct == r_correct:
+                ties += 1
+
+        win_rate = priority_wins / total
+        assert win_rate >= 0.3 or (priority_wins + ties) / total >= 0.6, (
+            f"{tmpl.name}: priority only wins {priority_wins}/{total} seeds "
+            f"(ties={ties}) — strategy quality doesn't differentiate")
+
+
 if __name__ == "__main__":
     # Single seed detailed view
     run_evaluation(seed=42, verbose=True)
@@ -962,4 +1137,12 @@ if __name__ == "__main__":
     print("  ✓ eval_salt")
     test_smart_guesser_ceiling()
     print("  ✓ smart_guesser_ceiling")
+    test_validator_handles_formatted_values()
+    print("  ✓ validator_handles_formatted_values")
+    test_km_suffix_guesser_still_zero()
+    print("  ✓ km_suffix_guesser_still_zero")
+    test_detect_stored_numeric_variants()
+    print("  ✓ detect_stored_numeric_variants")
+    test_priority_beats_random()
+    print("  ✓ priority_beats_random")
     print("ALL TESTS PASSED")

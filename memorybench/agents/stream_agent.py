@@ -19,8 +19,12 @@ from openai import OpenAI
 load_dotenv()
 
 from memorybench.evaluation.llm_judge import llm_judge_validate_sync
-from memorybench.memory.backends.mock_backend import MockBackend
+from memorybench.evaluation.validators import validate_with_fallback
+from memorybench.memory.backends.chromadb_backend import ChromaDBBackend
 from memorybench.memory.budget import MemoryBudget
+
+# Type alias: any backend implementing store/search/get/forget/list
+MemoryBackend = Any
 
 SYSTEM_PROMPT = """You are participating in a memory management evaluation.
 
@@ -87,7 +91,7 @@ def _format_documents(docs: list[str]) -> str:
 
 
 def _execute_tool(
-    name: str, args: dict, backend: MockBackend, budget: MemoryBudget,
+    name: str, args: dict, backend: MemoryBackend, budget: MemoryBudget,
 ) -> tuple[str, str | None]:
     """Execute a tool call. Returns (result_text, submitted_answer_or_None)."""
     if name == "submit_answer":
@@ -136,7 +140,7 @@ def _execute_tool(
 
 
 def _parse_and_execute(
-    text: str, backend: MockBackend, budget: MemoryBudget,
+    text: str, backend: MemoryBackend, budget: MemoryBudget,
 ) -> tuple[list[str], str | None, int, int]:
     """Parse tool_call blocks and execute. Returns (results, answer, writes, searches)."""
     results = []
@@ -178,7 +182,7 @@ class _LoopStats:
 
 def _run_tool_loop(
     client: OpenAI, model: str, messages: list[dict],
-    backend: MockBackend, budget: MemoryBudget,
+    backend: MemoryBackend, budget: MemoryBudget,
     max_turns: int = 10,
 ) -> _LoopStats:
     """Run text-based tool loop until submit_answer or max_turns."""
@@ -220,6 +224,7 @@ def run_stream_agent(
     api_base: str | None = None,
     api_key: str | None = None,
     verbose: bool = False,
+    backend: MemoryBackend | None = None,
 ) -> tuple[list[AgentResult], int, list[dict]]:
     """Run a real LLM agent on a WorldTemplate event stream.
 
@@ -230,6 +235,8 @@ def run_stream_agent(
         api_base: API base URL (default: OpenAI).
         api_key: API key (default: from env).
         verbose: Print per-event details.
+        backend: Memory backend (default: ChromaDBBackend). Pass a Mem0Backend
+            for mem0-based memory.
 
     Returns:
         (results, writes_used, stored_contents)
@@ -253,7 +260,8 @@ def run_stream_agent(
         base_url="https://llm.chutes.ai/v1",
     )
 
-    backend = MockBackend()
+    if backend is None:
+        backend = ChromaDBBackend()
     budget = MemoryBudget(total_writes=write_budget)
 
     total_events = len(stream)
@@ -323,24 +331,29 @@ def run_stream_agent(
             agent_answer = stats.answer or ""
             gt = str(event["answer"])
 
+            def _judge_fn(q, gt_, ans, comp):
+                return llm_judge_validate_sync(
+                    judge_client, q, gt_, ans, comp)
+
             judge_t0 = time.time()
-            is_correct, reason = llm_judge_validate_sync(
-                judge_client,
-                event["question"], gt, agent_answer,
-                event["competency"],
+            is_correct, reason = validate_with_fallback(
+                agent_answer, gt, event["competency"],
+                question=event["question"],
+                judge_fn=_judge_fn,
             )
             judge_elapsed = time.time() - judge_t0
 
             mark = "+" if is_correct else "-"
+            via = reason.split(":")[0]  # "rule" or "judge"
             print(f" {mark} {stats.api_calls} calls {stats.elapsed:.1f}s "
-                  f"judge={judge_elapsed:.1f}s "
+                  f"via={via} {judge_elapsed:.1f}s "
                   f"budget={budget.remaining()}")
 
             if verbose:
                 print(f"           A={agent_answer[:60]}")
                 print(f"          GT={gt[:60]}")
                 if reason:
-                    print(f"       Judge: {reason}")
+                    print(f"       Valid: {reason}")
 
             results.append(AgentResult(
                 question=event["question"],

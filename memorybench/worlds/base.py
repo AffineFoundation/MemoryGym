@@ -786,6 +786,22 @@ class WorldTemplate(ABC):
 
     # ── Concrete: post-storage adaptive questioning ──
 
+    def _numeric_variants(self, attr: str, val: Any) -> list[str]:
+        """Generate string variants of a value for fuzzy detection.
+
+        Covers formatted display, raw numeric, rounded integer, and
+        common decimal representations an agent might use when compressing.
+        """
+        variants: list[str] = []
+        variants.append(self._format_value(attr, val).lower().replace(",", ""))
+        if isinstance(val, (int, float)):
+            variants.append(str(val).lower())
+            variants.append(str(int(round(val))))
+            if isinstance(val, float):
+                variants.append(f"{val:.1f}")
+                variants.append(f"{val:.0f}")
+        return variants
+
     def detect_stored_entities(
         self, world: World, stored_contents: list[str],
     ) -> tuple[set[str], set[str]]:
@@ -793,9 +809,9 @@ class WorldTemplate(ABC):
 
         Anti-hack: requires entity name AND at least one attribute value
         to appear in the SAME stored entry. Name-only packing without
-        values won't inflate coverage. Checks both formatted values
-        (as they appear in documents) and raw/rounded numerics (as an
-        agent might compress them).
+        values won't inflate coverage. Checks multiple value representations
+        (formatted, raw, rounded, decimal) to handle agent compression
+        and backend reformulation.
         """
         stored: set[str] = set()
         missed: set[str] = set()
@@ -810,16 +826,10 @@ class WorldTemplate(ABC):
                     val = e.get(a)
                     if val is None:
                         continue
-                    # Formatted value (matches full document renders)
-                    fmt = self._format_value(a, val).lower().replace(",", "")
-                    if fmt in cl:
+                    variants = self._numeric_variants(a, val)
+                    if any(v in cl for v in variants):
                         found = True
                         break
-                    # Rounded integer (matches compressed storage)
-                    if isinstance(val, (int, float)):
-                        if str(int(round(val))) in cl:
-                            found = True
-                            break
                 if found:
                     break
             (stored if found else missed).add(e.name)
