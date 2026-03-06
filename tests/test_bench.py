@@ -202,7 +202,7 @@ class TestRunValidation:
         from collections import defaultdict
         agg = defaultdict(list)
         tmpl = TEMPLATES["company"]()
-        for seed in range(3):
+        for seed in range(10):
             for s in STRATEGIES:
                 result = simulate_one(tmpl, seed=seed, profile=s)
                 agg[s["name"]].append(result)

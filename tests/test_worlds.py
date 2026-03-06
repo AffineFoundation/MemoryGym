@@ -1093,6 +1093,87 @@ def test_format_roundtrip_in_simulation():
                     f"GT={q.answer!r} (competency={q.competency})")
 
 
+def test_adaptive_comprehension():
+    """Comprehension questions must only reference stored entities.
+
+    When stored_names is provided, all comprehension questions should
+    reference entities within that set. This ensures the reasoning axis
+    tests reasoning ability, not storage luck.
+    """
+    for TmplClass in [CompanyWorld, ResearchWorld, CityWorld,
+                       HospitalWorld, SportWorld]:
+        tmpl = TmplClass()
+        for seed in range(5):
+            world = tmpl.generate_world(seed=seed, n_entities=60)
+            rng = Random(seed)
+            corrections = tmpl.generate_corrections(world, rng, 5)
+
+            # Only store first 30 entities (50% coverage)
+            stored = {e.name for e in world.entities[:30]}
+            rng_q = Random(seed + 7777)
+            questions = tmpl.gen_adaptive_questions(
+                world, rng_q, world.entities, stored, 20, corrections)
+
+            comp_types = {"synthesis", "aggregation", "conditional",
+                          "ratio", "comparison", "multi_hop", "outlier"}
+            for q in questions:
+                if q.competency in comp_types:
+                    needed = set(q.required_entities)
+                    assert needed <= stored, (
+                        f"{tmpl.name} seed={seed}: {q.competency} "
+                        f"references unstored entities: "
+                        f"{needed - stored}")
+
+
+def test_maybe_replace_comprehension():
+    """maybe_replace_comprehension replaces unanswerable questions."""
+    tmpl = CompanyWorld()
+    world = tmpl.generate_world(seed=0, n_entities=60)
+
+    # Simulate storing first 30 entities
+    stored_contents = []
+    for e in world.entities[:30]:
+        doc = tmpl._compact_document(e, world.active_attrs)
+        stored_contents.append(f"{e.name} | {doc}")
+
+    # Create a question referencing unstored entities
+    unstored = world.entities[50]
+    bad_event = {
+        "type": "question",
+        "question": f"What is {unstored.name}'s revenue?",
+        "answer": "test",
+        "competency": "synthesis",
+        "purpose": "comprehension",
+        "required_entities": [unstored.name],
+        "source_attr": "revenue_m",
+    }
+
+    replaced = tmpl.maybe_replace_comprehension(
+        bad_event, world, stored_contents, rng_seed=42)
+
+    # Should be replaced with a question about stored entities
+    assert replaced is not bad_event, "Question should have been replaced"
+    stored_names = {e.name for e in world.entities[:30]}
+    new_entities = set(replaced["required_entities"])
+    assert new_entities <= stored_names, (
+        f"Replacement references unstored: {new_entities - stored_names}")
+
+    # A question with all stored entities should NOT be replaced
+    stored_entity = world.entities[0]
+    good_event = {
+        "type": "question",
+        "question": f"What is {stored_entity.name}'s revenue?",
+        "answer": "test",
+        "competency": "comparison",
+        "purpose": "comprehension",
+        "required_entities": [stored_entity.name, world.entities[1].name],
+        "source_attr": "revenue_m",
+    }
+    not_replaced = tmpl.maybe_replace_comprehension(
+        good_event, world, stored_contents, rng_seed=42)
+    assert not_replaced is good_event, "Stored question should not be replaced"
+
+
 if __name__ == "__main__":
     # Single seed detailed view
     run_evaluation(seed=42, verbose=True)

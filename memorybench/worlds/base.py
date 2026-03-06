@@ -849,6 +849,66 @@ class WorldTemplate(ABC):
             (stored if found else missed).add(e.name)
         return stored, missed
 
+    def maybe_replace_comprehension(
+        self, event: dict, world: World,
+        stored_contents: list[str], rng_seed: int,
+    ) -> dict:
+        """Replace a comprehension question if required entities aren't stored.
+
+        For real eval paths where comprehension questions are pre-generated
+        from all entities (stored_names unknown at build time). At runtime,
+        checks if all required_entities are actually stored. If not,
+        generates a new question from stored entities only.
+
+        Returns the original event if replacement isn't needed or possible.
+        """
+        comp = event.get("competency", "")
+        if comp in ("retrieval", "update", "abstention", "delta"):
+            return event
+
+        required = set(event.get("required_entities", []))
+        if not required:
+            return event
+
+        stored, _ = self.detect_stored_entities(world, stored_contents)
+        if required <= stored:
+            return event
+
+        stored_pool = [e for e in world.entities if e.name in stored]
+        if len(stored_pool) < 2:
+            return event
+
+        rng = Random(rng_seed)
+        fn_map = {
+            "synthesis": self._gq_synthesis,
+            "aggregation": self._gq_aggregation,
+            "conditional": self._gq_conditional,
+            "ratio": self._gq_ratio,
+            "comparison": self._gq_comparison,
+            "multi_hop": self._gq_multi_hop,
+            "outlier": self._gq_outlier,
+        }
+
+        # Try original comp type first, then others
+        for attempt_comp in [comp] + [c for c in fn_map if c != comp]:
+            fn = fn_map.get(attempt_comp)
+            if not fn:
+                continue
+            q = fn(world, rng, stored_pool)
+            if q:
+                q.purpose = "comprehension"
+                return {
+                    "type": "question",
+                    "question": q.question,
+                    "answer": q.answer,
+                    "competency": q.competency,
+                    "purpose": q.purpose,
+                    "required_entities": q.required_entities,
+                    "source_attr": q.source_attr,
+                }
+
+        return event
+
     def generate_stream(
         self, world: World, rng: Random,
         corrections: list[Correction],
@@ -980,7 +1040,9 @@ class WorldTemplate(ABC):
                 q.purpose = "update"
                 return q
         elif roll < 0.90 and len(introduced) >= 5:
-            q = self._gq_synthesis(world, rng, introduced)
+            comp_pool = ([e for e in introduced if e.name in stored_names]
+                         if stored_names else introduced)
+            q = self._gq_synthesis(world, rng, comp_pool)
             if q:
                 q.purpose = "comprehension"
                 return q
@@ -1071,7 +1133,16 @@ class WorldTemplate(ABC):
                     used_delta_entities.add(q.required_entities[0])
                     questions.append(q)
 
-        # Comprehension: multi-step reasoning + basic computation
+        # Comprehension: multi-step reasoning + basic computation.
+        # Use stored entities as the candidate pool when available.
+        # This ensures comprehension questions test reasoning ability,
+        # not whether the agent happened to store the right entities.
+        # When stored_names is empty (pre-generation), falls back to
+        # introduced (all entities seen so far).
+        if stored_names:
+            comp_pool = [e for e in introduced if e.name in stored_names]
+        else:
+            comp_pool = introduced
         comp_types = ["synthesis", "aggregation", "conditional",
                       "ratio", "comparison", "multi_hop", "outlier"]
         rng.shuffle(comp_types)
@@ -1084,7 +1155,7 @@ class WorldTemplate(ABC):
                   "comparison": self._gq_comparison,
                   "multi_hop": self._gq_multi_hop,
                   "outlier": self._gq_outlier}[ctype]
-            q = fn(world, rng, introduced)
+            q = fn(world, rng, comp_pool)
             if q:
                 q.purpose = "comprehension"
                 questions.append(q)

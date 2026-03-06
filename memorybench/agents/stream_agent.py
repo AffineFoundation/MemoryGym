@@ -225,6 +225,9 @@ def run_stream_agent(
     api_key: str | None = None,
     verbose: bool = False,
     backend: MemoryBackend | None = None,
+    world: Any = None,
+    template: Any = None,
+    seed: int = 0,
 ) -> tuple[list[AgentResult], int, list[dict]]:
     """Run a real LLM agent on a WorldTemplate event stream.
 
@@ -237,6 +240,9 @@ def run_stream_agent(
         verbose: Print per-event details.
         backend: Memory backend (default: ChromaDBBackend). Pass a Mem0Backend
             for mem0-based memory.
+        world: World instance for adaptive comprehension questions.
+        template: WorldTemplate instance for adaptive comprehension questions.
+        seed: Random seed for replacement question generation.
 
     Returns:
         (results, writes_used, stored_contents)
@@ -315,6 +321,13 @@ def run_stream_agent(
                   f"budget={budget.remaining()}")
 
         elif event_type == "question":
+            # Adaptive comprehension: replace if required entities not stored
+            if world is not None and template is not None:
+                stored_contents = [e["content"] for e in backend.list()]
+                event = template.maybe_replace_comprehension(
+                    event, world, stored_contents,
+                    rng_seed=seed + event_idx,
+                )
             print(f"  {event_label} QUESTION [{event['competency']:12s}] ...",
                   end="", flush=True)
 

@@ -164,14 +164,26 @@ def worldbench_solver(
 
     Processes ingest, correction, and question events from a single stream.
     Nuclear redaction after each event prevents context window exploitation.
+
+    Comprehension questions are adaptively replaced at runtime: if required
+    entities are not in the backend, a new question is generated from
+    entities the agent actually stored.
     """
 
     async def solve(state: TaskState, generate: Generate) -> TaskState:
         stream: list[dict] = stream_data["stream"]
+        world: World = stream_data["world"]
+        tmpl: WorldTemplate = stream_data["template"]
         total_events = len(stream)
 
         answers: list[dict[str, Any]] = []
         qi = 0  # question counter
+
+        # Anchor: keep only initial messages (system prompt + sample input).
+        # After each event, delete everything past this point and add 2
+        # placeholder messages. Matches stream_agent.py behavior — agent
+        # sees a clean context each event, no history accumulation.
+        initial_len = len(state.messages)
 
         for event_idx, event in enumerate(stream):
             msg_start = len(state.messages)
@@ -184,12 +196,12 @@ def worldbench_solver(
                         event_num=event_idx + 1, total_events=total_events,
                         documents=docs_text)))
                 state = await generate(state, tool_calls="loop")
-                # Nuclear redaction
-                del state.messages[msg_start:]
+                # Nuclear redaction: reset to initial state
+                del state.messages[initial_len:]
                 state.messages.append(ChatMessageUser(
-                    content=f"[Event {event_idx+1}/{total_events} completed.]"))
+                    content=f"[{event_idx+1}/{total_events} done]"))
                 state.messages.append(ChatMessageAssistant(
-                    content="Event processed."))
+                    content="OK."))
 
             elif event_type == "correction":
                 state.messages.append(ChatMessageUser(
@@ -197,14 +209,23 @@ def worldbench_solver(
                         event_num=event_idx + 1, total_events=total_events,
                         notice=event["notice"])))
                 state = await generate(state, tool_calls="loop")
-                del state.messages[msg_start:]
+                del state.messages[initial_len:]
                 state.messages.append(ChatMessageUser(
-                    content=f"[Event {event_idx+1}/{total_events} completed.]"))
+                    content=f"[{event_idx+1}/{total_events} done]"))
                 state.messages.append(ChatMessageAssistant(
-                    content="Event processed."))
+                    content="OK."))
 
             elif event_type == "question":
                 qi += 1
+                # Adaptive comprehension: replace questions whose
+                # required entities aren't stored in the backend.
+                if backend is not None:
+                    stored_contents = [
+                        e["content"] for e in backend.list()]
+                    event = tmpl.maybe_replace_comprehension(
+                        event, world, stored_contents,
+                        rng_seed=stream_data["seed"] + event_idx,
+                    )
                 state.messages.append(ChatMessageUser(
                     content=QUESTION_TEMPLATE.format(
                         event_num=event_idx + 1, total_events=total_events,
@@ -215,12 +236,12 @@ def worldbench_solver(
                 n_writes, n_searches = _count_tool_calls(
                     state.messages, msg_start)
 
-                # Nuclear redaction
-                del state.messages[msg_start:]
+                # Nuclear redaction: reset to initial state
+                del state.messages[initial_len:]
                 state.messages.append(ChatMessageUser(
-                    content=f"[Event {event_idx+1}/{total_events} completed.]"))
+                    content=f"[{event_idx+1}/{total_events} done]"))
                 state.messages.append(ChatMessageAssistant(
-                    content="Event processed."))
+                    content="OK."))
 
                 answers.append({
                     "task_id": qi - 1,

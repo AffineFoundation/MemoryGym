@@ -155,6 +155,9 @@ def main(argv: list[str] | None = None) -> int:
                     write_budget=30,
                     api_base=args.api_base,
                     verbose=args.verbose,
+                    world=world,
+                    template=tmpl,
+                    seed=seed,
                 )
 
                 # Convert to standard format
