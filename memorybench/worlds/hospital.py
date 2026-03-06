@@ -16,7 +16,9 @@ from __future__ import annotations
 from random import Random
 from typing import Any
 
-from memorybench.worlds.base import AttrDef, EntitySpec, WorldTemplate
+from memorybench.worlds.base import (
+    AttrDef, EntitySpec, SentenceTemplate, WorldTemplate, _possessive,
+)
 
 _ADJECTIVES = [
     "Central", "Memorial", "Regional", "General", "Community", "University",
@@ -111,6 +113,75 @@ _Q_TEXTS: dict[str, list[str]] = {
 }
 
 
+_SENTENCE_TMPLS: dict[str, list[tuple[str, str]]] = {
+    "beds": [
+        ("has a capacity of {val} patient beds", "none"),
+        ("bed count increased from {distractor} to {val}", "temporal"),
+        ("operates {val} beds, though only {distractor} are currently "
+         "staffed", "qualified"),
+    ],
+    "staff_count": [
+        ("employs {val} medical and administrative staff", "none"),
+        ("staffing grew from {distractor} to {val}", "temporal"),
+        ("has {val} total staff, compared to {other_name}'s {other_val}",
+         "comparative"),
+    ],
+    "annual_patients": [
+        ("treats {val} patients annually", "none"),
+        ("patient volume rose from {distractor} to {val}", "temporal"),
+        ("sees {val} patients per year, of which {distractor} are "
+         "outpatient", "qualified"),
+    ],
+    "readmission_pct": [
+        ("reports a readmission rate of {val}", "none"),
+        ("readmission rate changed from {distractor} to {val}", "temporal"),
+        ("has {val} readmission rate, versus {other_name}'s {other_val}",
+         "comparative"),
+    ],
+    "mortality_rate": [
+        ("maintains a mortality rate of {val}", "none"),
+        ("mortality rate shifted from {distractor} to {val}", "temporal"),
+        ("records {val} mortality, compared to {other_name}'s "
+         "{other_val}", "comparative"),
+    ],
+    "satisfaction_score": [
+        ("earned a patient satisfaction score of {val}", "none"),
+        ("satisfaction improved from {distractor} to {val}", "temporal"),
+        ("rated {val} by patients, outperforming {other_name} at "
+         "{other_val}", "comparative"),
+    ],
+    "wait_time_min": [
+        ("has an average wait time of {val}", "none"),
+        ("wait times changed from {distractor} to {val}", "temporal"),
+        ("averages {val} wait, though emergency cases wait only "
+         "{distractor}", "qualified"),
+    ],
+    "operating_rooms": [
+        ("is equipped with {val} operating rooms", "none"),
+        ("OR count grew from {distractor} to {val}", "temporal"),
+        ("has {val} operating rooms, of which {distractor} are for "
+         "outpatient procedures", "qualified"),
+    ],
+    "budget_m": [
+        ("operates with an annual budget of {val}", "none"),
+        ("budget increased from {distractor} to {val}", "temporal"),
+        ("runs on {val}, compared to {other_name}'s {other_val}",
+         "comparative"),
+    ],
+    "accreditation_year": [
+        ("received its most recent accreditation in {val}", "none"),
+        ("was accredited in {val}, updating from {distractor}", "temporal"),
+        ("accredited in {val}, alongside {other_name}", "comparative"),
+    ],
+}
+
+_RATIO_PAIRS = [
+    ("annual_patients", "beds", "patients per bed"),
+    ("staff_count", "beds", "staff per bed"),
+    ("budget_m", "annual_patients", "budget per patient in $M"),
+]
+
+
 def _fmt(attr: str, val: Any) -> str:
     if attr == "budget_m":
         return f"${val:,.1f}M"
@@ -120,6 +191,8 @@ def _fmt(attr: str, val: Any) -> str:
         return f"{val:.1f}/10"
     if attr == "wait_time_min":
         return f"{val} min"
+    if attr == "accreditation_year":
+        return str(val)
     if isinstance(val, int):
         return f"{val:,}"
     return str(val)
@@ -166,8 +239,17 @@ class HospitalWorld(WorldTemplate):
     def _format_value(self, attr: str, val: Any) -> str:
         return _fmt(attr, val)
 
+    def _sentence_templates(self):
+        return {attr: [SentenceTemplate(t, attr, d) for t, d in tmpls]
+                for attr, tmpls in _SENTENCE_TMPLS.items()}
+
+    def _ratio_pairs(self):
+        return list(_RATIO_PAIRS)
+
     def render_document(self, entity: EntitySpec,
-                        active_attrs: list[str], rng: Random) -> str:
+                        active_attrs: list[str], rng: Random,
+                        other_entities: list[EntitySpec] | None = None
+                        ) -> str:
         style = rng.choice(["accreditation", "annual", "quality", "summary"])
         header = {
             "accreditation": (f"ACCREDITATION REPORT — {entity.name}\n"
@@ -179,14 +261,15 @@ class HospitalWorld(WorldTemplate):
             "summary": (f"FACILITY DATA SUMMARY — {entity.name}\n"
                         f"Focus area: {entity.category}\n"),
         }[style]
-        return header + self._compact_document(entity, active_attrs)
+        return header + self._render_body(
+            entity, active_attrs, rng, other_entities)
 
     def render_correction(self, entity: EntitySpec, attr: str,
                           old_val: Any, new_val: Any) -> str:
         label = self.attr_label(attr)
         return (
-            f"DATA UPDATE: {entity.name}'s {label} has been corrected "
-            f"from {_fmt(attr, old_val)} to {_fmt(attr, new_val)} "
+            f"DATA UPDATE: {_possessive(entity.name)} {label} has been "
+            f"corrected from {_fmt(attr, old_val)} to {_fmt(attr, new_val)} "
             f"following a quality review."
         )
 

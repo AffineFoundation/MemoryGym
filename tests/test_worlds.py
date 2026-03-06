@@ -101,6 +101,14 @@ def _can_answer(q: GeneratedQA, stored_names: set[str],
             return False  # naive ignores corrections → answers old value
         return entity in updated_names
 
+    if q.competency == "delta":
+        entity = q.required_entities[0]
+        if entity not in stored_names:
+            return False
+        if not applies_updates:
+            return False
+        return entity in updated_names
+
     return all(name in stored_names for name in q.required_entities)
 
 
@@ -675,29 +683,23 @@ def test_seed_not_in_visible_ids():
 
 
 def test_judge_skips_abstention():
-    """V10: LLM judge must be skipped for abstention questions.
+    """V10: Abstention uses rule-based validation, not LLM judge.
 
-    Rule-based _abstention_match is authoritative. Sending abstention
-    answers to the judge creates an injection surface.
+    In the no-fallback scorer (P4):
+    - With judge: abstention → rule-based, all others → judge
+    - Without judge: everything → rule-based
+    Rule-based _abstention_match is authoritative for abstention.
     """
-    # Verify scorer logic: abstention skips judge
-    # The skip_judge condition should be True for abstention
-    competency = "abstention"
-    agent_answer = "I think the answer might be around 42"
-    has_digits = any(c.isdigit() for c in agent_answer)
-    skip_judge = (
-        competency == "abstention"
-        or not has_digits
-    )
-    assert skip_judge, "Abstention should always skip judge"
+    from memorybench.evaluation.validators import AnswerValidator
+    v = AnswerValidator()
 
-    # Non-abstention with digits should NOT skip
-    competency2 = "retrieval"
-    skip2 = (
-        competency2 == "abstention"
-        or not any(c.isdigit() for c in agent_answer)
-    )
-    assert not skip2, "Retrieval with digits should reach judge"
+    # Abstention: rule-based validator handles correctly
+    assert v.validate("I don't know", "ABSTAIN", "abstention")
+    assert not v.validate("42", "ABSTAIN", "abstention")
+
+    # Non-abstention: rule-based is a valid fallback when no judge
+    assert v.validate("50000", "50000", "retrieval")
+    assert not v.validate("99999", "50000", "retrieval")
 
 
 def test_stream_interleave():

@@ -58,6 +58,15 @@ class GeneratedQA:
 
 
 @dataclass
+class SentenceTemplate:
+    """Narrative sentence template embedding an attribute value with distractors."""
+
+    template: str       # Format string: {val}, {distractor}, {other_name}, {other_val}
+    attr: str           # Primary attribute name
+    distractor: str     # "temporal" | "comparative" | "qualified" | "none"
+
+
+@dataclass
 class Correction:
     """A correction event that mutates world state."""
 
@@ -86,6 +95,11 @@ class World:
 
     def entities_in_category(self, cat: str) -> list[EntitySpec]:
         return [e for e in self.entities if e.category == cat]
+
+
+def _possessive(name: str) -> str:
+    """English possessive form: 'Ravens' → 'Ravens'', 'Chen' → 'Chen's'."""
+    return f"{name}'" if name.endswith("s") else f"{name}'s"
 
 
 class WorldTemplate(ABC):
@@ -133,7 +147,9 @@ class WorldTemplate(ABC):
 
     @abstractmethod
     def render_document(self, entity: EntitySpec,
-                        active_attrs: list[str], rng: Random) -> str: ...
+                        active_attrs: list[str], rng: Random,
+                        other_entities: list[EntitySpec] | None = None
+                        ) -> str: ...
 
     @abstractmethod
     def render_correction(self, entity: EntitySpec, attr: str,
@@ -146,6 +162,16 @@ class WorldTemplate(ABC):
     @abstractmethod
     def _format_value(self, attr: str, val: Any) -> str:
         """Format an attribute value for display. Subclasses must implement."""
+        ...
+
+    @abstractmethod
+    def _sentence_templates(self) -> dict[str, list[SentenceTemplate]]:
+        """Return {attr_name: [SentenceTemplate, ...]} for narrative docs."""
+        ...
+
+    @abstractmethod
+    def _ratio_pairs(self) -> list[tuple[str, str, str]]:
+        """Return (attr1, attr2, label) triples for ratio questions."""
         ...
 
     # ── Concrete: world generation ──
@@ -241,6 +267,80 @@ class WorldTemplate(ABC):
                 parts.append(f"{label}: {self._format_value(attr, val)}")
         return " | ".join(parts)
 
+    # ── Concrete: narrative document ──
+
+    def _render_narrative(self, entity: EntitySpec,
+                          active_attrs: list[str], rng: Random,
+                          other_entities: list[EntitySpec]) -> str:
+        """Render entity as narrative prose with embedded distractors."""
+        templates_map = self._sentence_templates()
+        sentences = []
+        for attr in active_attrs:
+            val = entity.get(attr)
+            if val is None:
+                continue
+            attr_tmpls = templates_map.get(attr)
+            if not attr_tmpls:
+                label = self.attr_label(attr)
+                sentences.append(
+                    f"{label}: {self._format_value(attr, val)}")
+                continue
+            st = rng.choice(attr_tmpls)
+            fmt_val = self._format_value(attr, val)
+            kwargs: dict[str, str] = {"val": fmt_val,
+                                      "label": self.attr_label(attr)}
+            if st.distractor == "temporal" and isinstance(val, (int, float)):
+                old = val * rng.uniform(0.5, 0.9)
+                old = (int(round(old)) if isinstance(val, int)
+                       else round(old, 2))
+                kwargs["distractor"] = self._format_value(attr, old)
+            elif st.distractor == "comparative":
+                # Use a fabricated peer reference — never a real entity
+                # name+value, to avoid leaking detectable data.
+                if isinstance(val, (int, float)):
+                    peer_val = val * rng.uniform(0.6, 1.4)
+                    peer_val = (int(round(peer_val))
+                                if isinstance(val, int)
+                                else round(peer_val, 2))
+                    kwargs["other_name"] = "the industry average"
+                    kwargs["other_val"] = self._format_value(
+                        attr, peer_val)
+                else:
+                    sentences.append(
+                        f"{self.attr_label(attr)}: {fmt_val}")
+                    continue
+            elif (st.distractor == "qualified"
+                  and isinstance(val, (int, float))):
+                partial = val * rng.uniform(0.6, 0.9)
+                partial = (int(round(partial)) if isinstance(val, int)
+                           else round(partial, 2))
+                kwargs["distractor"] = self._format_value(attr, partial)
+            try:
+                sentences.append(st.template.format(**kwargs))
+            except KeyError:
+                sentences.append(
+                    f"{self.attr_label(attr)}: {fmt_val}")
+        rng.shuffle(sentences)
+        paragraphs = []
+        i = 0
+        while i < len(sentences):
+            n = min(rng.choice([2, 3]), len(sentences) - i)
+            chunk = sentences[i:i + n]
+            paragraphs.append(
+                ". ".join(s.rstrip(".") for s in chunk) + ".")
+            i += n
+        return "\n\n".join(paragraphs)
+
+    def _render_body(self, entity: EntitySpec,
+                     active_attrs: list[str], rng: Random,
+                     other_entities: list[EntitySpec] | None = None
+                     ) -> str:
+        """Render body: narrative if other_entities given, else compact KV."""
+        if other_entities is not None:
+            return self._render_narrative(
+                entity, active_attrs, rng, other_entities)
+        return self._compact_document(entity, active_attrs)
+
     # ── Concrete: corrections ──
 
     def generate_corrections(
@@ -301,6 +401,10 @@ class WorldTemplate(ABC):
             "aggregation": self._gq_aggregation,
             "conditional": self._gq_conditional,
             "abstention": self._gq_abstention,
+            "ratio": self._gq_ratio,
+            "comparison": self._gq_comparison,
+            "multi_hop": self._gq_multi_hop,
+            "outlier": self._gq_outlier,
         }.get(competency)
         return fn(world, rng, available) if fn else None
 
@@ -501,6 +605,185 @@ class WorldTemplate(ABC):
             str(e.get(attr)), "retrieval", [e.name],
         )
 
+    # ── Concrete: derived-value questions ──
+
+    def _gq_ratio(self, world, rng, available):
+        """Ratio question: attr1/attr2 for one entity."""
+        pairs = self._ratio_pairs()
+        if not pairs:
+            return None
+        rng.shuffle(pairs)
+        for a1, a2, label in pairs:
+            if a1 not in world.active_attrs or a2 not in world.active_attrs:
+                continue
+            cands = [e for e in available
+                     if isinstance(e.get(a1), (int, float))
+                     and isinstance(e.get(a2), (int, float))
+                     and e.get(a2) != 0]
+            if not cands:
+                continue
+            e = rng.choice(cands)
+            result = round(e.get(a1) / e.get(a2), 2)
+            q = rng.choice([
+                f"What is {_possessive(e.name)} {label}?",
+                f"Calculate {_possessive(e.name)} {label}.",
+                f"How much is {_possessive(e.name)} {label}?",
+            ])
+            return GeneratedQA(q, str(result), "ratio", [e.name])
+        return None
+
+    def _gq_comparison(self, world, rng, available):
+        """Comparison: which of two entities has higher attr, and by how much."""
+        numeric = [a for a in world.active_attrs
+                   if sum(1 for e in available
+                          if isinstance(e.get(a), (int, float))) >= 2]
+        if not numeric:
+            return None
+        attr = rng.choice(numeric)
+        label = self.attr_label(attr)
+        cands = [e for e in available
+                 if isinstance(e.get(attr), (int, float))]
+        if len(cands) < 2:
+            return None
+        e_a, e_b = rng.sample(cands, 2)
+        v_a, v_b = e_a.get(attr), e_b.get(attr)
+        if v_a >= v_b:
+            winner, diff = e_a.name, v_a - v_b
+        else:
+            winner, diff = e_b.name, v_b - v_a
+        if isinstance(v_a, int):
+            diff = int(round(diff))
+        else:
+            diff = round(diff, 2)
+        ew = self.entity_word
+        q = (f"Does {e_a.name} or {e_b.name} have higher "
+             f"{label}? By how much?")
+        return GeneratedQA(
+            q, f"{winner} ({diff})", "comparison",
+            [e_a.name, e_b.name],
+        )
+
+    def _gq_delta(self, world, rng, corrections):
+        """Change amount from a correction."""
+        if not corrections:
+            return None
+        c = rng.choice(corrections)
+        entity = world.get_entity(c.entity_name)
+        if not entity:
+            return None
+        label = self.attr_label(c.attr)
+        delta = abs(c.new_val - c.old_val)
+        if isinstance(c.old_val, int):
+            delta = int(round(delta))
+        else:
+            delta = round(delta, 2)
+        q = rng.choice([
+            f"What is the difference between {_possessive(c.entity_name)} "
+            f"old and new {label}?",
+            f"How much did {_possessive(c.entity_name)} "
+            f"{label} shift?",
+            f"Calculate the change in {_possessive(c.entity_name)} "
+            f"{label}.",
+        ])
+        return GeneratedQA(
+            q, str(delta), "delta", [c.entity_name],
+        )
+
+    def _gq_multi_hop(self, world, rng, available):
+        """Two-step reasoning: find best category, then find extreme in it.
+
+        Step 1: Compute average of attr1 per category.
+        Step 2: In the top category, find entity with min/max attr2.
+        Requires agent to store multiple entities per category.
+        """
+        numeric = [a for a in world.active_attrs
+                   if sum(1 for e in available
+                          if isinstance(e.get(a), (int, float))) >= 4]
+        if len(numeric) < 2:
+            return None
+        a1, a2 = rng.sample(numeric, 2)
+        l1, l2 = self.attr_label(a1), self.attr_label(a2)
+        # Group by category, need ≥2 entities per category
+        by_cat: dict[str, list[EntitySpec]] = {}
+        for e in available:
+            if (isinstance(e.get(a1), (int, float))
+                    and isinstance(e.get(a2), (int, float))):
+                by_cat.setdefault(e.category, []).append(e)
+        eligible = {c: es for c, es in by_cat.items() if len(es) >= 2}
+        if len(eligible) < 2:
+            return None
+        # Step 1: category with highest average attr1
+        cat_avgs = {c: sum(e.get(a1) for e in es) / len(es)
+                    for c, es in eligible.items()}
+        use_max_cat = rng.choice([True, False])
+        best_cat = (max if use_max_cat else min)(
+            cat_avgs, key=cat_avgs.get)
+        # Step 2: in that category, find extreme of attr2
+        use_max_entity = rng.choice([True, False])
+        target = (max if use_max_entity else min)(
+            eligible[best_cat], key=lambda e: e.get(a2))
+        all_names = [e.name for e in eligible[best_cat]]
+        cat_dir = "highest" if use_max_cat else "lowest"
+        ent_dir = "highest" if use_max_entity else "lowest"
+        ewp = self.entity_word_plural
+        ew = self.entity_word
+        q = rng.choice([
+            f"Among {ewp} in the group with the {cat_dir} "
+            f"average {l1}, which {ew} has the {ent_dir} {l2}?",
+            f"Considering {ewp} whose group averages the "
+            f"{cat_dir} {l1}, which has the {ent_dir} {l2}?",
+            f"In the sector averaging the {cat_dir} {l1}, "
+            f"which {ew} has the {ent_dir} {l2}?",
+        ])
+        return GeneratedQA(
+            q, f"{target.name} ({target.get(a2)})",
+            "multi_hop", all_names,
+        )
+
+    def _gq_outlier(self, world, rng, available):
+        """Find the entity whose attr deviates most from group mean.
+
+        Requires computing mean of 5 values, then finding max |val - mean|.
+        """
+        if len(available) < 5:
+            return None
+        numeric = [a for a in world.active_attrs
+                   if any(isinstance(e.get(a), (int, float))
+                          for e in available)]
+        if not numeric:
+            return None
+        attr = rng.choice(numeric)
+        label = self.attr_label(attr)
+        cands = [e for e in available
+                 if isinstance(e.get(attr), (int, float))]
+        if len(cands) < 5:
+            return None
+        sel = rng.sample(cands, 5)
+        values = [e.get(attr) for e in sel]
+        mean = sum(values) / len(values)
+        # Find max absolute deviation
+        outlier = max(sel, key=lambda e: abs(e.get(attr) - mean))
+        deviation = abs(outlier.get(attr) - mean)
+        if isinstance(values[0], int):
+            deviation = round(deviation, 1)
+        else:
+            deviation = round(deviation, 2)
+        names = [e.name for e in sel]
+        ns = ", ".join(names[:-1]) + f", and {names[-1]}"
+        ew = self.entity_word
+        q = rng.choice([
+            f"Among {ns}, which {ew}'s {label} differs most "
+            f"from the average of the group?",
+            f"Comparing {ns}, whose {label} is furthest "
+            f"from the mean?",
+            f"Between {ns}, which {ew} has the most unusual "
+            f"{label} relative to the others?",
+        ])
+        return GeneratedQA(
+            q, f"{outlier.name} ({deviation})",
+            "outlier", names,
+        )
+
     # ── Concrete: post-storage adaptive questioning ──
 
     def detect_stored_entities(
@@ -591,8 +874,9 @@ class WorldTemplate(ABC):
             end = min(start + entities_per_batch, len(entities))
             batch_entities = entities[start:end]
 
-            # Render and emit ingest event
-            docs = [self.render_document(e, world.active_attrs, rng)
+            # Render and emit ingest event (narrative mode)
+            docs = [self.render_document(e, world.active_attrs, rng,
+                                         other_entities=batch_entities)
                     for e in batch_entities]
             events.append({
                 "type": "ingest",
@@ -620,6 +904,7 @@ class WorldTemplate(ABC):
                     corrections if batch_idx > correction_batch else None,
                 )
                 if q:
+                    # NOTE: 'purpose' is for scoring only. NEVER include in agent-facing prompts.
                     events.append({
                         "type": "question",
                         "question": q.question,
@@ -636,6 +921,7 @@ class WorldTemplate(ABC):
             world, rng, introduced, stored_names, remaining, corrections,
         )
         for q in remaining_qs:
+            # NOTE: 'purpose' is for scoring only. NEVER include in agent-facing prompts.
             events.append({
                 "type": "question",
                 "question": q.question,
@@ -705,11 +991,14 @@ class WorldTemplate(ABC):
         if has_corrections:
             n_update = max(1, round(n_questions * 0.2))
             n_update = min(n_update, len(corrections))
+            n_delta = max(1, n_update // 3)
             n_retrieval = round(n_questions * 0.4) - n_trick
             n_abstention = max(1, round(n_questions * 0.15))
-            n_comprehension = n_questions - n_retrieval - n_update - n_abstention - n_trick
+            n_comprehension = (n_questions - n_retrieval - n_update
+                               - n_abstention - n_trick - n_delta)
         else:
             n_update = 0
+            n_delta = 0
             n_retrieval = round(n_questions * 0.5) - n_trick
             n_abstention = max(1, round(n_questions * 0.1))
             n_comprehension = n_questions - n_retrieval - n_abstention - n_trick
@@ -742,13 +1031,33 @@ class WorldTemplate(ABC):
                 used_correction_entities.add(q.required_entities[0])
                 questions.append(q)
 
-        # Comprehension: synthesis/aggregation/conditional
-        comp_types = ["synthesis", "aggregation", "conditional"]
+        # Delta: change amount from corrections (~25% of update budget)
+        if has_corrections and n_delta > 0:
+            used_delta_entities: set[str] = set()
+            for _ in range(n_delta):
+                remaining_c = [c for c in (corrections or [])
+                               if c.entity_name not in used_delta_entities]
+                if not remaining_c:
+                    break
+                q = self._gq_delta(world, rng, remaining_c)
+                if q:
+                    q.purpose = "comprehension"
+                    used_delta_entities.add(q.required_entities[0])
+                    questions.append(q)
+
+        # Comprehension: multi-step reasoning + basic computation
+        comp_types = ["synthesis", "aggregation", "conditional",
+                      "ratio", "comparison", "multi_hop", "outlier"]
+        rng.shuffle(comp_types)
         for i in range(n_comprehension):
             ctype = comp_types[i % len(comp_types)]
             fn = {"synthesis": self._gq_synthesis,
                   "aggregation": self._gq_aggregation,
-                  "conditional": self._gq_conditional}[ctype]
+                  "conditional": self._gq_conditional,
+                  "ratio": self._gq_ratio,
+                  "comparison": self._gq_comparison,
+                  "multi_hop": self._gq_multi_hop,
+                  "outlier": self._gq_outlier}[ctype]
             q = fn(world, rng, introduced)
             if q:
                 q.purpose = "comprehension"

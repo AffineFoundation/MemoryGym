@@ -11,7 +11,9 @@ from __future__ import annotations
 from random import Random
 from typing import Any
 
-from memorybench.worlds.base import AttrDef, EntitySpec, WorldTemplate
+from memorybench.worlds.base import (
+    AttrDef, EntitySpec, SentenceTemplate, WorldTemplate, _possessive,
+)
 
 _PREFIXES = [
     "Apex", "Nexus", "Vertex", "Quantum", "Pinnacle", "Atlas", "Zenith",
@@ -105,6 +107,81 @@ _Q_TEXTS: dict[str, list[str]] = {
 }
 
 
+_SENTENCE_TMPLS: dict[str, list[tuple[str, str]]] = {
+    "revenue_m": [
+        ("reported annual revenue of {val}", "none"),
+        ("saw revenue climb from {distractor} to {val} over the fiscal year",
+         "temporal"),
+        ("generated {val} in total revenue, compared to {other_name}'s "
+         "{other_val}", "comparative"),
+    ],
+    "profit_margin_pct": [
+        ("maintains a profit margin of {val}", "none"),
+        ("improved its margin from {distractor} to {val} year-over-year",
+         "temporal"),
+        ("reported {val} net margin, though operating margin stands at "
+         "{distractor}", "qualified"),
+    ],
+    "employees": [
+        ("employs {val} staff members across its global operations", "none"),
+        ("expanded from {distractor} to {val} employees during the period",
+         "temporal"),
+        ("maintains a workforce of {val}, though only {distractor} are "
+         "full-time", "qualified"),
+    ],
+    "market_cap_m": [
+        ("carries a market capitalization of {val}", "none"),
+        ("market cap rose from {distractor} to {val} this quarter",
+         "temporal"),
+        ("valued at {val}, outpacing {other_name} at {other_val}",
+         "comparative"),
+    ],
+    "debt_ratio_pct": [
+        ("holds a debt-to-equity ratio of {val}", "none"),
+        ("saw its debt ratio shift from {distractor} to {val}", "temporal"),
+        ("carries {val} total leverage, with {distractor} in short-term "
+         "obligations", "qualified"),
+    ],
+    "rd_spend_pct": [
+        ("allocates {val} of revenue to R&D", "none"),
+        ("increased R&D spending from {distractor} to {val}", "temporal"),
+        ("invests {val} in R&D, compared to {other_name}'s {other_val}",
+         "comparative"),
+    ],
+    "customer_count": [
+        ("serves {val} customers worldwide", "none"),
+        ("grew its customer base from {distractor} to {val}", "temporal"),
+        ("counts {val} total customers, of which {distractor} are "
+         "enterprise accounts", "qualified"),
+    ],
+    "patent_count": [
+        ("holds {val} active patents in its portfolio", "none"),
+        ("expanded its patent portfolio from {distractor} to {val}",
+         "temporal"),
+        ("owns {val} patents, versus {other_name}'s {other_val}",
+         "comparative"),
+    ],
+    "offices": [
+        ("operates {val} offices globally", "none"),
+        ("grew from {distractor} to {val} office locations", "temporal"),
+        ("has {val} offices, though only {distractor} are fully staffed",
+         "qualified"),
+    ],
+    "founded_year": [
+        ("was established in {val}", "none"),
+        ("traces its origins to {val}, having been reorganized from a "
+         "{distractor} predecessor", "temporal"),
+        ("founded in {val}, predating {other_name}", "comparative"),
+    ],
+}
+
+_RATIO_PAIRS = [
+    ("revenue_m", "employees", "revenue per employee in $M"),
+    ("market_cap_m", "revenue_m", "market cap to revenue ratio"),
+    ("patent_count", "employees", "patents per thousand employees"),
+]
+
+
 def _fmt(attr: str, val: Any) -> str:
     """Format an attribute value for human-readable display."""
     if attr in ("revenue_m", "market_cap_m"):
@@ -157,8 +234,17 @@ class CompanyWorld(WorldTemplate):
     def _format_value(self, attr: str, val: Any) -> str:
         return _fmt(attr, val)
 
+    def _sentence_templates(self):
+        return {attr: [SentenceTemplate(t, attr, d) for t, d in tmpls]
+                for attr, tmpls in _SENTENCE_TMPLS.items()}
+
+    def _ratio_pairs(self):
+        return list(_RATIO_PAIRS)
+
     def render_document(self, entity: EntitySpec,
-                        active_attrs: list[str], rng: Random) -> str:
+                        active_attrs: list[str], rng: Random,
+                        other_entities: list[EntitySpec] | None = None
+                        ) -> str:
         style = rng.choice(["earnings", "analyst", "profile", "news"])
         header = {
             "earnings": (f"QUARTERLY EARNINGS DISCLOSURE — {entity.name}\n"
@@ -170,14 +256,15 @@ class CompanyWorld(WorldTemplate):
             "news": (f"MARKET INTELLIGENCE BRIEF — {entity.name}\n"
                      f"Segment: {entity.category}\n"),
         }[style]
-        return header + self._compact_document(entity, active_attrs)
+        return header + self._render_body(
+            entity, active_attrs, rng, other_entities)
 
     def render_correction(self, entity: EntitySpec, attr: str,
                           old_val: Any, new_val: Any) -> str:
         label = self.attr_label(attr)
         return (
-            f"CORRECTION NOTICE: {entity.name}'s {label} has been revised "
-            f"from {_fmt(attr, old_val)} to {_fmt(attr, new_val)} "
+            f"CORRECTION NOTICE: {_possessive(entity.name)} {label} has been "
+            f"revised from {_fmt(attr, old_val)} to {_fmt(attr, new_val)} "
             f"following an internal audit."
         )
 

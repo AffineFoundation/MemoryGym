@@ -114,6 +114,19 @@ def _smart_guess(q: GeneratedQA, world: World, rng: Random) -> str | None:
         e = rng.choice(world.entities)
         return f"{e.name} (1000)"
 
+    # Comparison/multi_hop/outlier: guess entity name + value
+    if q.competency in ("comparison", "multi_hop", "outlier"):
+        e = rng.choice(world.entities)
+        return f"{e.name} ({rng.choice([10, 100, 1000])})"
+
+    # Ratio: guess a ratio (product of ranges makes this extremely unlikely)
+    if q.competency == "ratio":
+        return str(round(rng.uniform(0.01, 100), 2))
+
+    # Delta: guess a change amount
+    if q.competency == "delta":
+        return str(rng.choice([10, 50, 100, 500, 1000]))
+
     # Aggregation: guess a round number
     if q.competency == "aggregation":
         return str(rng.choice([100, 500, 1000, 5000, 10000]))
@@ -140,6 +153,14 @@ def _can_answer(
         return coverage >= 0.5
 
     if q.competency == "update":
+        entity = q.required_entities[0]
+        if entity not in stored_names:
+            return False
+        if not applies_updates:
+            return False
+        return entity in updated_names
+
+    if q.competency == "delta":
         entity = q.required_entities[0]
         if entity not in stored_names:
             return False

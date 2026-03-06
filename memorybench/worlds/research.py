@@ -11,7 +11,9 @@ from __future__ import annotations
 from random import Random
 from typing import Any
 
-from memorybench.worlds.base import AttrDef, EntitySpec, WorldTemplate
+from memorybench.worlds.base import (
+    AttrDef, EntitySpec, SentenceTemplate, WorldTemplate, _possessive,
+)
 
 _FIRST = [
     "Alice", "Bob", "Clara", "David", "Elena", "Frank", "Grace", "Henry",
@@ -96,6 +98,80 @@ _Q_TEXTS: dict[str, list[str]] = {
 }
 
 
+_SENTENCE_TMPLS: dict[str, list[tuple[str, str]]] = {
+    "citations": [
+        ("has accumulated {val} citations across all publications", "none"),
+        ("citation count grew from {distractor} to {val} this year",
+         "temporal"),
+        ("holds {val} total citations, outpacing {other_name} at "
+         "{other_val}", "comparative"),
+    ],
+    "h_index": [
+        ("maintains an h-index of {val}", "none"),
+        ("h-index improved from {distractor} to {val} following recent "
+         "publications", "temporal"),
+        ("achieved an h-index of {val}, compared to {other_name}'s "
+         "{other_val}", "comparative"),
+    ],
+    "funding_k": [
+        ("holds {val} in active research funding", "none"),
+        ("secured funding growth from {distractor} to {val}", "temporal"),
+        ("manages {val} in grants, though only {distractor} is for current "
+         "projects", "qualified"),
+    ],
+    "students": [
+        ("supervises {val} doctoral students", "none"),
+        ("student count rose from {distractor} to {val}", "temporal"),
+        ("advises {val} PhD students, with {distractor} expected to "
+         "graduate this year", "qualified"),
+    ],
+    "review_score": [
+        ("earned an average review score of {val}", "none"),
+        ("review scores improved from {distractor} to {val}", "temporal"),
+        ("rated {val} by peers, versus {other_name}'s {other_val}",
+         "comparative"),
+    ],
+    "papers": [
+        ("has published {val} peer-reviewed papers", "none"),
+        ("publication count increased from {distractor} to {val}",
+         "temporal"),
+        ("authored {val} papers, of which {distractor} are first-author",
+         "qualified"),
+    ],
+    "patents": [
+        ("holds {val} patents from research innovations", "none"),
+        ("patent portfolio grew from {distractor} to {val}", "temporal"),
+        ("owns {val} patents, compared to {other_name}'s {other_val}",
+         "comparative"),
+    ],
+    "collaborators": [
+        ("works with {val} research collaborators", "none"),
+        ("collaboration network expanded from {distractor} to {val}",
+         "temporal"),
+        ("maintains {val} collaborators, though only {distractor} are "
+         "active this year", "qualified"),
+    ],
+    "years_active": [
+        ("has been active in research for {val} years", "none"),
+        ("career spans {val} years in the field", "none"),
+        ("active for {val} years, compared to {other_name}'s {other_val}",
+         "comparative"),
+    ],
+    "awards": [
+        ("has received {val} academic awards", "none"),
+        ("award count rose from {distractor} to {val}", "temporal"),
+        ("earned {val} awards, surpassing {other_name}'s {other_val}",
+         "comparative"),
+    ],
+}
+
+_RATIO_PAIRS = [
+    ("citations", "papers", "citations per paper"),
+    ("funding_k", "students", "funding per student in $K"),
+    ("papers", "years_active", "papers per year"),
+]
+
+
 def _fmt(attr: str, val: Any) -> str:
     if attr == "funding_k":
         return f"${val:,.1f}K"
@@ -142,13 +218,31 @@ class ResearchWorld(WorldTemplate):
             else:
                 attrs[adef.name] = round(
                     rng.uniform(adef.min_val, adef.max_val), 2)
+        # Constrain citations to be consistent with h_index
+        # h_index=h means h papers with ≥h citations each → min citations ≈ h²
+        if "h_index" in attrs and "citations" in attrs:
+            h = attrs["h_index"]
+            min_cites = h * h
+            max_cites = h * h * 15  # realistic upper bound
+            max_cites = min(max_cites, 50000)
+            attrs["citations"] = rng.randint(
+                max(10, min_cites), max(min_cites + 1, max_cites))
         return EntitySpec(name=name, category=category, attrs=attrs)
 
     def _format_value(self, attr: str, val: Any) -> str:
         return _fmt(attr, val)
 
+    def _sentence_templates(self):
+        return {attr: [SentenceTemplate(t, attr, d) for t, d in tmpls]
+                for attr, tmpls in _SENTENCE_TMPLS.items()}
+
+    def _ratio_pairs(self):
+        return list(_RATIO_PAIRS)
+
     def render_document(self, entity: EntitySpec,
-                        active_attrs: list[str], rng: Random) -> str:
+                        active_attrs: list[str], rng: Random,
+                        other_entities: list[EntitySpec] | None = None
+                        ) -> str:
         style = rng.choice(["bio", "profile", "news", "review"])
         header = {
             "bio": (f"RESEARCHER BIO — {entity.name}\n"
@@ -160,13 +254,14 @@ class ResearchWorld(WorldTemplate):
             "review": (f"PEER REVIEW SUMMARY — {entity.name}\n"
                        f"Primary venue: {entity.category}\n"),
         }[style]
-        return header + self._compact_document(entity, active_attrs)
+        return header + self._render_body(
+            entity, active_attrs, rng, other_entities)
 
     def render_correction(self, entity: EntitySpec, attr: str,
                           old_val: Any, new_val: Any) -> str:
         label = self.attr_label(attr)
         return (
-            f"CORRECTION: {entity.name}'s {label} has been updated "
+            f"CORRECTION: {_possessive(entity.name)} {label} has been updated "
             f"from {_fmt(attr, old_val)} to {_fmt(attr, new_val)} "
             f"following a data reconciliation."
         )

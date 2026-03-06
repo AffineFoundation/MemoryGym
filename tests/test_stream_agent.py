@@ -191,15 +191,44 @@ def test_store_with_memory_id_update():
     assert "120k" in entries[0]["content"]
 
 
-def test_content_token_limit():
-    """memory_store rejects content exceeding token limit."""
+def test_content_character_limit():
+    """memory_store rejects content exceeding 2000 character limit."""
     backend = MockBackend()
-    budget = MemoryBudget(total_writes=5, max_content_tokens=10)
-    long_content = " ".join(["word"] * 20)
+    budget = MemoryBudget(total_writes=5)
+    long_content = "x" * 2001
     result, answer = _execute_tool(
         "memory_store", {"content": long_content}, backend, budget)
     assert "exceeds" in result.lower() or "limit" in result.lower()
     assert budget.writes_used == 0
+
+
+def test_content_within_character_limit():
+    """memory_store accepts content within 2000 character limit."""
+    backend = MockBackend()
+    budget = MemoryBudget(total_writes=5)
+    content = "x" * 2000
+    result, answer = _execute_tool(
+        "memory_store", {"content": content}, backend, budget)
+    assert "Stored" in result
+    assert budget.writes_used == 1
+
+
+def test_nuclear_redaction_message_count():
+    """After N events, messages should always be exactly 3 (system + 1 pair)."""
+    # Simulate the redaction logic from run_stream_agent
+    messages = [{"role": "system", "content": "system prompt"}]
+
+    for event_idx in range(20):
+        # Simulate adding event messages
+        messages.append({"role": "user", "content": f"Event {event_idx}"})
+        messages.append({"role": "assistant", "content": "Processing..."})
+
+        # Nuclear redaction: keep only system prompt + 1 placeholder pair
+        del messages[1:]
+        messages.append({"role": "user", "content": f"[{event_idx+1}/20 done]"})
+        messages.append({"role": "assistant", "content": "OK."})
+
+        assert len(messages) == 3, f"After event {event_idx}, messages={len(messages)}"
 
 
 if __name__ == "__main__":

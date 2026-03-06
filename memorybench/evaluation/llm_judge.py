@@ -23,14 +23,16 @@ _VERDICT_RE = re.compile(r"(VERDICT_CORRECT|VERDICT_INCORRECT)", re.IGNORECASE)
 
 
 def _parse_verdict(text: str) -> tuple[bool, str]:
-    """Extract verdict from judge response. Searches full text for verdict tag.
+    """Extract verdict from judge response. Takes LAST match to defeat injection.
 
-    Handles reasoning models that output chain-of-thought before the verdict.
+    Agent answers may contain "VERDICT_CORRECT" as an injection attempt.
+    The judge's real verdict is always the last one in its response.
     """
-    match = _VERDICT_RE.search(text)
-    if not match:
+    matches = list(_VERDICT_RE.finditer(text))
+    if not matches:
         raise ValueError(f"No verdict found in judge response: {text[:200]}")
 
+    match = matches[-1]  # Last match = judge's real verdict
     is_correct = match.group(1).upper() == "VERDICT_CORRECT"
     # Extract reason: everything after the verdict line
     after = text[match.end():].strip()
@@ -93,10 +95,12 @@ async def llm_judge_validate(
     """
     from inspect_ai.model import ChatMessageUser
 
-    # Sanitize agent answer: truncate and strip control characters
+    # Sanitize agent answer: truncate, strip control/unicode chars, redact verdict keywords
     safe_answer = re.sub(
-        r'[\x00-\x1f\x7f-\x9f]', ' ', agent_answer[:200],
+        r'[\x00-\x1f\x7f-\x9f\u2028\u2029\u200b-\u200f]', ' ', agent_answer[:200],
     ).strip()
+    safe_answer = re.sub(r'VERDICT_(CORRECT|INCORRECT)', '[REDACTED]', safe_answer, flags=re.IGNORECASE)
+    safe_answer = safe_answer.replace('<', '&lt;').replace('>', '&gt;')
 
     prompt = JUDGE_PROMPT.format(
         question=question,
@@ -133,8 +137,10 @@ def llm_judge_validate_sync(
         (is_correct, reason) tuple.
     """
     safe_answer = re.sub(
-        r'[\x00-\x1f\x7f-\x9f]', ' ', agent_answer[:200],
+        r'[\x00-\x1f\x7f-\x9f\u2028\u2029\u200b-\u200f]', ' ', agent_answer[:200],
     ).strip()
+    safe_answer = re.sub(r'VERDICT_(CORRECT|INCORRECT)', '[REDACTED]', safe_answer, flags=re.IGNORECASE)
+    safe_answer = safe_answer.replace('<', '&lt;').replace('>', '&gt;')
 
     prompt = JUDGE_PROMPT.format(
         question=question,

@@ -16,7 +16,9 @@ from __future__ import annotations
 from random import Random
 from typing import Any
 
-from memorybench.worlds.base import AttrDef, EntitySpec, WorldTemplate
+from memorybench.worlds.base import (
+    AttrDef, EntitySpec, SentenceTemplate, WorldTemplate, _possessive,
+)
 
 _ADJECTIVES = [
     "Cedar", "Maple", "Birch", "Aspen", "Willow", "Pine", "Elm", "Oak",
@@ -107,6 +109,79 @@ _Q_TEXTS: dict[str, list[str]] = {
 }
 
 
+_SENTENCE_TMPLS: dict[str, list[tuple[str, str]]] = {
+    "population": [
+        ("is home to {val} residents", "none"),
+        ("population grew from {distractor} to {val} in the latest census",
+         "temporal"),
+        ("has a population of {val}, compared to {other_name}'s "
+         "{other_val}", "comparative"),
+    ],
+    "area_km2": [
+        ("covers an area of {val}", "none"),
+        ("expanded from {distractor} to {val} after recent annexation",
+         "temporal"),
+        ("spans {val}, though only {distractor} is developed land",
+         "qualified"),
+    ],
+    "median_income": [
+        ("reports a median household income of {val}", "none"),
+        ("median income rose from {distractor} to {val}", "temporal"),
+        ("earns a median of {val}, outpacing {other_name} at {other_val}",
+         "comparative"),
+    ],
+    "elevation_m": [
+        ("sits at an elevation of {val}", "none"),
+        ("ranges from {distractor} to {val} in elevation across districts",
+         "qualified"),
+        ("is situated at {val}, higher than {other_name} at {other_val}",
+         "comparative"),
+    ],
+    "avg_temp_c": [
+        ("experiences an average temperature of {val}", "none"),
+        ("average temperature shifted from {distractor} to {val}",
+         "temporal"),
+        ("records {val} on average, versus {other_name}'s {other_val}",
+         "comparative"),
+    ],
+    "hospital_count": [
+        ("is served by {val} hospitals", "none"),
+        ("hospital count increased from {distractor} to {val}", "temporal"),
+        ("has {val} hospitals, though only {distractor} offer emergency "
+         "services", "qualified"),
+    ],
+    "school_count": [
+        ("operates {val} public and private schools", "none"),
+        ("school count grew from {distractor} to {val}", "temporal"),
+        ("has {val} schools, of which {distractor} are public", "qualified"),
+    ],
+    "crime_rate": [
+        ("reports a crime rate of {val}", "none"),
+        ("crime rate changed from {distractor} to {val}", "temporal"),
+        ("has a crime rate of {val}, compared to {other_name}'s "
+         "{other_val}", "comparative"),
+    ],
+    "green_space_pct": [
+        ("dedicates {val} of its area to green space", "none"),
+        ("green space grew from {distractor} to {val}", "temporal"),
+        ("maintains {val} green space, surpassing {other_name}'s "
+         "{other_val}", "comparative"),
+    ],
+    "transit_score": [
+        ("achieved a transit score of {val}", "none"),
+        ("transit score improved from {distractor} to {val}", "temporal"),
+        ("scores {val} for transit, outranking {other_name} at "
+         "{other_val}", "comparative"),
+    ],
+}
+
+_RATIO_PAIRS = [
+    ("population", "area_km2", "population density per km²"),
+    ("hospital_count", "population", "hospitals per capita"),
+    ("school_count", "population", "schools per capita"),
+]
+
+
 def _fmt(attr: str, val: Any) -> str:
     if attr == "population":
         return f"{val:,}"
@@ -174,8 +249,17 @@ class CityWorld(WorldTemplate):
     def _format_value(self, attr: str, val: Any) -> str:
         return _fmt(attr, val)
 
+    def _sentence_templates(self):
+        return {attr: [SentenceTemplate(t, attr, d) for t, d in tmpls]
+                for attr, tmpls in _SENTENCE_TMPLS.items()}
+
+    def _ratio_pairs(self):
+        return list(_RATIO_PAIRS)
+
     def render_document(self, entity: EntitySpec,
-                        active_attrs: list[str], rng: Random) -> str:
+                        active_attrs: list[str], rng: Random,
+                        other_entities: list[EntitySpec] | None = None
+                        ) -> str:
         style = rng.choice(["census", "travel", "report", "brief"])
         header = {
             "census": (f"MUNICIPAL DATA RECORD — {entity.name}\n"
@@ -187,14 +271,15 @@ class CityWorld(WorldTemplate):
             "brief": (f"URBAN ANALYTICS BRIEF — {entity.name}\n"
                       f"Geographic zone: {entity.category}\n"),
         }[style]
-        return header + self._compact_document(entity, active_attrs)
+        return header + self._render_body(
+            entity, active_attrs, rng, other_entities)
 
     def render_correction(self, entity: EntitySpec, attr: str,
                           old_val: Any, new_val: Any) -> str:
         label = self.attr_label(attr)
         return (
-            f"DATA REVISION: {entity.name}'s {label} has been corrected "
-            f"from {_fmt(attr, old_val)} to {_fmt(attr, new_val)} "
+            f"DATA REVISION: {_possessive(entity.name)} {label} has been "
+            f"corrected from {_fmt(attr, old_val)} to {_fmt(attr, new_val)} "
             f"based on updated records."
         )
 

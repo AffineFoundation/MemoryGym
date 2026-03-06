@@ -28,12 +28,16 @@ log = logging.getLogger(__name__)
 
 @scorer(metrics=[])
 def worldbench_scorer(judge_model: str | None = None) -> Any:
-    """Score worldbench answers with 3-axis metrics.
+    """Score worldbench answers with 6-axis metrics.
 
-    Two-pass validation: rule-based → optional LLM judge fallback.
+    Validation paths (no fallback — each path is self-contained):
+    - With judge: LLM judge validates all non-abstention questions.
+      Abstention uses rule-based _abstention_match (V10 authoritative).
+      Judge failure = incorrect (fail closed).
+    - Without judge: rule-based AnswerValidator for all questions.
 
     Args:
-        judge_model: Model name for LLM judge fallback. None = rules only.
+        judge_model: Model name for LLM judge. None = rules only.
     """
     validator = AnswerValidator()
 
@@ -59,26 +63,21 @@ def worldbench_scorer(judge_model: str | None = None) -> Any:
             if gt is None:
                 continue
 
-            rule_ok = validator.validate(agent_answer, gt, competency)
-            judge_ok = None
-
-            if not rule_ok and agent_answer.strip() and judge:
-                # V9: Skip judge for non-abstention without digits
-                # V10: Skip judge for abstention entirely — rule-based
-                # _abstention_match is authoritative and harder to game
-                skip_judge = (
-                    competency == "abstention"
-                    or not any(c.isdigit() for c in agent_answer)
-                )
-                if not skip_judge:
+            if judge:
+                # With judge: LLM validates non-abstention, rules for abstention
+                if competency == "abstention":
+                    is_correct = validator.validate(agent_answer, gt, competency)
+                else:
                     try:
-                        judge_ok, _ = await llm_judge_validate(
+                        is_correct, _ = await llm_judge_validate(
                             judge, question, str(gt), agent_answer,
                             competency)
                     except Exception as exc:
-                        log.warning("LLM judge failed: %s", exc)
-
-            is_correct = rule_ok or (judge_ok is True)
+                        log.warning("LLM judge failed (fail closed): %s", exc)
+                        is_correct = False  # Fail closed, no fallback
+            else:
+                # Without judge: rule-based only
+                is_correct = validator.validate(agent_answer, gt, competency)
             results.append({
                 "task_id": ans.get("task_id", 0),
                 "competency": competency,
@@ -86,7 +85,6 @@ def worldbench_scorer(judge_model: str | None = None) -> Any:
                 "correct": is_correct,
                 "agent_answer": agent_answer,
                 "ground_truth": str(gt),
-                "rule_correct": rule_ok,
                 "n_writes": ans.get("n_writes", 0),
                 "n_searches": ans.get("n_searches", 0),
             })

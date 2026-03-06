@@ -39,10 +39,8 @@ def create_memory_tools(
                 content: The information to store.
                 memory_id: Optional ID of an existing memory to update.
             """
-            if len(content.split()) > mem_budget.max_content_tokens:
-                raise ToolError(
-                    f"Content exceeds {mem_budget.max_content_tokens} token limit."
-                )
+            if len(content) > 2000:
+                raise ToolError("Content exceeds 2000 character limit.")
             if not mem_budget.can_write():
                 raise ToolError(
                     f"Write budget exhausted "

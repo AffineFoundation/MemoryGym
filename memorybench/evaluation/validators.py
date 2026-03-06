@@ -56,11 +56,13 @@ class AnswerValidator:
         if answer.lower() == gt.lower():
             return True
 
-        if question_type in ("retrieval", "update", "aggregation"):
+        if question_type in ("retrieval", "update", "aggregation",
+                              "ratio", "delta"):
             if self._numeric_match(answer, ground_truth):
                 return True
 
-        if question_type in ("synthesis", "cross_domain", "conditional"):
+        if question_type in ("synthesis", "cross_domain", "conditional",
+                              "comparison", "multi_hop", "outlier"):
             if self._synthesis_match(answer, gt):
                 return True
 
@@ -78,28 +80,21 @@ class AnswerValidator:
         - Float GT (revenue, percentages, rates): 2% relative tolerance.
           Handles display rounding and aggregation imprecision.
 
-        V15: Suffix disambiguation. When an LLM writes "$481,921.1M" it
-        may mean the literal value 481921.1 (M as unit label) rather than
-        481921.1 × 10^6. We try both interpretations and pick the one
-        closer to GT, preventing false negatives on correct answers.
+        Suffix disambiguation (K/M ambiguity) is deferred to LLM judge
+        for real evaluations. Rule-based path uses single interpretation
+        with K/M always applied as multipliers.
         """
         try:
             gt_num = float(gt) if not isinstance(gt, (int, float)) else gt
             is_int_gt = isinstance(gt, int) or (isinstance(gt, str) and '.' not in gt)
 
-            # Try both with and without suffix multiplier
-            candidates = self._extract_number_candidates(answer)
-            for ans_num in candidates:
-                if is_int_gt:
-                    if int(round(ans_num)) == int(round(gt_num)):
-                        return True
-                else:
-                    if gt_num == 0:
-                        if ans_num == 0:
-                            return True
-                    elif abs(ans_num - gt_num) / abs(gt_num) <= self._TOL_FLOAT:
-                        return True
-            return False
+            ans_num = self._extract_number(answer)
+            if is_int_gt:
+                return int(round(ans_num)) == int(round(gt_num))
+            else:
+                if gt_num == 0:
+                    return ans_num == 0
+                return abs(ans_num - gt_num) / abs(gt_num) <= self._TOL_FLOAT
         except (ValueError, ZeroDivisionError):
             return False
 
@@ -172,30 +167,10 @@ class AnswerValidator:
         has_number = bool(re.search(r"\d", a))
         return not has_number
 
-    def _extract_number_candidates(self, text: str) -> list[float]:
-        """Extract number candidates: with and without suffix multiplier.
-
-        V15: LLMs often write "$481,921.1M" meaning the value IS 481921.1
-        (M is a unit label), not 481921.1 × 10^6. Return both
-        interpretations so _numeric_match can pick the correct one.
-        """
-        text = text.replace(",", "").replace("$", "").strip()
-        match = re.search(r"(\d[\d]*\.?\d*)\s*([KkMm])?", text)
-        if not match:
-            return []
-        raw = float(match.group(1))
-        suffix = (match.group(2) or "").upper()
-        if not suffix:
-            return [raw]
-        # Return both: with multiplier and without (raw value)
-        multiplied = raw * (1000 if suffix == "K" else 1_000_000)
-        return [raw, multiplied]
-
     def _extract_number(self, text: str) -> float:
         """Extract a number from text. Handles $, K, M, commas.
 
         Always applies suffix multiplier (K=×1000, M=×10^6).
-        For disambiguation, use _extract_number_candidates instead.
         """
         text = text.replace(",", "").replace("$", "").strip()
         match = re.search(r"(\d[\d]*\.?\d*)\s*([KkMm])?", text)

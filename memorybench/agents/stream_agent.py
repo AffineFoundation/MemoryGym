@@ -95,8 +95,8 @@ def _execute_tool(
 
     if name == "memory_store":
         content = args.get("content", "")
-        if len(content.split()) > budget.max_content_tokens:
-            return f"Content exceeds {budget.max_content_tokens} token limit.", None
+        if len(content) > 2000:
+            return "Content exceeds 2000 character limit.", None
         if not budget.can_write():
             return f"Budget exhausted ({budget.writes_used}/{budget.total_writes}).", None
         memory_id = args.get("memory_id")
@@ -354,13 +354,13 @@ def run_stream_agent(
                 required_entities=event.get("required_entities", []),
             ))
 
-        # Nuclear redaction after each event
-        del messages[msg_start:]
+        # Nuclear redaction: keep only system prompt + 1 placeholder pair
+        del messages[1:]  # Remove everything after system prompt
         messages.append({
             "role": "user",
-            "content": f"[Event {event_idx+1}/{total_events} completed.]",
+            "content": f"[{event_idx+1}/{total_events} done]",
         })
-        messages.append({"role": "assistant", "content": "Understood."})
+        messages.append({"role": "assistant", "content": "OK."})
 
     total_elapsed = time.time() - run_t0
     correct_count = sum(r.correct for r in results)
