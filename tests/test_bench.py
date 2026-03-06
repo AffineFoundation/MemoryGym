@@ -9,7 +9,8 @@ from __future__ import annotations
 from memorybench.bench import (
     STRATEGIES,
     TEMPLATES,
-    _can_answer,
+    _construct_and_validate,
+    _data_available,
     _smart_guess,
     _VALIDATOR,
     run_validation,
@@ -79,35 +80,73 @@ class TestSimulateOneStream:
         assert result["accuracy"] == 0.0
 
 
-# ── _can_answer ──
+# ── _data_available ──
 
 
-class TestCanAnswer:
-    """Binary answer prediction logic."""
+class TestDataAvailable:
+    """Data availability check logic."""
 
     def test_abstention_needs_coverage(self):
         q = GeneratedQA("q", "ABSTAIN", "abstention", ["fake_name"])
-        assert _can_answer(q, {"a", "b", "c"}, set(), True, 5)
-        assert not _can_answer(q, {"a"}, set(), True, 5)
+        assert _data_available(q, {"a", "b", "c"}, set(), True, 5)
+        assert not _data_available(q, {"a"}, set(), True, 5)
 
     def test_update_needs_applied(self):
         q = GeneratedQA("q", "100", "update", ["Alice"])
-        assert _can_answer(q, {"Alice"}, {"Alice"}, True, 10)
-        assert not _can_answer(q, {"Alice"}, set(), True, 10)
-        assert not _can_answer(q, {"Alice"}, {"Alice"}, False, 10)
+        assert _data_available(q, {"Alice"}, {"Alice"}, True, 10)
+        assert not _data_available(q, {"Alice"}, set(), True, 10)
+        assert not _data_available(q, {"Alice"}, {"Alice"}, False, 10)
 
     def test_retrieval_needs_entity(self):
         q = GeneratedQA("q", "100", "retrieval", ["Alice"])
-        assert _can_answer(q, {"Alice"}, set(), True, 10)
-        assert not _can_answer(q, set(), set(), True, 10)
+        assert _data_available(q, {"Alice"}, set(), True, 10)
+        assert not _data_available(q, set(), set(), True, 10)
 
     def test_always_abstain(self):
         q_abs = GeneratedQA("q", "ABSTAIN", "abstention", ["fake"])
         q_ret = GeneratedQA("q", "100", "retrieval", ["Alice"])
-        assert _can_answer(q_abs, {"Alice"}, set(), True, 10,
-                           always_abstain=True)
-        assert not _can_answer(q_ret, {"Alice"}, set(), True, 10,
+        assert _data_available(q_abs, {"Alice"}, set(), True, 10,
                                always_abstain=True)
+        assert not _data_available(q_ret, {"Alice"}, set(), True, 10,
+                                   always_abstain=True)
+
+
+# ── _construct_and_validate ──
+
+
+class TestConstructAndValidate:
+    """Construct answer and validate against GT."""
+
+    def _tmpl_and_world(self):
+        tmpl = TEMPLATES["company"]()
+        world = tmpl.generate_world(seed=0, n_entities=10)
+        return tmpl, world
+
+    def test_retrieval_roundtrip(self):
+        """Retrieval answer via _format_value validates against GT."""
+        tmpl, world = self._tmpl_and_world()
+        e = world.entities[0]
+        attr = world.active_attrs[0]
+        val = e.get(attr)
+        if val is None:
+            return  # skip if no value
+        q = GeneratedQA(
+            "q", str(val), "retrieval", [e.name], source_attr=attr)
+        assert _construct_and_validate(
+            q, tmpl, world, {e.name}, set(), True, 10)
+
+    def test_unavailable_data_returns_false(self):
+        tmpl, world = self._tmpl_and_world()
+        q = GeneratedQA("q", "100", "retrieval", ["Alice"], source_attr="revenue")
+        assert not _construct_and_validate(
+            q, tmpl, world, set(), set(), True, 10)
+
+    def test_abstention_validates(self):
+        tmpl, world = self._tmpl_and_world()
+        q = GeneratedQA("q", "ABSTAIN", "abstention", ["fake"])
+        assert _construct_and_validate(
+            q, tmpl, world, {e.name for e in world.entities},
+            set(), True, len(world.entities))
 
 
 # ── _smart_guess ──

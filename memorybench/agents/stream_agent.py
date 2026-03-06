@@ -116,7 +116,7 @@ def _execute_tool(
         results = backend.search(args.get("query", ""), args.get("top_k", 5))
         if not results:
             return "No results found.", None
-        lines = [f"[{r['id']}] {r['content'][:200]}" for r in results]
+        lines = [f"[{r['id']}] {r['content']}" for r in results]
         return "\n".join(lines), None
 
     if name == "memory_get":
@@ -133,7 +133,7 @@ def _execute_tool(
         entries = backend.list()
         if not entries:
             return "Memory is empty.", None
-        lines = [f"[{e['id']}] {e['content'][:200]}" for e in entries]
+        lines = [f"[{e['id']}] {e['content']}" for e in entries]
         return "\n".join(lines), None
 
     return f"Unknown tool: {name}", None

@@ -21,7 +21,10 @@ from inspect_ai.model import get_model
 from inspect_ai.scorer import Score, Target, scorer
 
 from memorybench.evaluation.llm_judge import llm_judge_validate
-from memorybench.evaluation.validators import AnswerValidator, validate_with_fallback
+from memorybench.evaluation.validators import (
+    AnswerValidator,
+    async_validate_with_fallback,
+)
 
 log = logging.getLogger(__name__)
 
@@ -43,16 +46,19 @@ def worldbench_scorer(judge_model: str | None = None) -> Any:
         answers = state.store.get("benchmark_answers", [])
         writes_used = state.store.get("writes_used", 0)
 
-        judge = None
+        # Build judge function if configured.
+        # Passed into async_validate_with_fallback — same path as stream_agent.
+        judge_fn = None
         if judge_model:
             try:
                 judge = get_model(judge_model)
+
+                async def _async_judge(q, gt_, ans, comp):
+                    return await llm_judge_validate(judge, q, gt_, ans, comp)
+
+                judge_fn = _async_judge
             except Exception:
                 log.warning("Failed to init judge model %s", judge_model)
-
-        # Build async judge function for validate_with_fallback
-        async def _async_judge(q, gt_, ans, comp):
-            return await llm_judge_validate(judge, q, gt_, ans, comp)
 
         # Validate each answer: rule-first, judge-fallback
         results: list[dict] = []
@@ -65,21 +71,9 @@ def worldbench_scorer(judge_model: str | None = None) -> Any:
             if gt is None:
                 continue
 
-            if judge:
-                # Rule-first: skip judge if rule-based passes
-                is_correct, reason = validate_with_fallback(
-                    agent_answer, str(gt), competency, question=question)
-                if not is_correct and reason == "rule:fail":
-                    # Rule failed → try judge
-                    try:
-                        is_correct, judge_reason = await _async_judge(
-                            question, str(gt), agent_answer, competency)
-                    except Exception as exc:
-                        log.warning("LLM judge failed (fail closed): %s", exc)
-                        is_correct = False
-            else:
-                is_correct, _ = validate_with_fallback(
-                    agent_answer, str(gt), competency)
+            is_correct, _ = await async_validate_with_fallback(
+                agent_answer, str(gt), competency,
+                question=question, judge_fn=judge_fn)
             results.append({
                 "task_id": ans.get("task_id", 0),
                 "competency": competency,
@@ -110,6 +104,8 @@ def worldbench_scorer(judge_model: str | None = None) -> Any:
                        if maint_rs else 0.0)
 
         # Reasoning axis: synthesis + aggregation + conditional
+        # NOTE: reasoning mixes LLM computation ability with memory management.
+        # For cross-LLM comparison, focus on storage and maintenance axes.
         reason_rs = [r for r in results if r["competency"] in
                      ("synthesis", "aggregation", "conditional")]
         reasoning = (sum(r["correct"] for r in reason_rs) / len(reason_rs)

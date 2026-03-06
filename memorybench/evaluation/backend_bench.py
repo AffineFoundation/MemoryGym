@@ -7,6 +7,13 @@ Fills the gap between simulation (100% recall assumption) and real agent
 eval (agent + backend + search combined). No LLM involved — fully
 deterministic and reproducible.
 
+NOTE: backend_bench measures "perfect compression + backend" ceiling.
+Real agents must also extract and compress data from narrative documents.
+backend_bench ceiling − real score = agent compression/extraction gap.
+
+NOTE: backend_bench uses compact KV format (not narrative documents).
+This is intentional — it isolates backend quality from document parsing.
+
 Usage:
     python -m memorybench.evaluation.backend_bench
     python -m memorybench.evaluation.backend_bench --backend chromadb --template company
@@ -186,31 +193,37 @@ def benchmark_backend(
                 if ok:
                     break
         elif q.competency in ("synthesis", "conditional", "comparison",
-                              "multi_hop", "outlier"):
-            # Multi-entity: search each required entity
-            found_vals: dict[str, str] = {}
+                              "multi_hop", "outlier",
+                              "aggregation", "ratio", "delta"):
+            # Comprehension: verify each required entity's source_attr
+            # value is actually extractable from search results.
+            # Previous: found entity name → GT-vs-GT (always true).
+            # Now: found entity name + source_attr value extractable → ok.
+            all_extractable = True
             for ename in q.required_entities:
                 results = backend.search(ename, top_k=3)
+                found = False
                 for r in results:
-                    if ename.lower() in r.get("content", "").lower():
-                        found_vals[ename] = r["content"]
+                    content = r.get("content", "")
+                    if ename.lower() not in content.lower():
+                        continue
+                    if q.source_attr:
+                        label = tmpl.attr_label(q.source_attr)
+                        extracted = _extract_answer_from_content(
+                            content, ename, label)
+                        if extracted:
+                            found = True
+                            break
+                    else:
+                        # ratio: source_attr="" (needs multiple attrs)
+                        # Verify content has enough data (not just a name)
+                        found = len(content) > 30
                         break
-            # If we found all required entities, try to validate GT directly
-            # (perfect agent would compute the correct answer from stored data)
-            if len(found_vals) == len(q.required_entities):
-                ok = _VALIDATOR.validate(q.answer, q.answer, q.competency)
-        elif q.competency in ("aggregation", "ratio", "delta"):
-            # Derived questions: need the source entities
-            all_found = True
-            for ename in q.required_entities:
-                results = backend.search(ename, top_k=3)
-                hit = any(ename.lower() in r.get("content", "").lower()
-                          for r in results)
-                if not hit:
-                    all_found = False
+                if not found:
+                    all_extractable = False
                     break
-            if all_found:
-                ok = _VALIDATOR.validate(q.answer, q.answer, q.competency)
+            if all_extractable:
+                ok = True
 
         if ok:
             correct += 1

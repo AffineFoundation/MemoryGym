@@ -55,6 +55,7 @@ class GeneratedQA:
     competency: str
     required_entities: list[str] = field(default_factory=list)
     purpose: str = ""  # "recall", "coverage", "comprehension", "update", ...
+    source_attr: str = ""  # attribute name the question targets
 
 
 @dataclass
@@ -417,6 +418,7 @@ class WorldTemplate(ABC):
         return GeneratedQA(
             self._q_text(attr, e.name, rng),
             str(e.get(attr)), "retrieval", [e.name],
+            source_attr=attr,
         )
 
     def _gq_retrieval_diverse(self, world, rng, available,
@@ -438,6 +440,7 @@ class WorldTemplate(ABC):
             return GeneratedQA(
                 self._q_text(attr, e.name, rng),
                 str(e.get(attr)), "retrieval", [e.name],
+                source_attr=attr,
             )
         return None
 
@@ -475,6 +478,7 @@ class WorldTemplate(ABC):
             ])
         return GeneratedQA(
             q, f"{target.name} ({target.get(attr)})", "synthesis", names,
+            source_attr=attr,
         )
 
     _MAX_AGG_MEMBERS = 4
@@ -517,7 +521,8 @@ class WorldTemplate(ABC):
             f"What is the {op} {label} across {ns}?",
             f"Calculate the {op} {label} for {ns}.",
         ])
-        return GeneratedQA(q, str(result), "aggregation", names)
+        return GeneratedQA(q, str(result), "aggregation", names,
+                           source_attr=attr)
 
     def _gq_conditional(self, world, rng, available):
         numeric = [a for a in world.active_attrs
@@ -548,6 +553,7 @@ class WorldTemplate(ABC):
         return GeneratedQA(
             q, f"{best.name} ({best.get(a2)})",
             "conditional", [best.name],
+            source_attr=a2,
         )
 
     def _gq_update(self, world, rng, corrections):
@@ -565,6 +571,7 @@ class WorldTemplate(ABC):
         return GeneratedQA(
             self._q_text(c.attr, c.entity_name, rng),
             str(current_val), "update", [c.entity_name],
+            source_attr=c.attr,
         )
 
     def _gq_abstention(self, world, rng, available):
@@ -583,6 +590,7 @@ class WorldTemplate(ABC):
                 return GeneratedQA(
                     self._q_text(attr, candidates[0], rng),
                     "ABSTAIN", "abstention", [candidates[0]],
+                    source_attr="",
                 )
         return None
 
@@ -603,6 +611,7 @@ class WorldTemplate(ABC):
         return GeneratedQA(
             self._q_text(attr, e.name, rng),
             str(e.get(attr)), "retrieval", [e.name],
+            source_attr=attr,
         )
 
     # ── Concrete: derived-value questions ──
@@ -629,7 +638,8 @@ class WorldTemplate(ABC):
                 f"Calculate {_possessive(e.name)} {label}.",
                 f"How much is {_possessive(e.name)} {label}?",
             ])
-            return GeneratedQA(q, str(result), "ratio", [e.name])
+            return GeneratedQA(q, str(result), "ratio", [e.name],
+                               source_attr="")
         return None
 
     def _gq_comparison(self, world, rng, available):
@@ -661,6 +671,7 @@ class WorldTemplate(ABC):
         return GeneratedQA(
             q, f"{winner} ({diff})", "comparison",
             [e_a.name, e_b.name],
+            source_attr=attr,
         )
 
     def _gq_delta(self, world, rng, corrections):
@@ -687,6 +698,7 @@ class WorldTemplate(ABC):
         ])
         return GeneratedQA(
             q, str(delta), "delta", [c.entity_name],
+            source_attr=c.attr,
         )
 
     def _gq_multi_hop(self, world, rng, available):
@@ -738,6 +750,7 @@ class WorldTemplate(ABC):
         return GeneratedQA(
             q, f"{target.name} ({target.get(a2)})",
             "multi_hop", all_names,
+            source_attr=a2,
         )
 
     def _gq_outlier(self, world, rng, available):
@@ -782,6 +795,7 @@ class WorldTemplate(ABC):
         return GeneratedQA(
             q, f"{outlier.name} ({deviation})",
             "outlier", names,
+            source_attr=attr,
         )
 
     # ── Concrete: post-storage adaptive questioning ──
@@ -922,6 +936,7 @@ class WorldTemplate(ABC):
                         "competency": q.competency,
                         "purpose": q.purpose,
                         "required_entities": q.required_entities,
+                        "source_attr": q.source_attr,
                     })
                     questions_emitted += 1
 
@@ -939,6 +954,7 @@ class WorldTemplate(ABC):
                 "competency": q.competency,
                 "purpose": q.purpose,
                 "required_entities": q.required_entities,
+                "source_attr": q.source_attr,
             })
 
         return events

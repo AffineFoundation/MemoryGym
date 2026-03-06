@@ -7,7 +7,7 @@ from inspect_ai.tool import Tool, ToolError, tool
 from typing import Any
 
 from memorybench.memory.backends.chromadb_backend import ChromaDBBackend
-from memorybench.memory.budget import BudgetExhaustedError, MemoryBudget
+from memorybench.memory.budget import MemoryBudget
 
 # Type alias for any backend implementing store/search/get/forget/list
 MemoryBackend = Any
@@ -130,7 +130,7 @@ def create_memory_tools(
                 return "No memories stored yet."
             parts = []
             for e in entries:
-                parts.append(f"[{e['id'][:8]}] {e['content'][:100]}")
+                parts.append(f"[{e['id'][:8]}] {e['content']}")
             return "\n".join(parts)
         return execute
 

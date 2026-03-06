@@ -186,13 +186,13 @@ def _fmt(attr: str, val: Any) -> str:
     if attr == "population":
         return f"{val:,}"
     if attr == "area_km2":
-        return f"{val:,.1f} km²"
+        return f"{val:,.2f} km²"
     if attr == "median_income":
         return f"${val:,}"
     if attr == "elevation_m":
         return f"{val:,} m"
     if attr == "avg_temp_c":
-        return f"{val:.1f}°C"
+        return f"{val:.2f}°C"
     if attr == "crime_rate":
         return f"{val:.2f}/1K"
     if attr == "green_space_pct":

@@ -236,3 +236,31 @@ def validate_with_fallback(
             return False, f"judge:failed({exc})"
 
     return False, "rule:fail"
+
+
+async def async_validate_with_fallback(
+    answer: str,
+    ground_truth: str,
+    competency: str,
+    question: str = "",
+    judge_fn: Callable | None = None,
+) -> tuple[bool, str]:
+    """Async version of validate_with_fallback.
+
+    Same logic as validate_with_fallback but awaits the judge_fn.
+    Use this in async contexts (e.g., Inspect AI scorer).
+    """
+    if competency == "abstention":
+        return _VALIDATOR.validate(answer, ground_truth, competency), "rule:abstention"
+
+    if _VALIDATOR.validate(answer, ground_truth, competency):
+        return True, "rule:pass"
+
+    if judge_fn is not None:
+        try:
+            ok, reason = await judge_fn(question, ground_truth, answer, competency)
+            return ok, f"judge:{reason}"
+        except Exception as exc:
+            return False, f"judge:failed({exc})"
+
+    return False, "rule:fail"

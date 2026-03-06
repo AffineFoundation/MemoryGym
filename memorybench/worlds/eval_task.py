@@ -24,7 +24,7 @@ from inspect_ai.solver import Generate, Solver, TaskState, chain, solver, use_to
 
 from memorybench.inspect_task.tools import create_memory_tools, submit_answer
 from memorybench.worlds import ALL_TEMPLATES
-from memorybench.worlds.base import Correction, GeneratedQA, World, WorldTemplate
+from memorybench.worlds.base import Correction, World, WorldTemplate
 
 _TEMPLATES = ALL_TEMPLATES
 

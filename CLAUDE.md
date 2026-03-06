@@ -2,8 +2,6 @@
 
 Benchmark evaluating LLM agents' **memory management** ability — what to store, when to update, what to discard under write budget pressure.
 
-**Architecture**: WorldTemplate system (`memorybench/worlds/`). V3 streaming system (`domains/`, `generation/`, `simulation/`) is **deprecated** — do not invest in it.
-
 **Core loop**: seed → WorldTemplate → generate entities → render documents → agent stores under budget → corrections mutate world → adaptive questions → 6-axis scoring.
 
 **Key distinction**: Tests strategic storage decisions, not retrieval quality. Write-time is test-time.
@@ -44,14 +42,17 @@ Benchmark evaluating LLM agents' **memory management** ability — what to store
 ## Development Flywheel
 
 ```bash
-# Quick iteration: run all world template tests
+# Run all tests
+python -m pytest tests/ -q
+
+# Quick iteration: world template tests
 python tests/test_worlds.py
 
-# Single seed simulation
-python -c "from tests.test_worlds import run_evaluation; run_evaluation(seed=0)"
+# Simulation invariant check
+python -m memorybench.bench --seeds 10 --validate
 
-# Multi-seed aggregate
-python -c "from tests.test_worlds import run_multi_seed; run_multi_seed(10)"
+# Real agent eval
+python -m memorybench.bench --model openai/gpt-4o --seed 42 --template company
 
 # Inspect AI real agent eval
 inspect eval memorybench/worlds/eval_task.py -M openai/gpt-4o -T seed=42 -T template=company
@@ -63,36 +64,41 @@ inspect eval memorybench/worlds/eval_task.py -M openai/gpt-4o -T seed=42 -T temp
 
 ```
 memorybench/
-├── worlds/                # PRIMARY evaluation system
-│   ├── base.py            # WorldTemplate ABC, World, EntitySpec, GeneratedQA
-│   ├── company.py         # CompanyWorld: 600 names × 10 attrs × 12 sectors
-│   ├── research.py        # ResearchWorld: 625 names × 10 attrs × 10 venues
-│   ├── city.py            # CityWorld: 600 names × 10 attrs × 8 regions
-│   ├── eval_task.py       # Inspect AI task: 3-phase solver (INGEST→CORRECTIONS→QUESTIONS)
-│   └── eval_scorer.py     # 6-axis scorer (accuracy, storage, maintenance, reasoning, efficiency, process)
+├── worlds/                 # WorldTemplate system
+│   ├── base.py             # WorldTemplate ABC, World, EntitySpec, GeneratedQA
+│   ├── company.py          # CompanyWorld: 600 names × 10 attrs × 12 sectors
+│   ├── research.py         # ResearchWorld: 625 names × 10 attrs × 10 venues
+│   ├── city.py             # CityWorld: 600 names × 10 attrs × 8 regions
+│   ├── hospital.py         # HospitalWorld: 600 names × 10 attrs × 10 departments
+│   ├── sport.py            # SportWorld: 600 names × 10 attrs × 10 leagues
+│   ├── eval_task.py        # Inspect AI task: stream solver
+│   └── eval_scorer.py      # 6-axis scorer
 ├── evaluation/
-│   ├── validators.py      # 4-layer answer matching (exact → numeric → synthesis → abstention)
-│   └── llm_judge.py       # Optional LLM fallback judge
+│   ├── validators.py       # Answer matching (exact → numeric → synthesis → abstention)
+│   ├── llm_judge.py        # Multi-model LLM judge
+│   └── backend_bench.py    # Backend ceiling benchmark (no LLM)
 ├── memory/
-│   ├── budget.py          # MemoryBudget (write limit enforcement)
-│   ├── backends/
-│   │   ├── chromadb_backend.py # Vector search (default backend)
-│   │   └── mem0_backend.py     # mem0 SDK wrapper (optional: pip install mem0ai)
-│   ├── store.py           # MemoryStore (legacy, used by V3 simulation)
-│   └── mcp_server.py      # FastMCP server
+│   ├── budget.py           # MemoryBudget (write limit enforcement)
+│   └── backends/
+│       ├── chromadb_backend.py  # Vector search (default)
+│       └── mem0_backend.py      # mem0 SDK wrapper (optional)
 ├── inspect_task/
-│   └── tools.py           # Inspect AI memory tool wrappers
+│   └── tools.py            # Inspect AI memory tool wrappers
 ├── agents/
-│   └── llm_agent.py       # Real LLM agent runner (text-based tool calling)
-├── tests/
-│   └── test_worlds.py     # 21 invariant + quality tests
-│
-├── [DEPRECATED] domains/  # V3 streaming — do not modify
-├── [DEPRECATED] generation/ # V3 task stream — do not modify
-├── [DEPRECATED] simulation/ # V3 simulation agents — do not modify
-├── [DEPRECATED] cli.py    # V3 CLI — do not modify
-└── [DEPRECATED] config.py # V3 config — do not modify
+│   └── stream_agent.py     # Real LLM agent runner
+├── simulation.py           # System self-testing (NOT evaluation)
+└── bench.py                # CLI: real eval (--model) + simulation runner
 ```
+
+## Evaluation vs Simulation
+
+**Real evaluation** (measures agent ability):
+- `bench.py --model <name>`: stream_agent + real LLM + real backend
+- `inspect eval eval_task.py`: Inspect AI + real LLM + real backend
+
+**Simulation** (`simulation.py`): system self-testing, **not** evaluation.
+No LLM, no backend. Deterministic strategies verify scoring invariants:
+- perfect=100%, guesser=0%, strategic>naive+10%, abstainer<20%, smart_guesser<5%
 
 ## WorldTemplate Three Evaluation Axes
 
@@ -110,21 +116,6 @@ memorybench/
 | Comprehension | 25% | Multi-entity reasoning |
 | Abstention | 15% | Knowledge boundaries |
 
-### Validated Baseline (10 seeds, 60 entities, 20 questions, 5 corrections)
-
-| Strategy | Accuracy | Retrieval | Update | Comprehension | Abstention |
-|----------|----------|-----------|--------|---------------|------------|
-| perfect  | 100%     | 100%      | 100%   | 100%          | 100%       |
-| strategic| 64%      | ~76%      | 62%    | 26%           | 100%       |
-| naive    | 37%      | ~48%      | **0%** | 14%           | 100%       |
-| guesser  | 0%       | 0%        | 0%     | 0%            | 0%         |
-
-## Roadmap
-
-See `ROADMAP.md` for phased development plan.
-
-Current phase: **Phase 0 (Consolidation)** — unify on WorldTemplate, remove V3 entry points.
-
 ## Dead Ends — Do Not Repeat
 
 | Approach | Why It Failed |
@@ -136,9 +127,6 @@ Current phase: **Phase 0 (Consolidation)** — unify on WorldTemplate, remove V3
 | Different phrasing per question type | Phrasing attack: detect type by wording |
 | Read-all-then-answer-all (pure) | Tests RAG retrieval, not memory management |
 | Narrative document padding (~1500 chars) | Trivially extractable by LLMs |
-| V3 streaming `_balance_distribution` | 200-line ad-hoc fixups, 11.8% retrieval |
-| V3 pre-generated questions | Not adaptive to storage behavior |
-| V3 update questions with distinct phrasing | "recently revised" detectable |
 | Cross-domain evaluation | Tests cross-referencing, not storage decisions |
 | All-max synthesis | Agent learns "always pick biggest" |
 | Questions that change based on storage | Agent games by storing selectively |
@@ -147,9 +135,16 @@ Current phase: **Phase 0 (Consolidation)** — unify on WorldTemplate, remove V3
 
 MemoryBench reuses mem0-compatible memory interface (store/search/get/forget/list). Models trained on standard memory APIs transfer directly to real agent systems.
 
-## Autonomous Development Protocol
+## Cross-Backend Comparability
 
-When developing without human input, follow these rules:
+Scores are **not comparable** across different backends:
+- **ChromaDB**: 1 `store()` = 1 memory entry (verbatim storage)
+- **mem0**: 1 `store()` = N memory entries (LLM auto-extracts facts)
+
+With the same `write_budget=30`, mem0 stores far more information than ChromaDB.
+Only compare agents within the same backend.
+
+## Autonomous Development Protocol
 
 ### Hard Stops (require human decision)
 - Guesser > 5% after a change
@@ -160,10 +155,3 @@ When developing without human input, follow these rules:
 - Test passes → next step
 - Test fails with clear root cause → fix and re-run
 - New hack vector found → add test, fix, verify
-- Phase gate passed → start next phase
-
-### Flywheel (Phase 3+)
-```
-RUN eval → ANALYZE results → IDENTIFY hack vector →
-ADD test → FIX vulnerability → VERIFY all tests pass → REPEAT
-```

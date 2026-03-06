@@ -96,6 +96,52 @@ def test_city_negative_temps():
     assert result.search_recall >= 0.90
 
 
+def test_comprehension_no_gt_self_validation():
+    """Comprehension questions must NOT use GT-vs-GT self-validation.
+
+    If entity data is not extractable, comprehension must fail — even
+    if the entity name is found in search results.
+    """
+    from memorybench.evaluation.backend_bench import _extract_answer_from_content
+
+    # A backend that returns entity name but no attribute values
+    class NameOnlyBackend:
+        def store(self, content, memory_id=None):
+            self._data = {"id": "fake", "content": content}
+            return "fake"
+
+        def search(self, query, top_k=3):
+            # Return content with entity name but mangled attributes
+            if hasattr(self, "_data"):
+                name = query.lower()
+                if name in self._data["content"].lower():
+                    # Return content stripped of values (name only)
+                    return [{"id": "fake", "content": query}]
+            return []
+
+        def get(self, mid):
+            return getattr(self, "_data", None)
+
+        def forget(self, mid):
+            return True
+
+        def list(self):
+            return [self._data] if hasattr(self, "_data") else []
+
+    backend = NameOnlyBackend()
+    result = benchmark_backend(CompanyWorld(), seed=42, backend=backend,
+                               n_entities=30, n_questions=15)
+
+    # Comprehension questions should fail when only entity name is returned
+    comp_types = {"synthesis", "aggregation", "conditional", "comparison",
+                  "multi_hop", "outlier", "ratio", "delta"}
+    for comp, (correct, total) in result.by_competency.items():
+        if comp in comp_types and total > 0:
+            assert correct == 0, (
+                f"Comprehension type '{comp}' scored {correct}/{total} "
+                f"with name-only backend — GT self-validation leak!")
+
+
 if __name__ == "__main__":
     import sys
     tests = [
@@ -105,6 +151,7 @@ if __name__ == "__main__":
         test_chromadb_deterministic,
         test_chromadb_correction_applied,
         test_city_negative_temps,
+        test_comprehension_no_gt_self_validation,
     ]
     for t in tests:
         try:

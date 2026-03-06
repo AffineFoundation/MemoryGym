@@ -78,38 +78,15 @@ class StrategyResult:
         return "\n".join(lines)
 
 
-def _can_answer(q: GeneratedQA, stored_names: set[str],
-                updated_names: set[str],
-                applies_updates: bool,
-                n_total: int = 60) -> bool:
-    """Simulate: can agent answer based on stored entities and update behavior?
-
-    Update questions: agent must have stored the entity AND applied correction.
-    Abstention: fictitious entity — agent needs ≥50% coverage to confidently
-    distinguish "never existed" from "I didn't store it".
-    """
-    if q.competency == "abstention":
-        coverage = len(stored_names) / max(n_total, 1)
-        return coverage >= 0.5
-
-    if q.competency == "update":
-        entity = q.required_entities[0]
-        # Must have the entity AND have applied the correction
-        if entity not in stored_names:
-            return False
-        if not applies_updates:
-            return False  # naive ignores corrections → answers old value
-        return entity in updated_names
-
-    if q.competency == "delta":
-        entity = q.required_entities[0]
-        if entity not in stored_names:
-            return False
-        if not applies_updates:
-            return False
-        return entity in updated_names
-
-    return all(name in stored_names for name in q.required_entities)
+def _construct_and_validate(q: GeneratedQA, tmpl: WorldTemplate,
+                            world: World, stored_names: set[str],
+                            updated_names: set[str],
+                            applies_updates: bool,
+                            n_total: int = 60) -> bool:
+    """Delegate to bench._construct_and_validate."""
+    from memorybench.bench import _construct_and_validate as _cv
+    return _cv(q, tmpl, world, stored_names, updated_names,
+               applies_updates, n_total)
 
 
 def simulate_strategy(
@@ -161,9 +138,9 @@ def simulate_strategy(
     by_purpose: dict[str, list[bool]] = {}
     by_comp: dict[str, list[bool]] = {}
     for q in questions:
-        ok = _can_answer(q, stored_names, updated_names,
-                         profile.applies_updates,
-                         n_total=len(world.entities))
+        ok = _construct_and_validate(q, tmpl, world, stored_names,
+                                     updated_names, profile.applies_updates,
+                                     n_total=len(world.entities))
         if ok:
             correct += 1
         by_purpose.setdefault(q.purpose, []).append(ok)
@@ -1054,11 +1031,13 @@ def test_priority_beats_random():
                 world_r, rng_qr, world_r.entities, r_stored, 20, corrections_r)
 
             p_correct = sum(1 for q in qs_p
-                            if _can_answer(q, p_stored, p_updated, True,
-                                           len(world_p.entities)))
+                            if _construct_and_validate(
+                                q, tmpl, world_p, p_stored, p_updated, True,
+                                len(world_p.entities)))
             r_correct = sum(1 for q in qs_r
-                            if _can_answer(q, r_stored, r_updated, True,
-                                           len(world_r.entities)))
+                            if _construct_and_validate(
+                                q, tmpl, world_r, r_stored, r_updated, True,
+                                len(world_r.entities)))
 
             total += 1
             if p_correct > r_correct:
@@ -1070,6 +1049,48 @@ def test_priority_beats_random():
         assert win_rate >= 0.3 or (priority_wins + ties) / total >= 0.6, (
             f"{tmpl.name}: priority only wins {priority_wins}/{total} seeds "
             f"(ties={ties}) — strategy quality doesn't differentiate")
+
+
+def test_format_roundtrip_in_simulation():
+    """Verify _format_value() → validate() roundtrip for all templates.
+
+    For every retrieval/update question, constructing the answer via
+    _format_value(attr, val) must pass validation against the GT.
+    This catches precision/suffix bugs that would be invisible with
+    a boolean _can_answer() shortcut.
+    """
+    from memorybench.evaluation.validators import AnswerValidator
+    validator = AnswerValidator()
+
+    for TmplClass in [CompanyWorld, ResearchWorld, CityWorld,
+                       HospitalWorld, SportWorld]:
+        tmpl = TmplClass()
+        for seed in range(3):
+            world = tmpl.generate_world(seed=seed, n_entities=60)
+            rng_correct = Random(seed + 3333)
+            corrections = tmpl.generate_corrections(world, rng_correct, 5)
+            rng_q = Random(seed + 7777)
+            stored = {e.name for e in world.entities}
+            questions = tmpl.gen_adaptive_questions(
+                world, rng_q, world.entities, stored, 20, corrections)
+
+            for q in questions:
+                if q.competency not in ("retrieval", "update"):
+                    continue
+                if not q.source_attr:
+                    continue
+                entity = world.get_entity(q.required_entities[0])
+                if not entity:
+                    continue
+                val = entity.get(q.source_attr)
+                if val is None:
+                    continue
+                formatted = tmpl._format_value(q.source_attr, val)
+                ok = validator.validate(formatted, q.answer, q.competency)
+                assert ok, (
+                    f"{tmpl.name} seed={seed}: _format_value({q.source_attr}, "
+                    f"{val})={formatted!r} failed validation against "
+                    f"GT={q.answer!r} (competency={q.competency})")
 
 
 if __name__ == "__main__":
@@ -1145,4 +1166,6 @@ if __name__ == "__main__":
     print("  ✓ detect_stored_numeric_variants")
     test_priority_beats_random()
     print("  ✓ priority_beats_random")
+    test_format_roundtrip_in_simulation()
+    print("  ✓ format_roundtrip_in_simulation")
     print("ALL TESTS PASSED")
