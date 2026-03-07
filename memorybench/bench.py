@@ -161,25 +161,33 @@ def main(argv: list[str] | None = None) -> int:
                 )
 
                 # Convert to standard format
+                seed_elapsed = time.time() - t0
                 correct = sum(r.correct for r in agent_results)
                 total = len(agent_results)
                 by_comp: dict[str, list[bool]] = defaultdict(list)
                 by_purp: dict[str, list[bool]] = defaultdict(list)
-                details = []
+                answer_details = []
                 for r in agent_results:
                     by_comp[r.competency].append(r.correct)
                     by_purp[r.purpose].append(r.correct)
-                    details.append({
+                    answer_details.append({
                         "question": r.question,
-                        "answer": r.ground_truth,
+                        "expected": r.ground_truth,
+                        "actual": r.answer,
+                        "score": 1.0 if r.correct else 0.0,
+                        "is_correct": r.correct,
                         "competency": r.competency,
                         "purpose": r.purpose,
-                        "correct": r.correct,
                     })
 
                 # Detect stored entities
                 stored_names, missed = tmpl.detect_stored_entities(
                     world, stored)
+
+                comp_scores = {
+                    c: round(sum(v) / len(v), 4) if v else 0.0
+                    for c, v in by_comp.items()
+                }
 
                 result = {
                     "strategy": args.model,
@@ -195,9 +203,42 @@ def main(argv: list[str] | None = None) -> int:
                         p: (sum(v), len(v)) for p, v in by_purp.items()},
                     "by_competency": {
                         c: (sum(v), len(v)) for c, v in by_comp.items()},
-                    "details": details,
+                    "details": answer_details,
                 }
                 agg[args.model].append(result)
+
+                # Save per-seed result in LiveWeb-compatible format
+                eval_result = {
+                    "task_name": (f"memorybench:{tmpl.name}"
+                                  f":{args.entities}e:{args.questions}q"),
+                    "score": correct / total if total else 0.0,
+                    "success": total > 0,
+                    "time_taken": seed_elapsed,
+                    "extra": {
+                        "model": args.model,
+                        "seed": seed,
+                        "template": tmpl.name,
+                        "n_entities": args.entities,
+                        "n_questions": args.questions,
+                        "n_corrections": args.corrections,
+                        "write_budget": 30,
+                        "writes_used": writes_used,
+                        "stored_entities": len(stored_names),
+                        "missed_entities": len(missed),
+                        "by_competency": comp_scores,
+                        "answer_details": answer_details,
+                    },
+                }
+                eval_dir = Path("eval")
+                eval_dir.mkdir(exist_ok=True)
+                safe_model = args.model.replace("/", "_")
+                eval_path = (eval_dir / f"{safe_model}_{tmpl.name}"
+                             f"_s{seed}.json")
+                tmp_path = eval_path.with_suffix(".tmp")
+                tmp_path.write_text(
+                    json.dumps(eval_result, indent=2, default=str))
+                tmp_path.rename(eval_path)
+                print(f"  Saved: {eval_path}")
 
             else:
                 # Simulation mode (system self-testing)
@@ -277,16 +318,7 @@ def main(argv: list[str] | None = None) -> int:
                 all_pass = False
         print(f"\n  Result: {'ALL PASS' if all_pass else 'SOME FAILURES'}")
 
-    # Auto-generate output path for model eval if not specified
-    if is_model_eval and not args.output:
-        safe_model = args.model.replace("/", "_")
-        tmpl_str = args.template or "all"
-        seed_str = (str(args.seed) if args.seed is not None
-                    else f"{n_seeds}seeds")
-        args.output = (f"eval/{safe_model}_{tmpl_str}_e{args.entities}"
-                       f"_q{args.questions}_{seed_str}.json")
-
-    # Save JSON
+    # Save aggregate JSON (simulation mode or explicit --output)
     if args.output:
         # Flatten for JSON (remove details unless verbose)
         json_data = {
