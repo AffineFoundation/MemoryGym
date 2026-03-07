@@ -68,6 +68,17 @@ _TOOL_CALL_RE = re.compile(
     r"<tool_call>\s*(\{.*?\})\s*</tool_call>", re.DOTALL,
 )
 
+# Valid tool names for bare-JSON detection
+_KNOWN_TOOLS = {
+    "memory_store", "memory_search", "memory_get",
+    "memory_forget", "memory_list", "submit_answer",
+}
+
+# Bare JSON: {"name": "...", "arguments": {...}}  (no XML wrapper)
+_BARE_JSON_RE = re.compile(
+    r'\{[^{}]*"name"\s*:\s*"[^"]+?"[^{}]*"arguments"\s*:\s*\{[^{}]*\}[^{}]*\}',
+)
+
 
 @dataclass
 class AgentResult:
@@ -139,6 +150,30 @@ def _execute_tool(
     return f"Unknown tool: {name}", None
 
 
+def _extract_tool_calls(text: str) -> list[dict]:
+    """Extract tool calls from text — supports <tool_call> XML and bare JSON."""
+    calls = []
+    # 1) Try XML-wrapped format first
+    for match in _TOOL_CALL_RE.finditer(text):
+        try:
+            call = json.loads(match.group(1))
+            if call.get("name") in _KNOWN_TOOLS:
+                calls.append(call)
+        except json.JSONDecodeError:
+            continue
+    if calls:
+        return calls
+    # 2) Fallback: bare JSON (Qwen-style)
+    for match in _BARE_JSON_RE.finditer(text):
+        try:
+            call = json.loads(match.group(0))
+            if call.get("name") in _KNOWN_TOOLS:
+                calls.append(call)
+        except json.JSONDecodeError:
+            continue
+    return calls
+
+
 def _parse_and_execute(
     text: str, backend: MemoryBackend, budget: MemoryBudget,
 ) -> tuple[list[str], str | None, int, int]:
@@ -147,12 +182,7 @@ def _parse_and_execute(
     answer = None
     n_writes = n_searches = 0
 
-    for match in _TOOL_CALL_RE.finditer(text):
-        try:
-            call = json.loads(match.group(1))
-        except json.JSONDecodeError:
-            continue
-
+    for call in _extract_tool_calls(text):
         name = call.get("name", "")
         args = call.get("arguments", {})
 

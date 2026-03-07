@@ -2,6 +2,7 @@
 
 from memorybench.agents.stream_agent import (
     _execute_tool,
+    _extract_tool_calls,
     _parse_and_execute,
     _format_documents,
     SYSTEM_PROMPT,
@@ -235,6 +236,45 @@ def test_nuclear_redaction_message_count():
         messages.append({"role": "assistant", "content": "OK."})
 
         assert len(messages) == 3, f"After event {event_idx}, messages={len(messages)}"
+
+
+def test_bare_json_tool_calls():
+    """Bare JSON (Qwen-style) tool calls are parsed correctly."""
+    text = '{"name": "memory_store", "arguments": {"content": "Alice revenue=500"}}\n{"name": "submit_answer", "arguments": {"answer": "500"}}'
+    calls = _extract_tool_calls(text)
+    assert len(calls) == 2
+    assert calls[0]["name"] == "memory_store"
+    assert calls[1]["name"] == "submit_answer"
+
+
+def test_bare_json_parse_and_execute():
+    """Full parse+execute with bare JSON format."""
+    backend = _fresh_backend()
+    budget = MemoryBudget(total_writes=5)
+    text = '{"name": "memory_store", "arguments": {"content": "Alice | salary: 100k"}}\n{"name": "submit_answer", "arguments": {"answer": "100k"}}'
+    results, answer, n_writes, n_searches = _parse_and_execute(text, backend, budget)
+    assert len(results) == 2
+    assert answer == "100k"
+    assert n_writes == 1
+    assert budget.writes_used == 1
+
+
+def test_xml_preferred_over_bare_json():
+    """When XML tool_call tags are present, bare JSON is ignored."""
+    text = (
+        '<tool_call>{"name": "submit_answer", "arguments": {"answer": "from_xml"}}</tool_call>\n'
+        '{"name": "submit_answer", "arguments": {"answer": "from_bare"}}'
+    )
+    calls = _extract_tool_calls(text)
+    assert len(calls) == 1
+    assert calls[0]["arguments"]["answer"] == "from_xml"
+
+
+def test_bare_json_ignores_unknown_tools():
+    """Bare JSON with unknown tool names is ignored."""
+    text = '{"name": "unknown_tool", "arguments": {"data": "test"}}'
+    calls = _extract_tool_calls(text)
+    assert len(calls) == 0
 
 
 if __name__ == "__main__":
