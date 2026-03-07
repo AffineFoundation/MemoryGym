@@ -221,6 +221,7 @@ def _run_tool_loop(
 
     for turn in range(max_turns):
         # Retry indefinitely on transient API errors (429, 503, etc.)
+        # On context overflow, trim intermediate tool messages and retry.
         attempt = 0
         while True:
             try:
@@ -230,10 +231,25 @@ def _run_tool_loop(
                 )
                 break
             except Exception as e:
-                err = str(e).lower()
-                transient = ("429" in str(e) or "503" in str(e)
-                             or "capacity" in err or "overloaded" in err
-                             or "timeout" in err or "502" in str(e))
+                err_str = str(e)
+                err_lower = err_str.lower()
+                # Context length exceeded → trim messages
+                if ("context" in err_lower and "length" in err_lower
+                        or "input_tokens" in err_lower
+                        or "reduce the length" in err_lower):
+                    # Keep system + first user msg + last 2 messages
+                    if len(messages) > 4:
+                        messages[2:-2] = []
+                        print(" [ctx-trim]", end="", flush=True)
+                        continue
+                    else:
+                        response = None
+                        break  # can't trim further, abort this turn
+                transient = ("429" in err_str or "503" in err_str
+                             or "capacity" in err_lower
+                             or "overloaded" in err_lower
+                             or "timeout" in err_lower
+                             or "502" in err_str)
                 if not transient:
                     raise
                 attempt += 1
@@ -241,6 +257,8 @@ def _run_tool_loop(
                 print(f" [retry #{attempt} in {wait}s]",
                       end="", flush=True)
                 time.sleep(wait)
+        if response is None:
+            break  # context overflow, unrecoverable for this turn
         stats.api_calls += 1
         text = response.choices[0].message.content or ""
         messages.append({"role": "assistant", "content": text})
