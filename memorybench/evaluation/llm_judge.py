@@ -150,9 +150,11 @@ def llm_judge_validate_sync(
         competency=competency,
     )
 
+    import time as _time
+
     errors: list[str] = []
-    for model in JUDGE_MODELS:
-        for attempt in range(2):  # 1 retry per model
+    for round_num in range(10):  # up to 10 full rounds through all models
+        for model in JUDGE_MODELS:
             try:
                 response = client.chat.completions.create(
                     model=model,
@@ -162,9 +164,21 @@ def llm_judge_validate_sync(
                 text = response.choices[0].message.content.strip()
                 return _parse_verdict(text)
             except Exception as exc:
-                errors.append(f"{model}(attempt {attempt+1}): {exc}")
-                continue
+                err = str(exc).lower()
+                transient = ("429" in str(exc) or "503" in str(exc)
+                             or "502" in str(exc) or "capacity" in err
+                             or "overloaded" in err or "timeout" in err)
+                errors.append(f"{model}: {exc}")
+                if transient:
+                    continue  # try next model immediately
+                else:
+                    continue  # non-transient: also try next model
+        # All models failed this round — backoff before next round
+        if round_num < 9:
+            wait = min(2 ** round_num * 5, 60)
+            _time.sleep(wait)
 
     raise RuntimeError(
-        f"All judge models failed: {'; '.join(errors)}"
+        f"All judge models failed after 10 rounds: "
+        f"{'; '.join(errors[-len(JUDGE_MODELS):])}"
     )

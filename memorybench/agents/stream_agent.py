@@ -220,8 +220,9 @@ def _run_tool_loop(
     t0 = time.time()
 
     for turn in range(max_turns):
-        # Retry on transient API errors (429, 503, etc.)
-        for attempt in range(5):
+        # Retry indefinitely on transient API errors (429, 503, etc.)
+        attempt = 0
+        while True:
             try:
                 response = client.chat.completions.create(
                     model=model, messages=messages,
@@ -229,14 +230,17 @@ def _run_tool_loop(
                 )
                 break
             except Exception as e:
-                if attempt < 4 and ("429" in str(e) or "503" in str(e)
-                                    or "capacity" in str(e).lower()):
-                    wait = 2 ** attempt * 5
-                    print(f" [retry {attempt+1}/4 in {wait}s: {e}]",
-                          end="", flush=True)
-                    time.sleep(wait)
-                else:
+                err = str(e).lower()
+                transient = ("429" in str(e) or "503" in str(e)
+                             or "capacity" in err or "overloaded" in err
+                             or "timeout" in err or "502" in str(e))
+                if not transient:
                     raise
+                attempt += 1
+                wait = min(2 ** attempt * 5, 60)
+                print(f" [retry #{attempt} in {wait}s]",
+                      end="", flush=True)
+                time.sleep(wait)
         stats.api_calls += 1
         text = response.choices[0].message.content or ""
         messages.append({"role": "assistant", "content": text})
