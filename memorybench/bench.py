@@ -277,6 +277,15 @@ def main(argv: list[str] | None = None) -> int:
                 all_pass = False
         print(f"\n  Result: {'ALL PASS' if all_pass else 'SOME FAILURES'}")
 
+    # Auto-generate output path for model eval if not specified
+    if is_model_eval and not args.output:
+        safe_model = args.model.replace("/", "_")
+        tmpl_str = args.template or "all"
+        seed_str = (str(args.seed) if args.seed is not None
+                    else f"{n_seeds}seeds")
+        args.output = (f"eval/{safe_model}_{tmpl_str}_e{args.entities}"
+                       f"_q{args.questions}_{seed_str}.json")
+
     # Save JSON
     if args.output:
         # Flatten for JSON (remove details unless verbose)
