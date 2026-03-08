@@ -33,6 +33,7 @@ log = logging.getLogger(__name__)
 _REASONING_COMPETENCIES = frozenset({
     "synthesis", "aggregation", "conditional", "ratio",
     "comparison", "multi_hop", "outlier", "delta",
+    "relationship_lookup", "relationship_hop",
 })
 
 

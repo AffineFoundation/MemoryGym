@@ -79,6 +79,15 @@ class Correction:
 
 
 @dataclass
+class Relationship:
+    """A directed relationship between two entities."""
+
+    source: str       # source entity name
+    relation: str     # relationship type (e.g. "supplies_to")
+    target: str       # target entity name
+
+
+@dataclass
 class World:
     """Complete deterministic world state from one seed."""
 
@@ -87,12 +96,26 @@ class World:
     active_attrs: list[str]
     categories: list[str]
     seed: int
+    relationships: list[Relationship] = field(default_factory=list)
 
     def get_entity(self, name: str) -> EntitySpec | None:
         for e in self.entities:
             if e.name == name:
                 return e
         return None
+
+    def get_relationships(self, name: str) -> list[Relationship]:
+        """Get all relationships involving an entity (as source or target)."""
+        return [r for r in self.relationships
+                if r.source == name or r.target == name]
+
+    def get_outgoing(self, name: str) -> list[Relationship]:
+        """Get relationships where entity is the source."""
+        return [r for r in self.relationships if r.source == name]
+
+    def get_incoming(self, name: str) -> list[Relationship]:
+        """Get relationships where entity is the target."""
+        return [r for r in self.relationships if r.target == name]
 
     def entities_in_category(self, cat: str) -> list[EntitySpec]:
         return [e for e in self.entities if e.category == cat]
@@ -175,6 +198,55 @@ class WorldTemplate(ABC):
         """Return (attr1, attr2, label) triples for ratio questions."""
         ...
 
+    def _relationship_types(self) -> list[tuple[str, str, bool]]:
+        """Return (relation, description, symmetric) for this domain.
+
+        Override in subclasses to enable relationship generation.
+        Empty list = no relationships (backward compatible).
+        """
+        return []
+
+    def generate_relationships(self, rng: Random,
+                               world: World,
+                               n_relations: int) -> list[Relationship]:
+        """Generate relationships between entities.
+
+        Default: uses _relationship_types() to create random pairings.
+        Rules: no self-loops, no duplicates, symmetric stored once.
+        """
+        rel_types = self._relationship_types()
+        if not rel_types:
+            return []
+
+        entities = world.entities
+        if len(entities) < 2:
+            return []
+
+        relationships: list[Relationship] = []
+        seen: set[tuple[str, str, str]] = set()
+
+        for _ in range(n_relations * 3):  # oversample, deduplicate
+            if len(relationships) >= n_relations:
+                break
+            rel_name, _, symmetric = rng.choice(rel_types)
+            a, b = rng.sample(entities, 2)
+            key = (a.name, rel_name, b.name)
+            rev_key = (b.name, rel_name, a.name)
+            if key in seen or (symmetric and rev_key in seen):
+                continue
+            seen.add(key)
+            relationships.append(Relationship(a.name, rel_name, b.name))
+
+        return relationships
+
+    def render_relationship(self, rel: Relationship) -> str:
+        """Render a relationship as a natural-language sentence.
+
+        Override for domain-specific phrasing.
+        """
+        return (f"{rel.source} has a {rel.relation.replace('_', ' ')} "
+                f"relationship with {rel.target}.")
+
     # ── Concrete: world generation ──
 
     def generate_world(self, seed: int, n_entities: int,
@@ -207,11 +279,20 @@ class WorldTemplate(ABC):
         if eval_salt:
             self._apply_eval_salt(entities, selected, active, eval_salt)
 
-        return World(
+        world = World(
             entities=entities, attr_defs=selected,
             active_attrs=active, categories=self.all_categories,
             seed=seed,
         )
+
+        # Generate relationships if template supports them
+        if self._relationship_types():
+            rng_rel = Random(seed + 9191)
+            n_rels = max(3, n_entities // 5)
+            world.relationships = self.generate_relationships(
+                rng_rel, world, n_rels)
+
+        return world
 
     def _apply_eval_salt(self, entities: list[EntitySpec],
                          attr_defs: list[AttrDef],
@@ -406,6 +487,8 @@ class WorldTemplate(ABC):
             "comparison": self._gq_comparison,
             "multi_hop": self._gq_multi_hop,
             "outlier": self._gq_outlier,
+            "relationship_lookup": self._gq_relationship_lookup,
+            "relationship_hop": self._gq_relationship_hop,
         }.get(competency)
         return fn(world, rng, available) if fn else None
 
@@ -798,6 +881,80 @@ class WorldTemplate(ABC):
             source_attr=attr,
         )
 
+    def _gq_relationship_lookup(self, world, rng, available):
+        """Ask who has a specific relationship with a given entity.
+
+        Requires: world has relationships, entity is in available pool.
+        """
+        if not world.relationships:
+            return None
+        avail_names = {e.name for e in available}
+        # Find relationships where both endpoints are in available pool
+        valid = [r for r in world.relationships
+                 if r.source in avail_names and r.target in avail_names]
+        if not valid:
+            return None
+        rel = rng.choice(valid)
+        ew = self.entity_word
+        rel_phrase = rel.relation.replace("_", " ")
+        q = rng.choice([
+            f"Name the {ew} that {rel.source} {rel_phrase}.",
+            f"Which {ew} has a '{rel_phrase}' relationship with "
+            f"{rel.source}?",
+        ])
+        return GeneratedQA(
+            q, rel.target,
+            "relationship_lookup",
+            [rel.source, rel.target],
+            purpose="comprehension",
+            source_attr=rel.relation,
+        )
+
+    def _gq_relationship_hop(self, world, rng, available):
+        """2-step: find related entity, then query its attribute.
+
+        Example: "What is the revenue of the company that CompanyA supplies to?"
+        Requires: relationships + both entities have the queried attribute.
+        """
+        if not world.relationships:
+            return None
+        avail_names = {e.name for e in available}
+        valid = [r for r in world.relationships
+                 if r.source in avail_names and r.target in avail_names]
+        if not valid:
+            return None
+
+        rng.shuffle(valid)
+        for rel in valid:
+            target_entity = world.get_entity(rel.target)
+            if not target_entity:
+                continue
+            # Pick a numeric attribute the target has
+            numeric = [a for a in world.active_attrs
+                       if isinstance(target_entity.get(a), (int, float))]
+            if not numeric:
+                continue
+            attr = rng.choice(numeric)
+            label = self.attr_label(attr)
+            val = target_entity.get(attr)
+            fmt_val = self._format_value(attr, val)
+            rel_phrase = rel.relation.replace("_", " ")
+            ew = self.entity_word
+            q = rng.choice([
+                f"{rel.source} {rel_phrase} another {ew}. "
+                f"What is that {ew}'s {label}?",
+                f"Look up the {ew} that {rel.source} {rel_phrase}. "
+                f"Report its {label}.",
+            ])
+            return GeneratedQA(
+                q, fmt_val,
+                "relationship_hop",
+                [rel.source, rel.target],
+                purpose="comprehension",
+                source_attr=attr,
+            )
+        return None
+
     # ── Concrete: post-storage adaptive questioning ──
 
     def _numeric_variants(self, attr: str, val: Any) -> list[str]:
@@ -959,9 +1116,17 @@ class WorldTemplate(ABC):
             batch_entities = entities[start:end]
 
             # Render and emit ingest event (narrative mode)
-            docs = [self.render_document(e, world.active_attrs, rng,
-                                         other_entities=batch_entities)
-                    for e in batch_entities]
+            docs = []
+            for e in batch_entities:
+                doc = self.render_document(e, world.active_attrs, rng,
+                                          other_entities=batch_entities)
+                # Append relationship sentences if any
+                if world.relationships:
+                    rels = world.get_outgoing(e.name)
+                    if rels:
+                        rel_lines = [self.render_relationship(r) for r in rels]
+                        doc += "\n" + " ".join(rel_lines)
+                docs.append(doc)
             events.append({
                 "type": "ingest",
                 "batch": batch_idx + 1,
@@ -1145,16 +1310,24 @@ class WorldTemplate(ABC):
             comp_pool = introduced
         comp_types = ["synthesis", "aggregation", "conditional",
                       "ratio", "comparison", "multi_hop", "outlier"]
+        # Add relationship types only if world has relationships
+        if world.relationships:
+            comp_types.extend(["relationship_lookup", "relationship_hop"])
         rng.shuffle(comp_types)
+        comp_fn_map = {
+            "synthesis": self._gq_synthesis,
+            "aggregation": self._gq_aggregation,
+            "conditional": self._gq_conditional,
+            "ratio": self._gq_ratio,
+            "comparison": self._gq_comparison,
+            "multi_hop": self._gq_multi_hop,
+            "outlier": self._gq_outlier,
+            "relationship_lookup": self._gq_relationship_lookup,
+            "relationship_hop": self._gq_relationship_hop,
+        }
         for i in range(n_comprehension):
             ctype = comp_types[i % len(comp_types)]
-            fn = {"synthesis": self._gq_synthesis,
-                  "aggregation": self._gq_aggregation,
-                  "conditional": self._gq_conditional,
-                  "ratio": self._gq_ratio,
-                  "comparison": self._gq_comparison,
-                  "multi_hop": self._gq_multi_hop,
-                  "outlier": self._gq_outlier}[ctype]
+            fn = comp_fn_map[ctype]
             q = fn(world, rng, comp_pool)
             if q:
                 q.purpose = "comprehension"

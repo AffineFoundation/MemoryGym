@@ -256,6 +256,21 @@ class CityWorld(WorldTemplate):
     def _ratio_pairs(self):
         return list(_RATIO_PAIRS)
 
+    def _relationship_types(self):
+        return [
+            ("neighbor_of", "is a neighbor of", True),
+            ("trades_with", "trades with", True),
+        ]
+
+    def render_relationship(self, rel):
+        if rel.relation == "neighbor_of":
+            return (f"{rel.source} and {rel.target} share a common "
+                    f"border and maintain joint infrastructure.")
+        if rel.relation == "trades_with":
+            return (f"{rel.source} has an active trade corridor "
+                    f"with {rel.target}.")
+        return super().render_relationship(rel)
+
     def render_document(self, entity: EntitySpec,
                         active_attrs: list[str], rng: Random,
                         other_entities: list[EntitySpec] | None = None

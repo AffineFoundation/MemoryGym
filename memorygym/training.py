@@ -7,9 +7,15 @@ using the same WorldTemplate infrastructure as evaluation.
 from __future__ import annotations
 
 import json
+import uuid
 from pathlib import Path
 from random import Random
 from typing import Any
+
+import chromadb
+from chromadb.utils.embedding_functions import (
+    SentenceTransformerEmbeddingFunction,
+)
 
 from memorygym.protocol import TIERS
 from memorygym.simulation import (
@@ -315,12 +321,22 @@ class MemoryEnv:
         self._tmpl: WorldTemplate | None = None
         self._stream: list[dict] = []
         self._event_idx: int = 0
-        self._memory: dict[str, str] = {}  # id → content
         self._mem_counter: int = 0
         self._writes_used: int = 0
         self._questions_answered: int = 0
         self._correct_count: int = 0
         self._total_questions: int = 0
+
+        # ChromaDB embedding search (matches real eval backend)
+        self._ef = SentenceTransformerEmbeddingFunction(
+            model_name="all-MiniLM-L6-v2",
+        )
+        self._chroma_client = chromadb.Client()
+        self._collection_name = f"memenv_{uuid.uuid4().hex[:8]}"
+        self._collection = self._chroma_client.get_or_create_collection(
+            name=self._collection_name,
+            embedding_function=self._ef,
+        )
 
     def _format_event(self, event: dict) -> str:
         """Format an event dict as human-readable text."""
@@ -374,8 +390,13 @@ class MemoryEnv:
             entities_per_batch=10,
         )
         self._event_idx = 0
-        self._memory = {}
         self._mem_counter = 0
+        # Reset ChromaDB collection
+        self._chroma_client.delete_collection(self._collection_name)
+        self._collection = self._chroma_client.get_or_create_collection(
+            name=self._collection_name,
+            embedding_function=self._ef,
+        )
         self._writes_used = 0
         self._questions_answered = 0
         self._correct_count = 0
@@ -414,24 +435,37 @@ class MemoryEnv:
             else:
                 self._mem_counter += 1
                 mid = f"mem_{self._mem_counter:03d}"
-                self._memory[mid] = args.get("content", "")
+                content = args.get("content", "")
+                self._collection.add(
+                    ids=[mid],
+                    documents=[content],
+                )
                 self._writes_used += 1
                 info["memory_id"] = mid
                 info["remaining"] = self.write_budget - self._writes_used
 
         elif tool == "memory_search":
-            query = args.get("query", "").lower()
-            results = [
-                {"id": mid, "content": c}
-                for mid, c in self._memory.items()
-                if query in c.lower()
-            ]
-            info["results"] = results
+            query = args.get("query", "")
+            count = self._collection.count()
+            if count == 0:
+                info["results"] = []
+            else:
+                top_k = min(5, count)
+                results = self._collection.query(
+                    query_texts=[query],
+                    n_results=top_k,
+                )
+                info["results"] = [
+                    {"id": results["ids"][0][i],
+                     "content": results["documents"][0][i]}
+                    for i in range(len(results["ids"][0]))
+                ]
 
         elif tool == "memory_forget":
             mid = args.get("memory_id", "")
-            if mid in self._memory:
-                del self._memory[mid]
+            existing = self._collection.get(ids=[mid])
+            if existing["ids"]:
+                self._collection.delete(ids=[mid])
                 info["deleted"] = True
             else:
                 info["deleted"] = False

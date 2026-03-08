@@ -245,6 +245,21 @@ class SportWorld(WorldTemplate):
     def _ratio_pairs(self):
         return list(_RATIO_PAIRS)
 
+    def _relationship_types(self):
+        return [
+            ("rival_of", "is a rival of", True),
+            ("farm_team_of", "is a farm team of", False),
+        ]
+
+    def render_relationship(self, rel):
+        if rel.relation == "rival_of":
+            return (f"{rel.source} and {rel.target} have a historic "
+                    f"rivalry spanning multiple seasons.")
+        if rel.relation == "farm_team_of":
+            return (f"{rel.source} serves as the developmental affiliate "
+                    f"of {rel.target}.")
+        return super().render_relationship(rel)
+
     def render_document(self, entity: EntitySpec,
                         active_attrs: list[str], rng: Random,
                         other_entities: list[EntitySpec] | None = None

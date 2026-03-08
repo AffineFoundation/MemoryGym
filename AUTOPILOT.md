@@ -62,26 +62,19 @@ eval 数据（ROADMAP.md §3）← 衡量差距
 
 ## 当前任务
 
-更新 ROADMAP.md §0：清除过时的"未提交代码"列表，反映当前真实状态（rename 已完成，代码已提交）
+小模型基线 eval（Qwen3-14B/32B），建立 RL 前基准
 
 ## 待办
 
-> 初始队列。待办清空后通过战略推导自动补充。
+> 战略推导生成。依据：对照北极星，RL 训练闭环是最大差距。
 
-### Phase 0 — 多模板基准数据（ROADMAP §4 优先级 1）
-1. 跑 research 模板 eval（默认模型, seed=1, lite）
-2. 跑 city 模板 eval（默认模型, seed=1, lite）
-3. 跑 hospital 模板 eval（默认模型, seed=1, lite）
-4. 汇总多模板结果到 ROADMAP.md §3，分析跨模板一致性
+### Phase 3 — RL 训练闭环
+1. ~~MemoryEnv search 从 substring → embedding~~ ✅
+2. ~~GRPO 框架调研与选型~~ ✅ → verl（见 devlog/2026-03-08-grpo-framework-selection.md）
+3. 小模型基线 eval（Qwen3-14B/32B），建立 RL 前基准
+4. verl 环境搭建 + MemoryEnv AgentLoopBase 集成
 
-### Phase 1 — 跨模型工具兼容性（ROADMAP §4 优先级 2）
-5. 分析 GPT-OSS-120B 零分根因（读 eval JSON，定位失败模式）
-6. 用 DeepSeek-V3.2-TEE 跑 eval，验证跨厂商兼容性
-7. 用 MiniMax-M2.5-TEE 跑 eval，验证第三厂商兼容性
-8. 如有格式兼容问题 → 改进 stream_agent 工具解析 + 加测试
-
-### Phase 2 — RL 训练闭环（ROADMAP §4 优先级 3）
-9. MemoryEnv search 从 substring → embedding（消除训练/评测不一致）
-10. GRPO 框架调研与选型（verl vs slime）
-11. 小模型基线 eval（Qwen3-14B/32B），建立 RL 前基准
+### 验证新功能
+1. 用可用模型跑 movie 模板 eval（seed=1, lite）
+2. 用 standard tier（更多问题）验证关系题出现率
 

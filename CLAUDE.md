@@ -42,7 +42,7 @@
 python -m pytest tests/ -q                    # 全量测试
 python tests/test_worlds.py                    # 世界模板测试（快速迭代）
 python -m memorygym.bench --seeds 10 --validate  # Simulation 不变量检查
-python -m memorygym.bench --model openai/gpt-4o --seed 42 --template company  # 真实评测
+python -m memorygym.bench --model xxxxxx --seed 42 --template company  # 真实评测
 ```
 
 每次代码变更必须通过 `python tests/test_worlds.py`。
@@ -75,7 +75,7 @@ python -m memorygym.bench --model openai/gpt-4o --seed 42 --template company  # 
 
 详细架构见 `docs/ROADMAP.md` §2。核心模块：
 
-- `worlds/` — 5 个领域模板（company/research/city/hospital/sport）+ 评分器 + Inspect AI 集成
+- `worlds/` — 6 个领域模板（company/research/city/hospital/sport/movie）+ 评分器 + Inspect AI 集成
 - `evaluation/` — 答案验证 + LLM judge
 - `memory/` — 预算管理 + 后端（ChromaDB/mem0）
 - `agents/stream_agent.py` — 真实 LLM agent runner

@@ -239,6 +239,21 @@ class ResearchWorld(WorldTemplate):
     def _ratio_pairs(self):
         return list(_RATIO_PAIRS)
 
+    def _relationship_types(self):
+        return [
+            ("collaborates_with", "collaborates with", True),
+            ("advised_by", "is advised by", False),
+        ]
+
+    def render_relationship(self, rel):
+        if rel.relation == "collaborates_with":
+            return (f"{rel.source} and {rel.target} have co-authored "
+                    f"multiple papers together.")
+        if rel.relation == "advised_by":
+            return (f"{rel.source} completed doctoral work under the "
+                    f"supervision of {rel.target}.")
+        return super().render_relationship(rel)
+
     def render_document(self, entity: EntitySpec,
                         active_attrs: list[str], rng: Random,
                         other_entities: list[EntitySpec] | None = None

@@ -332,8 +332,15 @@ def simulate_one_stream(
     rng_doc = Random(seed)
 
     # Render documents (for storage simulation)
-    all_docs = [(e, tmpl.render_document(e, world.active_attrs, rng_doc))
-                for e in world.entities]
+    all_docs = []
+    for e in world.entities:
+        doc = tmpl.render_document(e, world.active_attrs, rng_doc)
+        if world.relationships:
+            rels = world.get_outgoing(e.name)
+            if rels:
+                rel_lines = [tmpl.render_relationship(r) for r in rels]
+                doc += "\n" + " ".join(rel_lines)
+        all_docs.append((e, doc))
     total_doc_chars = sum(len(doc) for _, doc in all_docs)
 
     # Storage decision (same as non-stream)

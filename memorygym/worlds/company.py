@@ -12,7 +12,8 @@ from random import Random
 from typing import Any
 
 from memorygym.worlds.base import (
-    AttrDef, EntitySpec, SentenceTemplate, WorldTemplate, _possessive,
+    AttrDef, EntitySpec, Relationship, SentenceTemplate, WorldTemplate,
+    _possessive,
 )
 
 _PREFIXES = [
@@ -240,6 +241,21 @@ class CompanyWorld(WorldTemplate):
 
     def _ratio_pairs(self):
         return list(_RATIO_PAIRS)
+
+    def _relationship_types(self):
+        return [
+            ("supplies_to", "is a supplier of", False),
+            ("competes_with", "is a competitor of", True),
+        ]
+
+    def render_relationship(self, rel):
+        if rel.relation == "supplies_to":
+            return (f"{rel.source} is a key supplier to {rel.target}, "
+                    f"providing components under a long-term agreement.")
+        if rel.relation == "competes_with":
+            return (f"{rel.source} and {rel.target} are direct competitors "
+                    f"in the same market segment.")
+        return super().render_relationship(rel)
 
     def render_document(self, entity: EntitySpec,
                         active_attrs: list[str], rng: Random,

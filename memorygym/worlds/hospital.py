@@ -246,6 +246,21 @@ class HospitalWorld(WorldTemplate):
     def _ratio_pairs(self):
         return list(_RATIO_PAIRS)
 
+    def _relationship_types(self):
+        return [
+            ("refers_to", "refers patients to", False),
+            ("partners_with", "partners with", True),
+        ]
+
+    def render_relationship(self, rel):
+        if rel.relation == "refers_to":
+            return (f"{rel.source} maintains a referral agreement "
+                    f"with {rel.target} for specialist care.")
+        if rel.relation == "partners_with":
+            return (f"{rel.source} and {rel.target} operate a joint "
+                    f"research program.")
+        return super().render_relationship(rel)
+
     def render_document(self, entity: EntitySpec,
                         active_attrs: list[str], rng: Random,
                         other_entities: list[EntitySpec] | None = None
