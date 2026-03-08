@@ -1,4 +1,4 @@
-# MemoryBench 战略蓝图：从评测工具到记忆智能训练平台
+# MemoryGym 战略蓝图：从评测工具到记忆智能训练平台
 
 > 版本 0.2 | 2026-03-08 | 内部调研文档
 > 更新：新增 Phase 0（系统级改进），基于真实评测数据修正差距分析
@@ -8,7 +8,7 @@
 ## 目录
 
 1. [前沿研究全景](#1-前沿研究全景)
-2. [MemoryBench 当前状态](#2-memorybench-当前状态)
+2. [MemoryGym 当前状态](#2-memorygym-当前状态)
 3. [真实评测数据与核心问题](#3-真实评测数据与核心问题)
 4. [战略定位](#4-战略定位)
 5. [架构演进路线](#5-架构演进路线)
@@ -48,7 +48,7 @@
 
 ### 1.3 Memory Benchmark 现状
 
-| Benchmark | 测什么 | 与 MemoryBench 的区别 |
+| Benchmark | 测什么 | 与 MemoryGym 的区别 |
 |-----------|--------|----------------------|
 | **LoCoMo** (2024) | 长对话记忆检索 | 不测存储决策 |
 | **MemoryAgentBench** (2025) | 4 项记忆能力 | 无预算压力 |
@@ -58,7 +58,7 @@
 
 ---
 
-## 2. MemoryBench 当前状态
+## 2. MemoryGym 当前状态
 
 ### 2.1 已建立的核心能力
 
@@ -141,7 +141,7 @@ Qwen2.5-72B 在极简场景（30 entities / 5 questions / 30 budget）得到 83%
 
 ## 4. 战略定位
 
-不变。MemoryBench 是 **Memory Management 领域的 Gymnasium**：
+不变。MemoryGym 是 **Memory Management 领域的 Gymnasium**：
 
 1. 不测检索质量（向量数据库的事）
 2. 测存储决策质量（agent 的事）
@@ -209,8 +209,8 @@ Gate: maintenance>20%   Gate: 7B composite>55%  Gate: anti-hack pass   Gate: 3+ 
 - 建议预留量
 
 **文件变更**：
-- `memorybench/agents/stream_agent.py`: INGEST_TEMPLATE 和事件处理逻辑中注入预算上下文
-- `memorybench/worlds/eval_task.py`: 同步修改 INGEST_TEMPLATE
+- `memorygym/agents/stream_agent.py`: INGEST_TEMPLATE 和事件处理逻辑中注入预算上下文
+- `memorygym/worlds/eval_task.py`: 同步修改 INGEST_TEMPLATE
 
 **验证**：用 Qwen3-235B seed=1 (已知 baseline=50%) 重跑，对比是否预留了 budget。
 
@@ -237,7 +237,7 @@ max_writes_per_batch = write_budget // expected_total_batches
 **权衡**：
 - 优点：系统级强制分配，不依赖模型理解
 - 缺点：过于限制——模型可能在高价值 batch 中需要更多写入
-- **决策**：不采用。这违反了 MemoryBench 的核心设计——存储决策应该由 agent 做。
+- **决策**：不采用。这违反了 MemoryGym 的核心设计——存储决策应该由 agent 做。
 
 ### 6.4 多模板基准数据收集
 
@@ -325,7 +325,7 @@ Step 4: 多模板基准数据                            [估时: 4-6 小时]
 
 #### GRPO 对接
 
-选择 verl 或 OpenRLHF，提供 MemoryBenchRolloutWorker 适配器。
+选择 verl 或 OpenRLHF，提供 MemoryGymRolloutWorker 适配器。
 
 #### Mid-Training 分离（借鉴 REDSearcher）
 
@@ -384,13 +384,13 @@ lite → standard → hard，根据 composite score 自动升级。
 |------|------|
 | 多后端训练 | ChromaDB + mem0 + Zep 统一接口 |
 | 分布式 Rollout | vLLM + 异步 MemoryEnv workers |
-| PyPI 发布 | `pip install memorybench` |
+| PyPI 发布 | `pip install memorygym` |
 | HuggingFace Leaderboard | 公开排行榜 |
 | 预训练 memory agent | 7B 模型开源 |
 
 ### 9.2 论文定位
 
-> **MemoryBench: Learning Strategic Memory Management for LLM Agents**
+> **MemoryGym: Learning Strategic Memory Management for LLM Agents**
 > 投稿目标：NeurIPS 2026 Datasets & Benchmarks Track
 
 ### 9.3 预估时间：8-12 周
@@ -443,16 +443,30 @@ lite → standard → hard，根据 composite score 自动升级。
 
 ### Phase 0 进行中
 
-- [ ] Step 1: 动态预算上下文
-- [ ] Step 2: 验证效果（至少 1 model maintenance>0%）
-- [ ] Step 3: MemoryEnv 补全
+- [x] Step 1: 动态预算上下文 (2026-03-08)
+  - `stream_agent.py`: 每个 ingest 事件注入 remaining/total budget, entities seen, corrections coming, suggested store count
+  - `eval_task.py`: INGEST_TEMPLATE 增加 `{budget_context}` 占位符，solver 动态计算并传入
+  - 215/215 测试通过，所有核心 simulation 不变量保持
+- [x] Step 3: MemoryEnv 补全 (2026-03-08)
+  - tier 参数支持 (lite/standard/hard)，从 `protocol.TIERS` 读取配置
+  - text observation: `reset()`/`step()` 返回格式化文本（含预算上下文），不再返回 dict
+  - episode stats: 每步 `info["episode_stats"]`
+  - `get_verifiable_reward()`: accuracy-based，供 GRPO 使用
+  - 21 tests 通过
+- [x] Step 2: 验证 + Tool loop nudge (2026-03-08) — **GATE PASSED: maintenance=33%**
+  - Qwen3-235B seed=1 lite tier：maintenance 0% → **33%** (1/3 update 问题正确)
+  - Qwen3-235B seed=2 lite tier：maintenance 0% → **100%** (2/2 update 问题全部正确)
+  - **根因分析**：模型第一次响应生成 `<think>` 推理块但无 tool_call → `_run_tool_loop` 在 line 308 break → 空答案
+  - **修复**：`_run_tool_loop` 添加 nudge 机制——若 turn==0 且无答案，追加提醒消息让模型调用 submit_answer
+  - **预算分配**：seed=1: 7+4+2+correction writes; seed=2: 模型保留 3 writes 给 corrections
+  - **seed=2 已回答出两个 update 问题的更新值**（Zenith Aerospace=1950, Radiant Energy=205）
+  - seed=2 breadth=0%（模型选择储存了不同的实体，retrieval 问到的都不在其中）
 - [ ] Step 4: 多模板基准数据
 
 ### 待启动
 
 - [ ] Phase 1: RL 训练闭环
 - [ ] Phase 2: 任务复杂度升级
-- [ ] Phase 3: 生产级平台
 
 ---
 

@@ -34,6 +34,9 @@ htmlcov/
 # Secrets
 .env
 
+# Development log (local only, not committed)
+devlog/
+
 # Runtime artifacts
 logs/
 results*.json
