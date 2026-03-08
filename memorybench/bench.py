@@ -4,6 +4,10 @@ Real evaluation (--model):
     python -m memorybench.bench --model openai/gpt-4o --seed 42
     python -m memorybench.bench --model openai/gpt-4o --seeds 3 --template company
 
+Standard protocol:
+    python -m memorybench.bench --model openai/gpt-4o --tier standard
+    python -m memorybench.bench --model openai/gpt-4o --official -o results.json
+
 Simulation (system self-testing, no LLM):
     python -m memorybench.bench --seed 0 -v
     python -m memorybench.bench --seeds 10 --validate
@@ -17,6 +21,14 @@ import time
 from collections import defaultdict
 from pathlib import Path
 from random import Random
+
+from memorybench.protocol import (
+    OFFICIAL_SEEDS,
+    OFFICIAL_TEMPLATES,
+    TIERS,
+    compute_composite,
+    format_leaderboard_entry,
+)
 
 # Re-export simulation symbols for backward compatibility with tests.
 # All simulation logic lives in memorybench.simulation.
@@ -51,12 +63,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
                    choices=[s["name"] for s in STRATEGIES],
                    default=None, metavar="S",
                    help="strategies to evaluate (default: all)")
-    p.add_argument("--entities", type=int, default=60, metavar="N",
-                   help="entities per world (default: 60)")
-    p.add_argument("--questions", type=int, default=20, metavar="N",
-                   help="questions per evaluation (default: 20)")
-    p.add_argument("--corrections", type=int, default=5, metavar="N",
-                   help="corrections per evaluation (default: 5)")
+    p.add_argument("--entities", type=int, default=None, metavar="N",
+                   help="entities per world (default: from tier)")
+    p.add_argument("--questions", type=int, default=None, metavar="N",
+                   help="questions per evaluation (default: from tier)")
+    p.add_argument("--corrections", type=int, default=None, metavar="N",
+                   help="corrections per evaluation (default: from tier)")
     p.add_argument("--output", "-o", type=str, metavar="PATH",
                    help="save results to JSON file")
     p.add_argument("--validate", action="store_true",
@@ -71,11 +83,51 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
                    help="OpenAI-compatible API base URL")
     p.add_argument("--eval-salt", type=int, default=0, metavar="N",
                    help="perturb numeric values (anti-fingerprint)")
+    p.add_argument("--tier", choices=list(TIERS),
+                   default=None, metavar="TIER",
+                   help="evaluation tier (lite/standard/hard)")
+    p.add_argument("--official", action="store_true",
+                   help="official mode: seeds 0-9, all templates, "
+                        "standard JSON output")
     return p.parse_args(argv)
+
+
+def _resolve_config(args: argparse.Namespace) -> tuple[int, int, int, int]:
+    """Resolve entities/questions/corrections/budget from tier or args.
+
+    Returns (entities, questions, corrections, write_budget).
+    """
+    tier_name = args.tier or ("standard" if args.official else None)
+    if tier_name:
+        tier = TIERS[tier_name]
+        entities = args.entities or tier["entities"]
+        questions = args.questions or tier["questions"]
+        corrections = args.corrections or tier["corrections"]
+        write_budget = tier["write_budget"]
+    else:
+        entities = args.entities or 60
+        questions = args.questions or 20
+        corrections = args.corrections or 5
+        write_budget = 30
+    return entities, questions, corrections, write_budget
 
 
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
+
+    # Resolve tier/manual config
+    n_entities, n_questions, n_corrections, write_budget = _resolve_config(args)
+
+    # Official mode overrides
+    if args.official:
+        args.template = None  # all templates
+        if args.seed is None and args.seeds == 10:
+            pass  # default 10 seeds is fine
+        # Force seeds 0-9
+        seeds = OFFICIAL_SEEDS
+    else:
+        seeds = ([args.seed] if args.seed is not None
+                 else list(range(args.seeds)))
 
     templates = ([TEMPLATES[args.template]] if args.template
                  else list(TEMPLATES.values()))
@@ -89,11 +141,10 @@ def main(argv: list[str] | None = None) -> int:
                       if args.strategy else STRATEGIES)
         strategy_names = [s["name"] for s in strategies]
 
-    seeds = ([args.seed] if args.seed is not None
-             else list(range(args.seeds)))
     n_seeds = len(seeds)
 
     # Header
+    tier_label = args.tier or ("standard" if args.official else "custom")
     print("=" * 70)
     print("MemoryBench — Memory Management Evaluation")
     print("=" * 70)
@@ -101,8 +152,9 @@ def main(argv: list[str] | None = None) -> int:
              else f"Strategies: {', '.join(strategy_names)}")
     print(f"Seeds: {n_seeds}  Templates: {', '.join(template_names)}  "
           f"{label}")
-    print(f"Entities: {args.entities}  Questions: {args.questions}  "
-          f"Corrections: {args.corrections}"
+    print(f"Tier: {tier_label}  Entities: {n_entities}  "
+          f"Questions: {n_questions}  Corrections: {n_corrections}  "
+          f"Budget: {write_budget}"
           + ("  [STREAM]" if args.stream or is_model_eval else ""))
 
     t0 = time.time()
@@ -121,7 +173,7 @@ def main(argv: list[str] | None = None) -> int:
 
                 print(f"\n  [{tmpl.name}] seed={seed} — Generating world ...",
                       end="", flush=True)
-                world = tmpl.generate_world(seed=seed, n_entities=args.entities,
+                world = tmpl.generate_world(seed=seed, n_entities=n_entities,
                                             eval_salt=args.eval_salt)
                 print(f" {len(world.entities)} entities")
 
@@ -129,7 +181,7 @@ def main(argv: list[str] | None = None) -> int:
                 print(f"  [{tmpl.name}] seed={seed} — Generating corrections ...",
                       end="", flush=True)
                 corrections = tmpl.generate_corrections(
-                    world, rng, args.corrections)
+                    world, rng, n_corrections)
                 print(f" {len(corrections)} corrections")
 
                 print(f"  [{tmpl.name}] seed={seed} — Building stream ...",
@@ -137,7 +189,7 @@ def main(argv: list[str] | None = None) -> int:
                 stream = tmpl.generate_stream(
                     world, rng, corrections,
                     stored_names=set(),
-                    n_questions=args.questions,
+                    n_questions=n_questions,
                     entities_per_batch=10,
                 )
                 n_ingest = sum(1 for e in stream if e["type"] == "ingest")
@@ -149,10 +201,10 @@ def main(argv: list[str] | None = None) -> int:
 
                 print(f"  [{tmpl.name}] seed={seed} — Running agent "
                       f"({args.model}) ...")
-                agent_results, writes_used, stored = run_stream_agent(
+                agent_results, writes_used, stored, eval_error = run_stream_agent(
                     model=args.model,
                     stream=stream,
-                    write_budget=30,
+                    write_budget=write_budget,
                     api_base=args.api_base,
                     verbose=args.verbose,
                     world=world,
@@ -170,7 +222,7 @@ def main(argv: list[str] | None = None) -> int:
                 for r in agent_results:
                     by_comp[r.competency].append(r.correct)
                     by_purp[r.purpose].append(r.correct)
-                    answer_details.append({
+                    detail = {
                         "question": r.question,
                         "expected": r.ground_truth,
                         "actual": r.answer,
@@ -178,7 +230,15 @@ def main(argv: list[str] | None = None) -> int:
                         "is_correct": r.correct,
                         "competency": r.competency,
                         "purpose": r.purpose,
-                    })
+                        "validation_method": r.validation_method,
+                        "validation_reason": r.validation_reason,
+                        "api_calls": r.api_calls,
+                        "elapsed": round(r.elapsed, 2),
+                        "retries": r.retries,
+                    }
+                    if r.error:
+                        detail["error"] = r.error
+                    answer_details.append(detail)
 
                 # Detect stored entities
                 stored_names, missed = tmpl.detect_stored_entities(
@@ -210,18 +270,18 @@ def main(argv: list[str] | None = None) -> int:
                 # Save per-seed result in LiveWeb-compatible format
                 eval_result = {
                     "task_name": (f"memorybench:{tmpl.name}"
-                                  f":{args.entities}e:{args.questions}q"),
+                                  f":{n_entities}e:{n_questions}q"),
                     "score": correct / total if total else 0.0,
-                    "success": total > 0,
+                    "success": total > 0 and eval_error is None,
                     "time_taken": seed_elapsed,
                     "extra": {
                         "model": args.model,
                         "seed": seed,
                         "template": tmpl.name,
-                        "n_entities": args.entities,
-                        "n_questions": args.questions,
-                        "n_corrections": args.corrections,
-                        "write_budget": 30,
+                        "n_entities": n_entities,
+                        "n_questions": n_questions,
+                        "n_corrections": n_corrections,
+                        "write_budget": write_budget,
                         "writes_used": writes_used,
                         "stored_entities": len(stored_names),
                         "missed_entities": len(missed),
@@ -229,6 +289,8 @@ def main(argv: list[str] | None = None) -> int:
                         "answer_details": answer_details,
                     },
                 }
+                if eval_error:
+                    eval_result["error"] = eval_error
                 eval_dir = Path("eval")
                 eval_dir.mkdir(exist_ok=True)
                 safe_model = args.model.replace("/", "_")
@@ -247,9 +309,9 @@ def main(argv: list[str] | None = None) -> int:
                               else simulate_one)
                     result = sim_fn(
                         tmpl, seed, profile,
-                        n_entities=args.entities,
-                        n_questions=args.questions,
-                        n_corrections=args.corrections,
+                        n_entities=n_entities,
+                        n_questions=n_questions,
+                        n_corrections=n_corrections,
                         eval_salt=args.eval_salt,
                     )
                     agg[profile["name"]].append(result)
@@ -280,9 +342,9 @@ def main(argv: list[str] | None = None) -> int:
     for tmpl_name in template_names:
         print(f"--- {tmpl_name} ---")
         print(f"  {'Strategy':<12s} {'Accuracy':>9s} {'Stored':>7s} "
-              f"{'Retrieval':>10s} {'Update':>8s} "
-              f"{'Comprehension':>14s} {'Abstention':>11s}")
-        print("  " + "-" * 75)
+              f"{'Breadth':>8s} {'Maint.':>7s} "
+              f"{'Reasoning':>10s} {'Abstention':>11s}")
+        print("  " + "-" * 68)
         for s_name in strategy_names:
             vals = [v for v in agg[s_name] if v["template"] == tmpl_name]
             acc = avg(vals)
@@ -298,9 +360,9 @@ def main(argv: list[str] | None = None) -> int:
                 return f"{c_tot/t_tot:.0%}" if t_tot else "n/a"
 
             print(f"  {s_name:<12s} {acc:>8.0%} {stored:>6.0f} "
-                  f"{comp_pct('retrieval'):>10s} "
-                  f"{comp_pct('update'):>8s} "
-                  f"{comp_pct('synthesis', 'aggregation', 'conditional'):>14s} "
+                  f"{comp_pct('retrieval'):>8s} "
+                  f"{comp_pct('update'):>7s} "
+                  f"{comp_pct('synthesis', 'aggregation', 'conditional', 'ratio', 'comparison', 'multi_hop', 'outlier', 'delta'):>10s} "
                   f"{comp_pct('abstention'):>11s}")
         print()
 
@@ -320,57 +382,84 @@ def main(argv: list[str] | None = None) -> int:
 
     # Save aggregate JSON (simulation mode or explicit --output)
     if args.output:
-        # Flatten for JSON (remove details unless verbose)
-        json_data = {
-            "config": {
+        if args.official:
+            # Official mode: use standard schema
+            model_name = args.model or strategy_names[0]
+            per_seed_out = _build_per_seed_axis_scores(
+                agg, strategy_names[0], template_names, n_questions,
+                write_budget)
+            per_template_out = {}
+            for tname in template_names:
+                per_template_out[tname] = [
+                    s for s in per_seed_out if s.get("template") == tname]
+            tier_name = args.tier or "standard"
+            config = {
+                "entities": n_entities,
+                "questions": n_questions,
+                "corrections": n_corrections,
+                "write_budget": write_budget,
                 "seeds": seeds,
                 "templates": template_names,
-                "strategies": strategy_names,
-                "n_entities": args.entities,
-                "n_questions": args.questions,
-                "n_corrections": args.corrections,
-            },
-            "summary": {},
-            "per_seed": [],
-        }
-        for s_name in strategy_names:
-            vals = agg[s_name]
-            # Aggregate per-competency across all seeds/templates
-            comp_agg: dict[str, list[int]] = {}
-            for v in vals:
-                for comp, (c, t) in v["by_competency"].items():
-                    if comp not in comp_agg:
-                        comp_agg[comp] = [0, 0]
-                    comp_agg[comp][0] += c
-                    comp_agg[comp][1] += t
-            json_data["summary"][s_name] = {
-                "accuracy": avg(vals),
-                "by_template": {
-                    t: avg([v for v in vals if v["template"] == t])
-                    for t in template_names
-                },
-                "by_competency": {
-                    c: round(cr / ct, 4) if ct else 0.0
-                    for c, (cr, ct) in comp_agg.items()
-                },
             }
-        for v_list in agg.values():
-            for v in v_list:
-                entry = {k: v[k] for k in
-                         ("strategy", "template", "seed", "accuracy",
-                          "correct", "total", "stored", "missed")}
-                entry["by_purpose"] = {
-                    p: {"correct": c, "total": t}
-                    for p, (c, t) in v["by_purpose"].items()
+            json_data = format_leaderboard_entry(
+                model=model_name,
+                tier=tier_name,
+                backend="chromadb",
+                per_seed_results=per_seed_out,
+                config=config,
+                per_template=per_template_out,
+            )
+        else:
+            # Legacy format
+            json_data = {
+                "config": {
+                    "seeds": seeds,
+                    "templates": template_names,
+                    "strategies": strategy_names,
+                    "n_entities": n_entities,
+                    "n_questions": n_questions,
+                    "n_corrections": n_corrections,
+                },
+                "summary": {},
+                "per_seed": [],
+            }
+            for s_name in strategy_names:
+                vals = agg[s_name]
+                comp_agg: dict[str, list[int]] = {}
+                for v in vals:
+                    for comp, (c, t) in v["by_competency"].items():
+                        if comp not in comp_agg:
+                            comp_agg[comp] = [0, 0]
+                        comp_agg[comp][0] += c
+                        comp_agg[comp][1] += t
+                json_data["summary"][s_name] = {
+                    "accuracy": avg(vals),
+                    "by_template": {
+                        t: avg([v for v in vals if v["template"] == t])
+                        for t in template_names
+                    },
+                    "by_competency": {
+                        c: round(cr / ct, 4) if ct else 0.0
+                        for c, (cr, ct) in comp_agg.items()
+                    },
                 }
-                entry["by_competency"] = {
-                    c: {"correct": cr, "total": ct}
-                    for c, (cr, ct) in v["by_competency"].items()
-                }
-                json_data["per_seed"].append(entry)
+            for v_list in agg.values():
+                for v in v_list:
+                    entry = {k: v[k] for k in
+                             ("strategy", "template", "seed", "accuracy",
+                              "correct", "total", "stored", "missed")}
+                    entry["by_purpose"] = {
+                        p: {"correct": c, "total": t}
+                        for p, (c, t) in v["by_purpose"].items()
+                    }
+                    entry["by_competency"] = {
+                        c: {"correct": cr, "total": ct}
+                        for c, (cr, ct) in v["by_competency"].items()
+                    }
+                    json_data["per_seed"].append(entry)
 
-        if args.validate:
-            json_data["validation"] = {k: v for k, v in checks.items()}
+            if args.validate:
+                json_data["validation"] = {k: v for k, v in checks.items()}
 
         out_path = Path(args.output)
         out_path.parent.mkdir(parents=True, exist_ok=True)
@@ -380,6 +469,69 @@ def main(argv: list[str] | None = None) -> int:
     if args.validate and not all_pass:
         return 1
     return 0
+
+
+def _build_per_seed_axis_scores(
+    agg: dict[str, list[dict]],
+    strategy_name: str,
+    template_names: list[str],
+    n_questions: int,
+    write_budget: int,
+) -> list[dict]:
+    """Build per-seed axis scores from aggregated results."""
+    from memorybench.protocol import compute_composite
+
+    per_seed: list[dict] = []
+    for v in agg.get(strategy_name, []):
+        by_comp = v["by_competency"]
+
+        def _comp_rate(*comps: str) -> float:
+            c_tot = t_tot = 0
+            for comp in comps:
+                c, t = by_comp.get(comp, (0, 0))
+                c_tot += c
+                t_tot += t
+            return c_tot / t_tot if t_tot else 0.0
+
+        breadth = _comp_rate("retrieval")
+        maintenance_raw = _comp_rate("update")
+        # Gate on breadth
+        maintenance = maintenance_raw * min(breadth / 0.5, 1.0)
+        reasoning = _comp_rate(
+            "synthesis", "aggregation", "conditional", "ratio",
+            "comparison", "multi_hop", "outlier", "delta")
+        abstention_diagnostic = _comp_rate("abstention")
+
+        # Efficiency
+        n_correct = v["correct"]
+        n_total = v["total"]
+        accuracy = v["accuracy"]
+        # Approximate writes_used from stored count
+        writes_used = v.get("stored", 0)
+        ideal_rate = n_total / max(write_budget, 1)
+        if writes_used == 0:
+            efficiency = 0.0
+        else:
+            raw_eff = min(n_correct / writes_used / ideal_rate, 1.0)
+            efficiency = raw_eff * accuracy
+
+        composite = compute_composite(breadth, maintenance, reasoning,
+                                      efficiency)
+
+        per_seed.append({
+            "template": v["template"],
+            "seed": v["seed"],
+            "composite": round(composite, 4),
+            "breadth": round(breadth, 4),
+            "maintenance": round(maintenance, 4),
+            "reasoning": round(reasoning, 4),
+            "efficiency": round(efficiency, 4),
+            "abstention_diagnostic": round(abstention_diagnostic, 4),
+            "accuracy": round(accuracy, 4),
+            "correct": n_correct,
+            "total": n_total,
+        })
+    return per_seed
 
 
 def _cli_entry() -> None:

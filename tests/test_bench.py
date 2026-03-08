@@ -1,7 +1,8 @@
-"""Tests for bench.py simulation logic.
+"""Tests for bench.py internal logic and protocol integration.
 
-Validates the simulation engine produces correct results for
-each strategy, and that the validation checks are comprehensive.
+Simulation invariant tests (perfect=100%, guesser=0%, etc.) live in
+test_worlds.py — this file tests internal helpers, CLI output, and
+the standard evaluation protocol.
 """
 
 from __future__ import annotations
@@ -15,69 +16,14 @@ from memorybench.bench import (
     _VALIDATOR,
     run_validation,
     simulate_one,
-    simulate_one_stream,
+)
+from memorybench.protocol import (
+    OFFICIAL_SEEDS,
+    TIERS,
+    aggregate_results,
+    compute_composite,
 )
 from memorybench.worlds.base import GeneratedQA
-
-
-# ── simulate_one ──
-
-
-class TestSimulateOne:
-    """Core simulation produces correct results."""
-
-    def test_perfect_100_pct(self):
-        profile = {"name": "perfect", "store_ratio": 1.0, "applies_updates": True}
-        for name, cls in TEMPLATES.items():
-            result = simulate_one(cls(), seed=0, profile=profile)
-            assert result["accuracy"] == 1.0, f"{name} perfect != 100%"
-
-    def test_guesser_0_pct(self):
-        profile = {"name": "guesser", "store_ratio": 0.0, "applies_updates": False}
-        for name, cls in TEMPLATES.items():
-            result = simulate_one(cls(), seed=0, profile=profile)
-            assert result["accuracy"] == 0.0, f"{name} guesser != 0%"
-
-    def test_strategic_gt_naive(self):
-        strat = {"name": "strategic", "store_ratio": 0.7, "applies_updates": True}
-        naive = {"name": "naive", "store_ratio": 0.4, "applies_updates": False}
-        for name, cls in TEMPLATES.items():
-            s = simulate_one(cls(), seed=0, profile=strat)
-            n = simulate_one(cls(), seed=0, profile=naive)
-            assert s["accuracy"] > n["accuracy"], (
-                f"{name}: strategic {s['accuracy']:.0%} <= naive {n['accuracy']:.0%}")
-
-    def test_result_has_required_keys(self):
-        profile = {"name": "perfect", "store_ratio": 1.0, "applies_updates": True}
-        result = simulate_one(TEMPLATES["company"](), seed=0, profile=profile)
-        required = {"strategy", "template", "seed", "accuracy", "correct",
-                    "total", "stored", "missed", "doc_chars",
-                    "by_purpose", "by_competency", "details"}
-        assert required <= set(result.keys())
-
-    def test_determinism(self):
-        profile = {"name": "strategic", "store_ratio": 0.7, "applies_updates": True}
-        r1 = simulate_one(TEMPLATES["company"](), seed=42, profile=profile)
-        r2 = simulate_one(TEMPLATES["company"](), seed=42, profile=profile)
-        assert r1["accuracy"] == r2["accuracy"]
-        assert r1["details"] == r2["details"]
-
-
-# ── simulate_one_stream ──
-
-
-class TestSimulateOneStream:
-    """Stream simulation mode."""
-
-    def test_perfect_stream(self):
-        profile = {"name": "perfect", "store_ratio": 1.0, "applies_updates": True}
-        result = simulate_one_stream(TEMPLATES["company"](), seed=0, profile=profile)
-        assert result["accuracy"] == 1.0
-
-    def test_guesser_stream(self):
-        profile = {"name": "guesser", "store_ratio": 0.0, "applies_updates": False}
-        result = simulate_one_stream(TEMPLATES["company"](), seed=0, profile=profile)
-        assert result["accuracy"] == 0.0
 
 
 # ── _data_available ──
@@ -153,14 +99,13 @@ class TestConstructAndValidate:
 
 
 class TestSmartGuess:
-    """Smart guesser produces plausible but incorrect answers."""
+    """Smart guesser internal logic."""
 
     def test_returns_string_for_retrieval(self):
         from random import Random
         world = TEMPLATES["company"]().generate_world(seed=0, n_entities=10)
         q = GeneratedQA("What are the revenues?", "1234", "retrieval", ["X"])
         guess = _smart_guess(q, world, Random(0))
-        # May or may not find attribute, but should return something
         assert guess is None or isinstance(guess, str)
 
     def test_returns_none_for_abstention(self):
@@ -168,23 +113,6 @@ class TestSmartGuess:
         world = TEMPLATES["company"]().generate_world(seed=0, n_entities=10)
         q = GeneratedQA("q", "ABSTAIN", "abstention", ["fake"])
         assert _smart_guess(q, world, Random(0)) is None
-
-    def test_guess_fails_validation(self):
-        """Smart guesses should almost never pass validation."""
-        from random import Random
-        tmpl = TEMPLATES["company"]()
-        world = tmpl.generate_world(seed=0, n_entities=60)
-        rng = Random(7777)
-        corrections = tmpl.generate_corrections(world, Random(3333), 5)
-        qs = tmpl.gen_adaptive_questions(
-            world, rng, world.entities, set(), 20, corrections)
-        guess_rng = Random(9999)
-        passes = sum(
-            1 for q in qs
-            if (g := _smart_guess(q, world, guess_rng))
-            and _VALIDATOR.validate(g, q.answer, q.competency)
-        )
-        assert passes <= 1, f"Smart guesser passed {passes}/20"
 
 
 # ── run_validation ──
@@ -211,6 +139,64 @@ class TestRunValidation:
             assert passed, f"Validation failed: {check}"
 
 
+# ── result schema ──
+
+
+class TestResultSchema:
+    """Simulation result dict structure."""
+
+    def test_result_has_required_keys(self):
+        profile = {"name": "perfect", "store_ratio": 1.0, "applies_updates": True}
+        result = simulate_one(TEMPLATES["company"](), seed=0, profile=profile)
+        required = {"strategy", "template", "seed", "accuracy", "correct",
+                    "total", "stored", "missed", "doc_chars",
+                    "by_purpose", "by_competency", "details"}
+        assert required <= set(result.keys())
+
+
+# ── Protocol ──
+
+
+class TestProtocol:
+    """Standard evaluation protocol."""
+
+    def test_tiers_have_required_keys(self):
+        for name, tier in TIERS.items():
+            for key in ("entities", "questions", "corrections", "write_budget"):
+                assert key in tier, f"{name} missing {key}"
+
+    def test_hard_tier_same_budget_more_entities(self):
+        assert TIERS["hard"]["entities"] > TIERS["standard"]["entities"]
+        assert TIERS["hard"]["write_budget"] == TIERS["standard"]["write_budget"]
+
+    def test_aggregate_results_mean_stderr(self):
+        per_seed = [
+            {"composite": 0.5, "breadth": 0.6, "maintenance": 0.4,
+             "reasoning": 0.5, "efficiency": 0.3,
+             "abstention_diagnostic": 0.2},
+            {"composite": 0.7, "breadth": 0.8, "maintenance": 0.6,
+             "reasoning": 0.7, "efficiency": 0.5,
+             "abstention_diagnostic": 0.4},
+        ]
+        result = aggregate_results(per_seed)
+        assert result["composite"]["mean"] == 0.6
+        assert result["composite"]["stderr"] > 0
+        assert result["breadth"]["mean"] == 0.7
+
+    def test_compute_composite_weights_sum_to_one(self):
+        c = compute_composite(1.0, 1.0, 1.0, 1.0)
+        assert abs(c - 1.0) < 0.001
+
+    def test_compute_composite_zero(self):
+        assert compute_composite(0.0, 0.0, 0.0, 0.0) == 0.0
+
+    def test_official_seeds(self):
+        assert OFFICIAL_SEEDS == list(range(10))
+
+
+# ── CLI ──
+
+
 class TestCLIOutput:
     """CLI output and JSON format."""
 
@@ -227,14 +213,23 @@ class TestCLIOutput:
         assert "config" in data
         assert "summary" in data
         assert "per_seed" in data
-        assert "perfect" in data["summary"]
-        assert "guesser" in data["summary"]
         assert data["summary"]["perfect"]["accuracy"] == 1.0
         assert data["summary"]["guesser"]["accuracy"] == 0.0
 
     def test_validate_returns_1_on_failure(self):
-        """Validation with missing strategies returns exit code 1."""
         from memorybench.bench import main
         ret = main(["--seed", "0", "--template", "company",
                      "--strategy", "guesser", "--validate"])
-        assert ret == 1  # fails because perfect/strategic/naive missing
+        assert ret == 1
+
+    def test_tier_lite_config(self):
+        from memorybench.bench import parse_args, _resolve_config
+        args = parse_args(["--tier", "lite"])
+        entities, questions, corrections, budget = _resolve_config(args)
+        assert (entities, questions, corrections, budget) == (30, 10, 3, 15)
+
+    def test_tier_hard_config(self):
+        from memorybench.bench import parse_args, _resolve_config
+        args = parse_args(["--tier", "hard"])
+        entities, questions, corrections, budget = _resolve_config(args)
+        assert (entities, questions, corrections, budget) == (120, 40, 10, 30)

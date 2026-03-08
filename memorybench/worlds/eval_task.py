@@ -29,14 +29,12 @@ from memorybench.worlds.base import Correction, World, WorldTemplate
 _TEMPLATES = ALL_TEMPLATES
 
 SYSTEM_PROMPT = """You are participating in a memory management evaluation.
+Write budget: {budget} total writes. Be selective — you'll see more entities than you can store.
 
-You will receive a stream of events. Events can be:
-
-1. **DOCUMENTS**: Entity data to read and store. You don't know what questions come later.
-2. **CORRECTIONS**: Data correction notices. Update your stored memories.
-3. **QUESTIONS**: Answer from memory. Search and call submit_answer().
-
-Events arrive in unpredictable order — questions may appear between document batches.
+## Event Types
+1. DOCUMENTS: Entity data to read and store selectively.
+2. CORRECTIONS: Updated data. You MUST update stored memories.
+3. QUESTIONS: Answer from stored memories only.
 
 You have access to memory tools:
 - memory_store(content, memory_id?): Store or update a memory (costs 1 write, \
@@ -46,13 +44,27 @@ budget: {budget})
 - memory_forget(memory_id): Remove a memory (free, no budget refund)
 - memory_list(): List all memories (free)
 
-IMPORTANT:
-- Your write budget is LIMITED to {budget} writes total.
-- Store entity data proactively — you won't know what questions come later.
-- When corrections arrive, update relevant memories.
-- When answering, ALWAYS call submit_answer(answer="your answer").
-- If you cannot answer from memory, call submit_answer(answer="I don't have \
-enough information").
+## Critical: Handling Corrections
+When you receive a CORRECTION:
+1. memory_search the entity name
+2. memory_forget the old entry
+3. memory_store the corrected data
+This costs 1 write but ensures your answers reflect current data.
+Failing to update = wrong answers on update questions.
+
+## Storage Strategy
+- Store data compactly: "EntityName | attr1: val1, attr2: val2, ..."
+- Prioritize entities with extreme/distinctive values
+- Skip unremarkable entities when budget is tight
+- IMPORTANT: Reserve ~20% of your budget for corrections. \
+Corrections will arrive later and each costs 1 write to update.
+
+## Answering Questions
+- Search by entity name, then call submit_answer(answer="your answer")
+- For comparison/synthesis: answer as "EntityName (value)"
+- If data not in memory: submit_answer(answer="I don't have enough information")
+- Do NOT guess or fabricate values
+- ALWAYS call submit_answer for every question
 """
 
 INGEST_TEMPLATE = """=== Event {event_num}/{total_events} [DOCUMENTS] ===
@@ -75,6 +87,30 @@ QUESTION_TEMPLATE = """=== Event {event_num}/{total_events} [QUESTION] ===
 {question}
 
 Search your memory and call submit_answer(answer="...") with your final answer."""
+
+
+def _build_mem_summary(
+    backend: Any, mem_budget: Any, event_idx: int, total_events: int,
+) -> str:
+    """Build memory state summary for selective redaction."""
+    if backend is None:
+        return f"[{event_idx+1}/{total_events} done]"
+    entries = backend.list()
+    remaining = mem_budget.remaining() if mem_budget else 0
+    if entries:
+        names = [e["content"].split("|")[0].strip() for e in entries]
+        name_list = ", ".join(names[:30])
+        if len(names) > 30:
+            name_list += f" ... (+{len(names)-30} more)"
+        return (
+            f"[{event_idx+1}/{total_events} done]\n\n"
+            f"Your memory contains {len(entries)} entries: {name_list}\n"
+            f"Budget: {remaining} writes remaining."
+        )
+    return (
+        f"[{event_idx+1}/{total_events} done]\n"
+        f"Your memory is empty. Budget: {remaining} writes remaining."
+    )
 
 
 def _format_documents(docs: list[str]) -> str:
@@ -196,10 +232,12 @@ def worldbench_solver(
                         event_num=event_idx + 1, total_events=total_events,
                         documents=docs_text)))
                 state = await generate(state, tool_calls="loop")
-                # Nuclear redaction: reset to initial state
+                # Selective redaction: keep memory state summary
                 del state.messages[initial_len:]
+                mem_summary = _build_mem_summary(
+                    backend, mem_budget, event_idx, total_events)
                 state.messages.append(ChatMessageUser(
-                    content=f"[{event_idx+1}/{total_events} done]"))
+                    content=mem_summary))
                 state.messages.append(ChatMessageAssistant(
                     content="OK."))
 
@@ -210,8 +248,10 @@ def worldbench_solver(
                         notice=event["notice"])))
                 state = await generate(state, tool_calls="loop")
                 del state.messages[initial_len:]
+                mem_summary = _build_mem_summary(
+                    backend, mem_budget, event_idx, total_events)
                 state.messages.append(ChatMessageUser(
-                    content=f"[{event_idx+1}/{total_events} done]"))
+                    content=mem_summary))
                 state.messages.append(ChatMessageAssistant(
                     content="OK."))
 
@@ -236,10 +276,12 @@ def worldbench_solver(
                 n_writes, n_searches = _count_tool_calls(
                     state.messages, msg_start)
 
-                # Nuclear redaction: reset to initial state
+                # Selective redaction: keep memory state summary
                 del state.messages[initial_len:]
+                mem_summary = _build_mem_summary(
+                    backend, mem_budget, event_idx, total_events)
                 state.messages.append(ChatMessageUser(
-                    content=f"[{event_idx+1}/{total_events} done]"))
+                    content=mem_summary))
                 state.messages.append(ChatMessageAssistant(
                     content="OK."))
 

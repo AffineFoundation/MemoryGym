@@ -1,0 +1,398 @@
+"""Training data interfaces: SFT trajectories and RL environment.
+
+Generate training data from deterministic simulation strategies,
+using the same WorldTemplate infrastructure as evaluation.
+"""
+
+from __future__ import annotations
+
+import json
+from pathlib import Path
+from random import Random
+from typing import Any
+
+from memorybench.simulation import (
+    TEMPLATES,
+    _construct_and_validate,
+    _data_available,
+    _VALIDATOR,
+)
+from memorybench.worlds.base import WorldTemplate
+
+
+def generate_sft_trajectory(
+    template_name: str,
+    seed: int,
+    strategy: str = "perfect",
+    n_entities: int = 60,
+    n_questions: int = 20,
+    n_corrections: int = 5,
+    write_budget: int = 30,
+) -> list[dict]:
+    """Generate a complete tool-calling trajectory in OpenAI messages format.
+
+    Replays the simulation strategy as explicit tool call sequences:
+    - ingest: memory_store calls for each stored entity
+    - correction: memory_search + memory_forget + memory_store
+    - question: memory_search + submit_answer(ground_truth)
+
+    Args:
+        template_name: World template name.
+        seed: Random seed for world generation.
+        strategy: "perfect" or "strategic".
+        n_entities: Number of entities.
+        n_questions: Number of questions.
+        n_corrections: Number of corrections.
+        write_budget: Write budget for system prompt.
+
+    Returns:
+        List of message dicts (OpenAI messages format).
+    """
+    if template_name not in TEMPLATES:
+        raise ValueError(f"Unknown template: {template_name}")
+
+    tmpl = TEMPLATES[template_name]()
+    world = tmpl.generate_world(seed=seed, n_entities=n_entities)
+    rng = Random(seed)
+
+    # Determine store ratio from strategy name
+    store_ratio = 1.0 if strategy == "perfect" else 0.7
+    applies_updates = True
+
+    # Render documents
+    rng_doc = Random(seed)
+    all_docs = [(e, tmpl.render_document(e, world.active_attrs, rng_doc))
+                for e in world.entities]
+
+    # Storage decision
+    rng_store = Random(seed + 111)
+    if store_ratio >= 1.0:
+        stored_indices = list(range(len(all_docs)))
+    else:
+        n_store = max(1, int(len(all_docs) * store_ratio))
+        stored_indices = sorted(
+            rng_store.sample(range(len(all_docs)), n_store))
+
+    stored_names = {all_docs[i][0].name for i in stored_indices}
+
+    # Generate corrections (mutates world)
+    rng_correct = Random(seed + 3333)
+    corrections = tmpl.generate_corrections(world, rng_correct, n_corrections)
+
+    # Generate stream
+    rng_stream = Random(seed + 5555)
+    stream = tmpl.generate_stream(
+        world, rng_stream, corrections, stored_names,
+        n_questions=n_questions, entities_per_batch=10,
+    )
+
+    # Build system prompt
+    from memorybench.agents.stream_agent import SYSTEM_PROMPT
+    system_prompt = SYSTEM_PROMPT.format(budget=write_budget)
+
+    messages: list[dict] = [{"role": "system", "content": system_prompt}]
+    total_events = len(stream)
+    mem_id_counter = 0
+    entity_mem_ids: dict[str, str] = {}  # entity_name → memory_id
+
+    for event_idx, event in enumerate(stream):
+        event_type = event["type"]
+
+        if event_type == "ingest":
+            # User message: documents
+            docs = event["documents"]
+            docs_text = "\n\n".join(
+                f"[Document {i+1}]\n{doc}" for i, doc in enumerate(docs))
+            user_msg = (
+                f"=== Event {event_idx+1}/{total_events} [DOCUMENTS] ===\n\n"
+                f"**Documents:**\n{docs_text}\n\n"
+                "No question. Store important entity data."
+            )
+            messages.append({"role": "user", "content": user_msg})
+
+            # Assistant response: store each entity that strategy keeps
+            tool_calls = []
+            for ename in event.get("entity_names", []):
+                if ename not in stored_names:
+                    continue
+                entity = world.get_entity(ename)
+                if not entity:
+                    continue
+                compact = tmpl._compact_document(entity, world.active_attrs)
+                content = f"{ename} | {compact}"
+                mem_id_counter += 1
+                mid = f"mem_{mem_id_counter:03d}"
+                entity_mem_ids[ename] = mid
+                tool_calls.append(
+                    f'<tool_call>{{"name": "memory_store", '
+                    f'"arguments": {{"content": "{content}"}}}}</tool_call>'
+                )
+
+            if tool_calls:
+                messages.append({
+                    "role": "assistant",
+                    "content": "\n".join(tool_calls),
+                })
+                messages.append({
+                    "role": "user",
+                    "content": "\n".join(
+                        f"[memory_store] Stored (id={entity_mem_ids[n]}). "
+                        f"Budget remaining."
+                        for n in event.get("entity_names", [])
+                        if n in stored_names and n in entity_mem_ids
+                    ),
+                })
+            else:
+                messages.append({
+                    "role": "assistant",
+                    "content": "These entities are not high priority. "
+                               "Skipping to conserve budget.",
+                })
+
+        elif event_type == "correction":
+            ename = event["entity_name"]
+            user_msg = (
+                f"=== Event {event_idx+1}/{total_events} [CORRECTION] ===\n\n"
+                f"**Correction Notice:**\n{event['notice']}\n\n"
+                "Update your stored memories with the corrected value."
+            )
+            messages.append({"role": "user", "content": user_msg})
+
+            if ename in stored_names and ename in entity_mem_ids:
+                old_mid = entity_mem_ids[ename]
+                entity = world.get_entity(ename)
+                compact = tmpl._compact_document(entity, world.active_attrs)
+                content = f"{ename} | {compact}"
+                mem_id_counter += 1
+                new_mid = f"mem_{mem_id_counter:03d}"
+                entity_mem_ids[ename] = new_mid
+
+                assistant_content = (
+                    f'<tool_call>{{"name": "memory_search", '
+                    f'"arguments": {{"query": "{ename}"}}}}</tool_call>\n'
+                    f'<tool_call>{{"name": "memory_forget", '
+                    f'"arguments": {{"memory_id": "{old_mid}"}}}}</tool_call>\n'
+                    f'<tool_call>{{"name": "memory_store", '
+                    f'"arguments": {{"content": "{content}"}}}}</tool_call>'
+                )
+                messages.append({"role": "assistant", "content": assistant_content})
+                messages.append({
+                    "role": "user",
+                    "content": (
+                        f"[memory_search] [{old_mid}] {ename} | ...\n"
+                        f"[memory_forget] Deleted.\n"
+                        f"[memory_store] Stored (id={new_mid})."
+                    ),
+                })
+            else:
+                messages.append({
+                    "role": "assistant",
+                    "content": "Entity not in my memory. No update needed.",
+                })
+
+        elif event_type == "question":
+            user_msg = (
+                f"=== Event {event_idx+1}/{total_events} [QUESTION] ===\n\n"
+                f"**Question:**\n{event['question']}\n\n"
+                "Search your memory and call submit_answer(answer=\"...\")."
+            )
+            messages.append({"role": "user", "content": user_msg})
+
+            gt = str(event["answer"])
+            required = event.get("required_entities", [])
+            competency = event["competency"]
+
+            if competency == "abstention":
+                answer = "I don't have enough information"
+            elif all(n in stored_names for n in required):
+                answer = gt
+            else:
+                answer = "I don't have enough information"
+
+            # Search then answer
+            search_entity = required[0] if required else ""
+            if search_entity and search_entity in stored_names:
+                assistant_content = (
+                    f'<tool_call>{{"name": "memory_search", '
+                    f'"arguments": {{"query": "{search_entity}"}}}}</tool_call>'
+                )
+                messages.append({"role": "assistant", "content": assistant_content})
+                messages.append({
+                    "role": "user",
+                    "content": f"[memory_search] Results for {search_entity}...",
+                })
+
+            messages.append({
+                "role": "assistant",
+                "content": (
+                    f'<tool_call>{{"name": "submit_answer", '
+                    f'"arguments": {{"answer": "{answer}"}}}}</tool_call>'
+                ),
+            })
+            messages.append({
+                "role": "user",
+                "content": f"[submit_answer] ANSWER_SUBMITTED: {answer}",
+            })
+
+    return messages
+
+
+def export_trajectories(
+    n_seeds: int = 10,
+    strategy: str = "perfect",
+    output_dir: str = "trajectories",
+    templates: list[str] | None = None,
+) -> list[Path]:
+    """Batch export trajectories as JSONL files.
+
+    Format: {"messages": [...]} per line, compatible with OpenAI
+    fine-tuning API.
+
+    Returns list of output file paths.
+    """
+    out_path = Path(output_dir)
+    out_path.mkdir(parents=True, exist_ok=True)
+
+    template_names = templates or list(TEMPLATES.keys())
+    output_files = []
+
+    for tname in template_names:
+        file_path = out_path / f"{tname}_{strategy}.jsonl"
+        with open(file_path, "w") as f:
+            for seed in range(n_seeds):
+                messages = generate_sft_trajectory(tname, seed, strategy)
+                f.write(json.dumps({"messages": messages}) + "\n")
+        output_files.append(file_path)
+
+    return output_files
+
+
+class MemoryEnv:
+    """Step-based RL environment wrapping WorldTemplate.generate_stream().
+
+    Interface:
+        reset(seed) → observation (first event dict)
+        step(action) → (observation, reward, done, info)
+
+    action = {"tool": "memory_store", "args": {"content": "..."}}
+    reward = +1.0 for correct answer, 0.0 otherwise
+    done = True when all events processed
+
+    Does NOT depend on gym — but interface is compatible.
+    """
+
+    def __init__(
+        self,
+        template_name: str = "company",
+        seed: int = 0,
+        n_entities: int = 60,
+        n_questions: int = 20,
+        n_corrections: int = 5,
+        write_budget: int = 30,
+    ):
+        self.template_name = template_name
+        self._default_seed = seed
+        self.n_entities = n_entities
+        self.n_questions = n_questions
+        self.n_corrections = n_corrections
+        self.write_budget = write_budget
+
+        self._tmpl: WorldTemplate | None = None
+        self._stream: list[dict] = []
+        self._event_idx: int = 0
+        self._memory: dict[str, str] = {}  # id → content
+        self._mem_counter: int = 0
+        self._writes_used: int = 0
+        self._pending_answer: dict | None = None
+
+    def reset(self, seed: int | None = None) -> dict:
+        """Reset environment. Returns first event as observation."""
+        seed = seed if seed is not None else self._default_seed
+        tmpl_cls = TEMPLATES[self.template_name]
+        self._tmpl = tmpl_cls()
+        world = self._tmpl.generate_world(
+            seed=seed, n_entities=self.n_entities)
+        rng = Random(seed)
+        corrections = self._tmpl.generate_corrections(
+            world, rng, self.n_corrections)
+        self._stream = self._tmpl.generate_stream(
+            world, rng, corrections,
+            stored_names=set(),
+            n_questions=self.n_questions,
+            entities_per_batch=10,
+        )
+        self._event_idx = 0
+        self._memory = {}
+        self._mem_counter = 0
+        self._writes_used = 0
+        self._pending_answer = None
+        self._world = world
+
+        if not self._stream:
+            return {"type": "done"}
+        return self._stream[0]
+
+    def step(
+        self, action: dict[str, Any],
+    ) -> tuple[dict, float, bool, dict[str, Any]]:
+        """Execute action, return (observation, reward, done, info).
+
+        Actions:
+        - {"tool": "memory_store", "args": {"content": "..."}}
+        - {"tool": "memory_search", "args": {"query": "..."}}
+        - {"tool": "memory_forget", "args": {"memory_id": "..."}}
+        - {"tool": "submit_answer", "args": {"answer": "..."}}
+        - {"tool": "next"} — advance to next event (for ingest/correction)
+        """
+        tool = action.get("tool", "next")
+        args = action.get("args", {})
+        reward = 0.0
+        info: dict[str, Any] = {}
+
+        if tool == "memory_store":
+            if self._writes_used >= self.write_budget:
+                info["error"] = "Budget exhausted"
+            else:
+                self._mem_counter += 1
+                mid = f"mem_{self._mem_counter:03d}"
+                self._memory[mid] = args.get("content", "")
+                self._writes_used += 1
+                info["memory_id"] = mid
+                info["remaining"] = self.write_budget - self._writes_used
+
+        elif tool == "memory_search":
+            query = args.get("query", "").lower()
+            results = [
+                {"id": mid, "content": c}
+                for mid, c in self._memory.items()
+                if query in c.lower()
+            ]
+            info["results"] = results
+
+        elif tool == "memory_forget":
+            mid = args.get("memory_id", "")
+            if mid in self._memory:
+                del self._memory[mid]
+                info["deleted"] = True
+            else:
+                info["deleted"] = False
+
+        elif tool == "submit_answer":
+            answer = args.get("answer", "")
+            event = self._stream[self._event_idx]
+            if event["type"] == "question":
+                gt = str(event["answer"])
+                competency = event["competency"]
+                is_correct = _VALIDATOR.validate(answer, gt, competency)
+                reward = 1.0 if is_correct else 0.0
+                info["correct"] = is_correct
+                info["ground_truth"] = gt
+            # Advance after answering
+            self._event_idx += 1
+
+        elif tool == "next":
+            self._event_idx += 1
+
+        done = self._event_idx >= len(self._stream)
+        obs = self._stream[self._event_idx] if not done else {"type": "done"}
+        return obs, reward, done, info

@@ -1,14 +1,15 @@
-"""Inspect AI scorer for WorldBench: 6-axis memory evaluation.
+"""Inspect AI scorer for WorldBench: 4-axis memory evaluation.
 
 Axes:
-- accuracy: overall question accuracy
-- storage: retrieval question accuracy (recall + coverage)
+- breadth: retrieval question accuracy (storage breadth)
 - maintenance: update question accuracy, gated by storage coverage
-- reasoning: comprehension question accuracy (synthesis/aggregation/conditional)
-- efficiency: correct answers per write, baselined on budget
-- process: write_rate × accuracy
+- reasoning: comprehension question accuracy (all types)
+- efficiency: correct answers per write, normalized to budget
 
-Composite: weighted sum of all axes.
+Diagnostic (not in composite):
+- abstention_diagnostic: abstention question accuracy
+
+Composite: 0.30×breadth + 0.25×maintenance + 0.25×reasoning + 0.20×efficiency
 """
 
 from __future__ import annotations
@@ -28,10 +29,16 @@ from memorybench.evaluation.validators import (
 
 log = logging.getLogger(__name__)
 
+# All comprehension competency types for the reasoning axis
+_REASONING_COMPETENCIES = frozenset({
+    "synthesis", "aggregation", "conditional", "ratio",
+    "comparison", "multi_hop", "outlier", "delta",
+})
+
 
 @scorer(metrics=[])
 def worldbench_scorer(judge_model: str | None = None) -> Any:
-    """Score worldbench answers with 6-axis metrics.
+    """Score worldbench answers with 4-axis metrics + abstention diagnostic.
 
     Validation paths (no fallback — each path is self-contained):
     - With judge: LLM judge validates all non-abstention questions.
@@ -47,7 +54,6 @@ def worldbench_scorer(judge_model: str | None = None) -> Any:
         writes_used = state.store.get("writes_used", 0)
 
         # Build judge function if configured.
-        # Passed into async_validate_with_fallback — same path as stream_agent.
         judge_fn = None
         if judge_model:
             try:
@@ -60,7 +66,7 @@ def worldbench_scorer(judge_model: str | None = None) -> Any:
             except Exception:
                 log.warning("Failed to init judge model %s", judge_model)
 
-        # Validate each answer: rule-first, judge-fallback
+        # Validate each answer
         results: list[dict] = []
         for ans in answers:
             agent_answer = ans.get("answer") or ""
@@ -91,51 +97,47 @@ def worldbench_scorer(judge_model: str | None = None) -> Any:
         # ── Compute axes ──
         n_total = len(results)
         n_correct = sum(r["correct"] for r in results)
-        accuracy = n_correct / n_total
 
-        # Storage axis: retrieval questions (purpose: recall + coverage)
-        storage_rs = [r for r in results if r["competency"] == "retrieval"]
-        storage = (sum(r["correct"] for r in storage_rs) / len(storage_rs)
-                   if storage_rs else 0.0)
+        # Breadth axis: retrieval questions (Axis 1: storage breadth)
+        breadth_rs = [r for r in results if r["competency"] == "retrieval"]
+        breadth = (sum(r["correct"] for r in breadth_rs) / len(breadth_rs)
+                   if breadth_rs else 0.0)
 
-        # Maintenance axis: update questions
+        # Maintenance axis: update questions (Axis 2: memory maintenance)
         maint_rs = [r for r in results if r["competency"] == "update"]
         maintenance = (sum(r["correct"] for r in maint_rs) / len(maint_rs)
                        if maint_rs else 0.0)
 
-        # Reasoning axis: synthesis + aggregation + conditional
-        # NOTE: reasoning mixes LLM computation ability with memory management.
-        # For cross-LLM comparison, focus on storage and maintenance axes.
-        reason_rs = [r for r in results if r["competency"] in
-                     ("synthesis", "aggregation", "conditional")]
+        # Gate maintenance on retrieval accuracy (V8: robust against
+        # name-only packing — must actually answer retrieval correctly)
+        storage_coverage = breadth
+        maintenance = maintenance * min(storage_coverage / 0.5, 1.0)
+
+        # Reasoning axis: all comprehension question types (Axis 3)
+        reason_rs = [r for r in results
+                     if r["competency"] in _REASONING_COMPETENCIES]
         reasoning = (sum(r["correct"] for r in reason_rs) / len(reason_rs)
                      if reason_rs else 0.0)
 
-        # Maintenance: gate on retrieval accuracy (V8: robust against
-        # name-only packing — must actually answer retrieval correctly)
-        storage_coverage = storage  # empirical, not name-detection
-        maintenance = (maintenance
-                       * min(storage_coverage / 0.5, 1.0))
-
-        # Efficiency: correct/write ratio × accuracy floor (V7: prevents
-        # minimalist strategies from getting max efficiency)
+        # Efficiency axis: correct/write ratio, normalized to budget
         budget = state.store.get("write_budget", 30)
         ideal_rate = n_total / max(budget, 1)
         if writes_used == 0:
             efficiency = 0.0
         else:
+            accuracy = n_correct / n_total
             raw_eff = min(n_correct / writes_used / ideal_rate, 1.0)
             efficiency = raw_eff * accuracy
 
-        # Process: write_rate × accuracy, no search_rate (Fix 2)
-        n_questions = len(results)
-        write_rate = min(writes_used / max(n_questions * 0.5, 1), 1.0)
-        process = write_rate * accuracy
+        # Abstention diagnostic (not in composite)
+        abs_rs = [r for r in results if r["competency"] == "abstention"]
+        abstention_diagnostic = (
+            sum(r["correct"] for r in abs_rs) / len(abs_rs)
+            if abs_rs else 0.0)
 
-        # Composite: weighted sum with storage axis (Fix 6)
-        composite = (0.25 * accuracy + 0.20 * storage + 0.20 * reasoning
-                     + 0.15 * maintenance + 0.10 * efficiency
-                     + 0.10 * process)
+        # Composite: weighted sum
+        composite = (0.30 * breadth + 0.25 * maintenance
+                     + 0.25 * reasoning + 0.20 * efficiency)
 
         # Per-competency breakdown
         by_comp: dict[str, list[bool]] = defaultdict(list)
@@ -151,13 +153,11 @@ def worldbench_scorer(judge_model: str | None = None) -> Any:
         # Build flat value dict (Inspect AI requirement)
         value: dict[str, Any] = {
             "composite": round(composite, 4),
-            "accuracy": round(accuracy, 4),
-            "storage": round(storage, 4),
+            "breadth": round(breadth, 4),
             "maintenance": round(maintenance, 4),
             "reasoning": round(reasoning, 4),
             "efficiency": round(efficiency, 4),
-            "process": round(process, 4),
-            "write_rate": round(write_rate, 4),
+            "abstention_diagnostic": round(abstention_diagnostic, 4),
             "storage_coverage": round(storage_coverage, 4),
             "writes_used": writes_used,
             "n_questions": n_total,
@@ -171,10 +171,11 @@ def worldbench_scorer(judge_model: str | None = None) -> Any:
         return Score(
             value=value,
             explanation=(
-                f"Accuracy={accuracy:.1%}, Storage={storage:.1%}, "
-                f"Maintenance={maintenance:.1%} (cov={storage_coverage:.0%}), "
+                f"Breadth={breadth:.1%}, Maintenance={maintenance:.1%} "
+                f"(cov={storage_coverage:.0%}), "
                 f"Reasoning={reasoning:.1%}, "
-                f"Efficiency={efficiency:.3f}, Process={process:.2f}, "
+                f"Efficiency={efficiency:.3f}, "
+                f"Abstention={abstention_diagnostic:.1%}, "
                 f"Composite={composite:.3f}"
             ),
             metadata={"task_details": results},

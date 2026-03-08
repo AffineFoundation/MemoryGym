@@ -27,12 +27,12 @@ from memorybench.memory.budget import MemoryBudget
 MemoryBackend = Any
 
 SYSTEM_PROMPT = """You are participating in a memory management evaluation.
+Write budget: {budget} total writes. Be selective — you'll see more entities than you can store.
 
-You will receive a stream of events in unpredictable order:
-
-1. **DOCUMENTS**: Entity data. Read and store what seems important.
-2. **CORRECTIONS**: Data correction notices. Update your stored memories.
-3. **QUESTIONS**: Answer from your stored memories.
+## Event Types
+1. DOCUMENTS: Entity data to read and store selectively.
+2. CORRECTIONS: Updated data. You MUST update stored memories.
+3. QUESTIONS: Answer from stored memories only.
 
 ## Memory Tools
 
@@ -53,15 +53,27 @@ Call tools by outputting JSON blocks:
 **submit_answer** — Submit your final answer:
 <tool_call>{{"name": "submit_answer", "arguments": {{"answer": "your answer"}}}}</tool_call>
 
-## Strategy
+## Critical: Handling Corrections
+When you receive a CORRECTION:
+1. memory_search the entity name
+2. memory_forget the old entry
+3. memory_store the corrected data
+This costs 1 write but ensures your answers reflect current data.
+Failing to update = wrong answers on update questions.
 
-- Store entity data compactly: "EntityName | attr1: val1, attr2: val2, ..."
-- When corrections arrive, search for the entity, delete old entry, store corrected data.
-- For questions, search by entity name, then submit_answer.
-- For comparison questions, answer as "EntityName (value)".
-- If data is not in memory, submit "I don't have enough information".
-- Write budget: {budget} total. Be selective.
-- ALWAYS call submit_answer when there is a question.
+## Storage Strategy
+- Store data compactly: "EntityName | attr1: val1, attr2: val2, ..."
+- Prioritize entities with extreme/distinctive values
+- Skip unremarkable entities when budget is tight
+- IMPORTANT: Reserve ~20% of your budget for corrections. \
+Corrections will arrive later and each costs 1 write to update.
+
+## Answering Questions
+- Search by entity name, then submit_answer with the value
+- For comparison/synthesis: answer as "EntityName (value)"
+- If data not in memory: submit "I don't have enough information"
+- Do NOT guess or fabricate values
+- ALWAYS call submit_answer for every question
 """
 
 _TOOL_CALL_RE = re.compile(
@@ -92,6 +104,12 @@ class AgentResult:
     n_writes: int
     n_searches: int
     required_entities: list[str] = field(default_factory=list)
+    validation_method: str = ""       # "rule" or "judge"
+    validation_reason: str = ""       # detailed reason from validator/judge
+    api_calls: int = 0                # API calls for this question
+    elapsed: float = 0.0              # seconds for this question
+    retries: int = 0                  # transient retries during this question
+    error: str | None = None          # non-None if eval model failed
 
 
 def _format_documents(docs: list[str]) -> str:
@@ -208,19 +226,28 @@ class _LoopStats:
     searches: int = 0
     api_calls: int = 0
     elapsed: float = 0.0
+    retries: int = 0
+    ctx_trims: int = 0
+    error: str | None = None
 
 
 def _run_tool_loop(
     client: OpenAI, model: str, messages: list[dict],
     backend: MemoryBackend, budget: MemoryBudget,
-    max_turns: int = 10,
+    max_turns: int = 10, max_retries: int = 10,
 ) -> _LoopStats:
-    """Run text-based tool loop until submit_answer or max_turns."""
+    """Run text-based tool loop until submit_answer or max_turns.
+
+    Args:
+        max_retries: Max consecutive retries for transient eval model errors.
+            After this many failures, the loop aborts with stats.error set.
+            Judge/infrastructure errors are handled separately (always retry).
+    """
     stats = _LoopStats()
     t0 = time.time()
 
     for turn in range(max_turns):
-        # Retry indefinitely on transient API errors (429, 503, etc.)
+        # Retry up to max_retries on transient eval model errors.
         # On context overflow, trim intermediate tool messages and retry.
         attempt = 0
         while True:
@@ -237,14 +264,14 @@ def _run_tool_loop(
                 if ("context" in err_lower and "length" in err_lower
                         or "input_tokens" in err_lower
                         or "reduce the length" in err_lower):
-                    # Keep system + first user msg + last 2 messages
                     if len(messages) > 4:
                         messages[2:-2] = []
+                        stats.ctx_trims += 1
                         print(" [ctx-trim]", end="", flush=True)
                         continue
                     else:
                         response = None
-                        break  # can't trim further, abort this turn
+                        break
                 transient = ("429" in err_str or "503" in err_str
                              or "capacity" in err_lower
                              or "overloaded" in err_lower
@@ -253,8 +280,15 @@ def _run_tool_loop(
                 if not transient:
                     raise
                 attempt += 1
+                stats.retries += 1
+                if attempt > max_retries:
+                    stats.error = (
+                        f"Eval model unreachable after {max_retries} "
+                        f"retries: {err_str[:200]}")
+                    stats.elapsed = time.time() - t0
+                    return stats
                 wait = min(2 ** attempt * 5, 60)
-                print(f" [retry #{attempt} in {wait}s]",
+                print(f" [retry #{attempt}/{max_retries} in {wait}s]",
                       end="", flush=True)
                 time.sleep(wait)
         if response is None:
@@ -294,7 +328,7 @@ def run_stream_agent(
     world: Any = None,
     template: Any = None,
     seed: int = 0,
-) -> tuple[list[AgentResult], int, list[dict]]:
+) -> tuple[list[AgentResult], int, list[dict], str | None]:
     """Run a real LLM agent on a WorldTemplate event stream.
 
     Args:
@@ -311,7 +345,7 @@ def run_stream_agent(
         seed: Random seed for replacement question generation.
 
     Returns:
-        (results, writes_used, stored_contents)
+        (results, writes_used, stored_contents, error_or_none)
     """
     if api_key is None:
         api_key = os.environ.get("OPENAI_API_KEY") or os.environ.get("CHUTES_API_KEY")
@@ -337,12 +371,14 @@ def run_stream_agent(
     budget = MemoryBudget(total_writes=write_budget)
 
     total_events = len(stream)
+    eval_error: str | None = None
     messages: list[dict] = [{
         "role": "system",
         "content": SYSTEM_PROMPT.format(budget=write_budget),
     }]
 
     results: list[AgentResult] = []
+    pending_judge: list[tuple] = []  # (result_idx, question, gt, answer, competency)
     total_api_calls = 0
     run_t0 = time.time()
 
@@ -368,6 +404,10 @@ def run_stream_agent(
 
             print(f" {stats.api_calls} calls {stats.elapsed:.1f}s "
                   f"budget={budget.remaining()}")
+            if stats.error:
+                print(f"  ERROR: {stats.error}")
+                eval_error = stats.error
+                break
 
         elif event_type == "correction":
             entity_attr = f"{event['entity_name']}.{event['attr']}"
@@ -385,6 +425,10 @@ def run_stream_agent(
 
             print(f" {stats.api_calls} calls {stats.elapsed:.1f}s "
                   f"budget={budget.remaining()}")
+            if stats.error:
+                print(f"  ERROR: {stats.error}")
+                eval_error = stats.error
+                break
 
         elif event_type == "question":
             # Adaptive comprehension: replace if required entities not stored
@@ -407,25 +451,52 @@ def run_stream_agent(
                 client, model, messages, backend, budget)
             total_api_calls += stats.api_calls
 
+            if stats.error:
+                # Eval model unreachable — record as error, skip scoring
+                print(f" ERROR {stats.error[:80]}")
+                results.append(AgentResult(
+                    question=event["question"],
+                    answer="",
+                    ground_truth=str(event["answer"]),
+                    competency=event["competency"],
+                    purpose=event.get("purpose", ""),
+                    correct=False,
+                    n_writes=stats.writes,
+                    n_searches=stats.searches,
+                    required_entities=event.get("required_entities", []),
+                    api_calls=stats.api_calls,
+                    elapsed=stats.elapsed,
+                    retries=stats.retries,
+                    error=stats.error,
+                ))
+                eval_error = stats.error
+                break
+
             agent_answer = stats.answer or ""
             gt = str(event["answer"])
 
-            def _judge_fn(q, gt_, ans, comp):
-                return llm_judge_validate_sync(
-                    judge_client, q, gt_, ans, comp)
-
-            judge_t0 = time.time()
+            # Rule-based check first (instant, no API call).
+            # If rule passes, accept immediately. If rule fails,
+            # defer judge call to run in parallel after all events.
             is_correct, reason = validate_with_fallback(
                 agent_answer, gt, event["competency"],
                 question=event["question"],
-                judge_fn=_judge_fn,
+                judge_fn=None,  # no judge yet — deferred
             )
-            judge_elapsed = time.time() - judge_t0
 
-            mark = "+" if is_correct else "-"
-            via = reason.split(":")[0]  # "rule" or "judge"
+            result_idx = len(results)
+            if not is_correct and event["competency"] != "abstention":
+                # Needs judge — defer to post-loop parallel batch
+                pending_judge.append((
+                    result_idx,
+                    event["question"], gt, agent_answer,
+                    event["competency"],
+                ))
+
+            mark = "+" if is_correct else "?"  # "?" = pending judge
+            via = reason.split(":")[0]
             print(f" {mark} {stats.api_calls} calls {stats.elapsed:.1f}s "
-                  f"via={via} {judge_elapsed:.1f}s "
+                  f"via={via} "
                   f"budget={budget.remaining()}")
 
             if verbose:
@@ -444,24 +515,95 @@ def run_stream_agent(
                 n_writes=stats.writes,
                 n_searches=stats.searches,
                 required_entities=event.get("required_entities", []),
+                validation_method=via,
+                validation_reason=reason,
+                api_calls=stats.api_calls,
+                elapsed=stats.elapsed,
+                retries=stats.retries,
             ))
 
-        # Nuclear redaction: keep only system prompt + 1 placeholder pair
+        # Selective redaction: keep system prompt + memory state summary.
+        # Without this, the model enters each event with zero context
+        # about what it stored, causing widespread empty answers.
         del messages[1:]  # Remove everything after system prompt
-        messages.append({
-            "role": "user",
-            "content": f"[{event_idx+1}/{total_events} done]",
-        })
+        stored_entries = backend.list()
+        if stored_entries:
+            stored_names = [e["content"].split("|")[0].strip()
+                            for e in stored_entries]
+            mem_summary = (
+                f"[{event_idx+1}/{total_events} done]\n\n"
+                f"Your memory contains {len(stored_entries)} entries: "
+                + ", ".join(stored_names[:30])
+                + (f" ... (+{len(stored_names)-30} more)"
+                   if len(stored_names) > 30 else "")
+                + f"\nBudget: {budget.remaining()} writes remaining."
+            )
+        else:
+            mem_summary = (
+                f"[{event_idx+1}/{total_events} done]\n"
+                f"Your memory is empty. Budget: {budget.remaining()} "
+                f"writes remaining."
+            )
+        messages.append({"role": "user", "content": mem_summary})
         messages.append({"role": "assistant", "content": "OK."})
+
+    # Parallel judge validation for rule-failed answers.
+    # This runs all pending judge calls concurrently instead of
+    # blocking after each question — typically 3-5x faster.
+    if pending_judge:
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+
+        def _run_judge(item):
+            idx, question, gt_, answer, competency = item
+            try:
+                ok, reason = llm_judge_validate_sync(
+                    judge_client, question, gt_, answer, competency)
+                return idx, ok, f"judge:{reason}"
+            except Exception as exc:
+                return idx, False, f"judge:failed({exc})"
+
+        judge_t0 = time.time()
+        n_pending = len(pending_judge)
+        print(f"  Judging {n_pending} answers in parallel ...", end="",
+              flush=True)
+        with ThreadPoolExecutor(max_workers=min(n_pending, 4)) as pool:
+            futures = [pool.submit(_run_judge, item)
+                       for item in pending_judge]
+            for future in as_completed(futures):
+                idx, ok, reason = future.result()
+                results[idx] = AgentResult(
+                    question=results[idx].question,
+                    answer=results[idx].answer,
+                    ground_truth=results[idx].ground_truth,
+                    competency=results[idx].competency,
+                    purpose=results[idx].purpose,
+                    correct=ok,
+                    n_writes=results[idx].n_writes,
+                    n_searches=results[idx].n_searches,
+                    required_entities=results[idx].required_entities,
+                    validation_method=reason.split(":")[0],
+                    validation_reason=reason,
+                    api_calls=results[idx].api_calls,
+                    elapsed=results[idx].elapsed,
+                    retries=results[idx].retries,
+                )
+        judge_elapsed = time.time() - judge_t0
+        judge_results = sum(1 for i, _, _, _, _ in pending_judge
+                           if results[i].correct)
+        print(f" {judge_results}/{n_pending} correct, {judge_elapsed:.1f}s")
 
     total_elapsed = time.time() - run_t0
     correct_count = sum(r.correct for r in results)
     total_q = len(results)
-    print(f"  --- Summary: {correct_count}/{total_q} correct "
-          f"({correct_count/total_q:.0%}) | "
-          f"{total_api_calls} API calls | "
-          f"{budget.writes_used} writes | "
-          f"{total_elapsed:.1f}s total ---")
+    pct = f"{correct_count/total_q:.0%}" if total_q else "n/a"
+    summary = (f"  --- Summary: {correct_count}/{total_q} correct "
+               f"({pct}) | "
+               f"{total_api_calls} API calls | "
+               f"{budget.writes_used} writes | "
+               f"{total_elapsed:.1f}s total")
+    if eval_error:
+        summary += f" | ERROR: {eval_error[:80]}"
+    print(summary + " ---")
 
     stored_contents = [e["content"] for e in backend.list()]
-    return results, budget.writes_used, stored_contents
+    return results, budget.writes_used, stored_contents, eval_error
