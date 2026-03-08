@@ -58,6 +58,13 @@ python -m memorygym.bench --model openai/gpt-4o --seed 42 --template company  # 
 | 推理能力 | comprehension | 你能从存储数据计算吗？ | 25% |
 | — | abstention | 你能识别不知道的吗？ | 15% |
 
+**可选模型**（Chutes 平台，按评测价值排序）：
+- `Qwen/Qwen3.5-397B-A17B-TEE` — 最强开源，397B MoE
+- `Qwen/Qwen3-235B-A22B-Instruct-2507-TEE`
+- `MiniMaxAI/MiniMax-M2.5-TEE` — 第三家厂商，SWE-bench 80%+
+- `moonshotai/Kimi-K2.5-TEE` — Moonshot 多模态
+- `zai-org/GLM-5-TEE` — 智谱旗舰
+
 **真实评测**：`bench.py --model <name>` 或 `inspect eval eval_task.py`，使用真实 LLM + 真实后端。
 
 **Simulation**（`simulation.py`）：系统自测，非评估。8 种确定性策略验证评分不变量。
