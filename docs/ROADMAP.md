@@ -64,7 +64,11 @@ memorygym/
 ├── simulation.py               # 系统自测（8 种策略验证评分有效性）
 ├── bench.py                    # CLI: 真实评测 + simulation
 ├── protocol.py                 # 标准评估协议（tier 定义、JSON schema）
-└── training.py                 # SFT 轨迹生成 + MemoryEnv（RL 环境）
+├── training.py                 # SFT 轨迹生成 + MemoryEnv（RL 环境）
+└── adapters/                   # RL 框架适配层
+    ├── _common.py              # 共享工具解析 + episode runner
+    ├── verl_adapter.py         # verl AgentLoopBase 集成
+    └── slime_adapter.py        # slime custom generate/reward
 ```
 
 ### 2.2 评分体系 (4 轴)
@@ -103,7 +107,7 @@ abstention_diagnostic 单独报告，不计入 composite。
 
 ### 2.6 测试覆盖
 
-217 tests: test_worlds(37) + test_validators(61) + test_bench(22) + test_stream_agent(17) + test_training(21) + test_backend_bench(7) + test_llm_judge(11) + test_narrative(15) + other(26)
+233 tests: test_worlds(37) + test_validators(61) + test_bench(22) + test_stream_agent(17) + test_training(21) + test_backend_bench(7) + test_llm_judge(11) + test_narrative(15) + test_adapters(16) + other(26)
 
 ---
 
@@ -210,7 +214,7 @@ eval/
 | 数值验证 | 整数精确 + 浮点 2% 容差 | 阻止猜测、容忍显示差异 |
 | 预算上下文 | 动态注入（非强制限制） | 存储决策应由 agent 做 |
 | MemoryEnv obs | 文本格式 | 与 LLM 输入格式一致 |
-| RL 框架 | verl（多轮 AgentLoopBase + GRPO） | 原生多轮支持 + FSDP2 + response_mask |
+| RL 框架 | verl + slime 双适配（memorygym/adapters/） | 共享 MemoryEnv，薄适配层对接各框架 |
 
 ### 待决定
 
