@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import pytest
 
-from memorybench.evaluation.validators import (
+from memorygym.evaluation.validators import (
     AnswerValidator, _normalize_entity, validate_with_fallback,
 )
 

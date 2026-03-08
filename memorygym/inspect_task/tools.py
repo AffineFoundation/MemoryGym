@@ -1,4 +1,4 @@
-"""Inspect AI tools for MemoryBench memory operations (mem0 interface)."""
+"""Inspect AI tools for MemoryGym memory operations (mem0 interface)."""
 
 from __future__ import annotations
 
@@ -6,8 +6,8 @@ from inspect_ai.tool import Tool, ToolError, tool
 
 from typing import Any
 
-from memorybench.memory.backends.chromadb_backend import ChromaDBBackend
-from memorybench.memory.budget import MemoryBudget
+from memorygym.memory.backends.chromadb_backend import ChromaDBBackend
+from memorygym.memory.budget import MemoryBudget
 
 # Type alias for any backend implementing store/search/get/forget/list
 MemoryBackend = Any
@@ -16,7 +16,7 @@ MemoryBackend = Any
 def create_memory_tools(
     budget: int = 30,
     backend_type: str = "chromadb",
-    collection_name: str = "memorybench",
+    collection_name: str = "memorygym",
     backend: MemoryBackend | None = None,
     mem0_config: dict | None = None,
 ) -> tuple[list[Tool], MemoryBudget, MemoryBackend]:
@@ -35,7 +35,7 @@ def create_memory_tools(
     """
     if backend is None:
         if backend_type == "mem0":
-            from memorybench.memory.backends.mem0_backend import Mem0Backend
+            from memorygym.memory.backends.mem0_backend import Mem0Backend
             backend = Mem0Backend(config=mem0_config)
         else:
             backend = ChromaDBBackend(collection_name=collection_name)

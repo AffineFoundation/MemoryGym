@@ -116,7 +116,7 @@ def format_leaderboard_entry(
     results = aggregate_results(per_seed_results)
 
     entry: dict[str, Any] = {
-        "memorybench_version": "0.4.0",
+        "memorygym_version": "0.4.0",
         "schema_version": SCHEMA_VERSION,
         "model": model,
         "tier": tier,

@@ -1,4 +1,4 @@
-# MemoryBench — Design Lessons
+# MemoryGym — Design Lessons
 
 What didn't work, and why. Documenting these to prevent repeating mistakes.
 

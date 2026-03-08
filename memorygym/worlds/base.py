@@ -1,4 +1,4 @@
-"""World template abstraction for MemoryBench.
+"""World template abstraction for MemoryGym.
 
 A WorldTemplate defines a complete domain: entity types, attribute schemas,
 document styles, question patterns, and ground truth computation.

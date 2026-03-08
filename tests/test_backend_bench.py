@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-from memorybench.evaluation.backend_bench import benchmark_backend
-from memorybench.memory.backends.chromadb_backend import ChromaDBBackend
-from memorybench.worlds.company import CompanyWorld
-from memorybench.worlds.city import CityWorld
+from memorygym.evaluation.backend_bench import benchmark_backend
+from memorygym.memory.backends.chromadb_backend import ChromaDBBackend
+from memorygym.worlds.company import CompanyWorld
+from memorygym.worlds.city import CityWorld
 
 
 def test_chromadb_recall():
@@ -102,7 +102,7 @@ def test_comprehension_no_gt_self_validation():
     If entity data is not extractable, comprehension must fail — even
     if the entity name is found in search results.
     """
-    from memorybench.evaluation.backend_bench import _extract_answer_from_content
+    from memorygym.evaluation.backend_bench import _extract_answer_from_content
 
     # A backend that returns entity name but no attribute values
     class NameOnlyBackend:

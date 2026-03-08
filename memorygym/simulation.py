@@ -14,9 +14,9 @@ from __future__ import annotations
 from collections import defaultdict
 from random import Random
 
-from memorybench.evaluation.validators import AnswerValidator
-from memorybench.worlds import ALL_TEMPLATES
-from memorybench.worlds.base import (
+from memorygym.evaluation.validators import AnswerValidator
+from memorygym.worlds import ALL_TEMPLATES
+from memorygym.worlds.base import (
     EntitySpec, GeneratedQA, World, WorldTemplate,
 )
 

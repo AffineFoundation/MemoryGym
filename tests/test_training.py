@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from memorybench.training import (
+from memorygym.training import (
     MemoryEnv,
     export_trajectories,
     generate_sft_trajectory,
@@ -92,11 +92,17 @@ class TestExportTrajectories:
 class TestMemoryEnv:
     """RL environment interface."""
 
-    def test_reset_returns_event(self):
+    def test_reset_returns_text(self):
         env = MemoryEnv("company", seed=0)
         obs = env.reset()
-        assert isinstance(obs, dict)
-        assert "type" in obs
+        assert isinstance(obs, str)
+        assert "DOCUMENTS" in obs or "Event" in obs
+
+    def test_step_returns_text_observation(self):
+        env = MemoryEnv("company", seed=0)
+        env.reset()
+        obs, reward, done, info = env.step({"tool": "next"})
+        assert isinstance(obs, str)
 
     def test_step_store_and_search(self):
         env = MemoryEnv("company", seed=0)
@@ -128,10 +134,11 @@ class TestMemoryEnv:
     def test_full_episode(self):
         env = MemoryEnv("company", seed=0, n_entities=10, n_questions=5)
         obs = env.reset()
+        assert isinstance(obs, str)
         done = False
         steps = 0
         while not done:
-            if obs["type"] == "question":
+            if "QUESTION" in obs:
                 obs, reward, done, info = env.step({
                     "tool": "submit_answer",
                     "args": {"answer": "I don't have enough information"}
@@ -162,3 +169,75 @@ class TestMemoryEnv:
             "args": {"query": "temp data"}
         })
         assert len(info["results"]) == 0
+
+    def test_tier_lite(self):
+        env = MemoryEnv("company", tier="lite", seed=0)
+        assert env.n_entities == 30
+        assert env.n_questions == 10
+        assert env.n_corrections == 3
+        assert env.write_budget == 15
+
+    def test_tier_standard(self):
+        env = MemoryEnv("company", tier="standard", seed=0)
+        assert env.n_entities == 60
+        assert env.n_questions == 20
+        assert env.n_corrections == 5
+        assert env.write_budget == 30
+
+    def test_tier_hard(self):
+        env = MemoryEnv("company", tier="hard", seed=0)
+        assert env.n_entities == 120
+        assert env.n_questions == 40
+        assert env.n_corrections == 10
+        assert env.write_budget == 30
+
+    def test_invalid_tier_raises(self):
+        try:
+            MemoryEnv("company", tier="impossible", seed=0)
+            assert False, "Should have raised ValueError"
+        except ValueError as e:
+            assert "impossible" in str(e)
+
+    def test_episode_stats_in_info(self):
+        env = MemoryEnv("company", seed=0, n_entities=10, n_questions=5)
+        env.reset()
+        obs, _, _, info = env.step({"tool": "next"})
+        assert "episode_stats" in info
+        stats = info["episode_stats"]
+        assert stats["writes_used"] == 0
+        assert stats["budget_remaining"] == env.write_budget
+        assert stats["questions_answered"] == 0
+        assert stats["correct_count"] == 0
+        assert stats["total_questions"] > 0
+
+    def test_get_verifiable_reward(self):
+        env = MemoryEnv("company", seed=0, n_entities=10, n_questions=5)
+        env.reset()
+        # Before any questions answered, reward = 0
+        assert env.get_verifiable_reward() == 0.0
+
+    def test_budget_context_in_observation(self):
+        env = MemoryEnv("company", tier="lite", seed=0)
+        obs = env.reset()
+        assert "Budget:" in obs
+        assert "Corrections coming:" in obs
+        assert "Suggestion:" in obs
+
+    def test_episode_complete_text(self):
+        env = MemoryEnv("company", seed=0, n_entities=10, n_questions=5)
+        obs = env.reset()
+        done = False
+        steps = 0
+        while not done:
+            if "QUESTION" in obs:
+                obs, _, done, _ = env.step({
+                    "tool": "submit_answer",
+                    "args": {"answer": "I don't have enough information"}
+                })
+            else:
+                obs, _, done, _ = env.step({"tool": "next"})
+            steps += 1
+            if steps > 200:
+                break
+        assert done
+        assert obs == "Episode complete."

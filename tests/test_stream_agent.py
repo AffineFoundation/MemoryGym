@@ -1,6 +1,6 @@
 """Tests for stream_agent tool parsing and execution (no API calls)."""
 
-from memorybench.agents.stream_agent import (
+from memorygym.agents.stream_agent import (
     _execute_tool,
     _extract_tool_calls,
     _parse_and_execute,
@@ -8,8 +8,8 @@ from memorybench.agents.stream_agent import (
     SYSTEM_PROMPT,
     _TOOL_CALL_RE,
 )
-from memorybench.memory.backends.chromadb_backend import ChromaDBBackend
-from memorybench.memory.budget import MemoryBudget
+from memorygym.memory.backends.chromadb_backend import ChromaDBBackend
+from memorygym.memory.budget import MemoryBudget
 
 
 def _fresh_backend():

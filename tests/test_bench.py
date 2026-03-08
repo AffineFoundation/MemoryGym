@@ -7,7 +7,7 @@ the standard evaluation protocol.
 
 from __future__ import annotations
 
-from memorybench.bench import (
+from memorygym.bench import (
     STRATEGIES,
     TEMPLATES,
     _construct_and_validate,
@@ -17,13 +17,13 @@ from memorybench.bench import (
     run_validation,
     simulate_one,
 )
-from memorybench.protocol import (
+from memorygym.protocol import (
     OFFICIAL_SEEDS,
     TIERS,
     aggregate_results,
     compute_composite,
 )
-from memorybench.worlds.base import GeneratedQA
+from memorygym.worlds.base import GeneratedQA
 
 
 # ── _data_available ──
@@ -203,7 +203,7 @@ class TestCLIOutput:
     def test_json_output(self, tmp_path):
         """JSON output has required schema."""
         import json
-        from memorybench.bench import main
+        from memorygym.bench import main
         outfile = tmp_path / "results.json"
         ret = main(["--seed", "0", "--template", "company",
                      "--strategy", "perfect", "guesser",
@@ -217,19 +217,19 @@ class TestCLIOutput:
         assert data["summary"]["guesser"]["accuracy"] == 0.0
 
     def test_validate_returns_1_on_failure(self):
-        from memorybench.bench import main
+        from memorygym.bench import main
         ret = main(["--seed", "0", "--template", "company",
                      "--strategy", "guesser", "--validate"])
         assert ret == 1
 
     def test_tier_lite_config(self):
-        from memorybench.bench import parse_args, _resolve_config
+        from memorygym.bench import parse_args, _resolve_config
         args = parse_args(["--tier", "lite"])
         entities, questions, corrections, budget = _resolve_config(args)
         assert (entities, questions, corrections, budget) == (30, 10, 3, 15)
 
     def test_tier_hard_config(self):
-        from memorybench.bench import parse_args, _resolve_config
+        from memorygym.bench import parse_args, _resolve_config
         args = parse_args(["--tier", "hard"])
         entities, questions, corrections, budget = _resolve_config(args)
         assert (entities, questions, corrections, budget) == (120, 40, 10, 30)

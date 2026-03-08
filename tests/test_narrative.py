@@ -7,13 +7,13 @@ from __future__ import annotations
 
 from random import Random
 
-from memorybench.evaluation.validators import AnswerValidator
-from memorybench.worlds.base import WorldTemplate
-from memorybench.worlds.city import CityWorld
-from memorybench.worlds.company import CompanyWorld
-from memorybench.worlds.hospital import HospitalWorld
-from memorybench.worlds.research import ResearchWorld
-from memorybench.worlds.sport import SportWorld
+from memorygym.evaluation.validators import AnswerValidator
+from memorygym.worlds.base import WorldTemplate
+from memorygym.worlds.city import CityWorld
+from memorygym.worlds.company import CompanyWorld
+from memorygym.worlds.hospital import HospitalWorld
+from memorygym.worlds.research import ResearchWorld
+from memorygym.worlds.sport import SportWorld
 
 ALL_TMPLS = [CompanyWorld, ResearchWorld, CityWorld, HospitalWorld, SportWorld]
 
@@ -247,7 +247,7 @@ def test_new_types_dont_leak_keywords():
 
 def test_smart_guesser_new_types():
     """Smart guesser must fail on ratio/comparison/delta questions."""
-    from memorybench.bench import _smart_guess, _VALIDATOR
+    from memorygym.bench import _smart_guess, _VALIDATOR
 
     for TmplClass in ALL_TMPLS:
         tmpl = TmplClass()
@@ -333,7 +333,7 @@ def test_comprehension_types_not_fingerprint_exploitable():
     Strategy: detect type → apply type-specific guessing heuristic.
     Must still score <5% because all new types require stored data.
     """
-    from memorybench.bench import _VALIDATOR
+    from memorygym.bench import _VALIDATOR
 
     for TmplClass in ALL_TMPLS:
         tmpl = TmplClass()

@@ -15,8 +15,8 @@ NOTE: backend_bench uses compact KV format (not narrative documents).
 This is intentional — it isolates backend quality from document parsing.
 
 Usage:
-    python -m memorybench.evaluation.backend_bench
-    python -m memorybench.evaluation.backend_bench --backend chromadb --template company
+    python -m memorygym.evaluation.backend_bench
+    python -m memorygym.evaluation.backend_bench --backend chromadb --template company
 """
 
 from __future__ import annotations
@@ -26,8 +26,8 @@ from dataclasses import dataclass, field
 from random import Random
 from typing import Any
 
-from memorybench.evaluation.validators import AnswerValidator
-from memorybench.worlds.base import World, WorldTemplate
+from memorygym.evaluation.validators import AnswerValidator
+from memorygym.worlds.base import World, WorldTemplate
 
 
 @dataclass
@@ -252,7 +252,7 @@ def run_backend_bench(
     n_seeds: int = 5,
 ) -> None:
     """Run backend benchmark and print results."""
-    from memorybench.worlds import ALL_TEMPLATES
+    from memorygym.worlds import ALL_TEMPLATES
 
     templates = (
         {template_name: ALL_TEMPLATES[template_name]}
@@ -271,7 +271,7 @@ def run_backend_bench(
 
         for seed in range(n_seeds):
             if backend_type == "chromadb":
-                from memorybench.memory.backends.chromadb_backend import (
+                from memorygym.memory.backends.chromadb_backend import (
                     ChromaDBBackend,
                 )
                 backend = ChromaDBBackend(

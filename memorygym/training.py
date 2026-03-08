@@ -11,13 +11,14 @@ from pathlib import Path
 from random import Random
 from typing import Any
 
-from memorybench.simulation import (
+from memorygym.protocol import TIERS
+from memorygym.simulation import (
     TEMPLATES,
     _construct_and_validate,
     _data_available,
     _VALIDATOR,
 )
-from memorybench.worlds.base import WorldTemplate
+from memorygym.worlds.base import WorldTemplate
 
 
 def generate_sft_trajectory(
@@ -87,7 +88,7 @@ def generate_sft_trajectory(
     )
 
     # Build system prompt
-    from memorybench.agents.stream_agent import SYSTEM_PROMPT
+    from memorygym.agents.stream_agent import SYSTEM_PROMPT
     system_prompt = SYSTEM_PROMPT.format(budget=write_budget)
 
     messages: list[dict] = [{"role": "system", "content": system_prompt}]
@@ -271,7 +272,7 @@ class MemoryEnv:
     """Step-based RL environment wrapping WorldTemplate.generate_stream().
 
     Interface:
-        reset(seed) → observation (first event dict)
+        reset(seed) → observation (text description of first event)
         step(action) → (observation, reward, done, info)
 
     action = {"tool": "memory_store", "args": {"content": "..."}}
@@ -284,18 +285,32 @@ class MemoryEnv:
     def __init__(
         self,
         template_name: str = "company",
+        tier: str | None = None,
         seed: int = 0,
-        n_entities: int = 60,
-        n_questions: int = 20,
-        n_corrections: int = 5,
-        write_budget: int = 30,
+        n_entities: int | None = None,
+        n_questions: int | None = None,
+        n_corrections: int | None = None,
+        write_budget: int | None = None,
     ):
         self.template_name = template_name
         self._default_seed = seed
-        self.n_entities = n_entities
-        self.n_questions = n_questions
-        self.n_corrections = n_corrections
-        self.write_budget = write_budget
+
+        # Tier overrides explicit params
+        if tier is not None:
+            if tier not in TIERS:
+                raise ValueError(
+                    f"Unknown tier '{tier}'. Choose from: "
+                    f"{', '.join(TIERS)}")
+            tc = TIERS[tier]
+            self.n_entities = n_entities or tc["entities"]
+            self.n_questions = n_questions or tc["questions"]
+            self.n_corrections = n_corrections or tc["corrections"]
+            self.write_budget = write_budget or tc["write_budget"]
+        else:
+            self.n_entities = n_entities or 60
+            self.n_questions = n_questions or 20
+            self.n_corrections = n_corrections or 5
+            self.write_budget = write_budget or 30
 
         self._tmpl: WorldTemplate | None = None
         self._stream: list[dict] = []
@@ -303,10 +318,47 @@ class MemoryEnv:
         self._memory: dict[str, str] = {}  # id → content
         self._mem_counter: int = 0
         self._writes_used: int = 0
-        self._pending_answer: dict | None = None
+        self._questions_answered: int = 0
+        self._correct_count: int = 0
+        self._total_questions: int = 0
 
-    def reset(self, seed: int | None = None) -> dict:
-        """Reset environment. Returns first event as observation."""
+    def _format_event(self, event: dict) -> str:
+        """Format an event dict as human-readable text."""
+        etype = event["type"]
+        total = len(self._stream)
+        idx = self._event_idx + 1
+
+        if etype == "ingest":
+            docs = event.get("documents", [])
+            docs_text = "\n\n".join(
+                f"[Document {i+1}]\n{d}" for i, d in enumerate(docs))
+            n_ents = len(event.get("entity_names", []))
+            remaining = self.write_budget - self._writes_used
+            suggested = max(0, min(n_ents, remaining - self._n_corrections))
+            return (
+                f"=== Event {idx}/{total} [DOCUMENTS] ===\n\n"
+                f"⚠️ Budget: {remaining}/{self.write_budget} writes "
+                f"remaining. Corrections coming: {self._n_corrections}.\n"
+                f"   Suggestion: store ≤{suggested} from this batch.\n\n"
+                f"**Documents:**\n{docs_text}\n\n"
+                "No question. Store important entity data."
+            )
+        elif etype == "correction":
+            return (
+                f"=== Event {idx}/{total} [CORRECTION] ===\n\n"
+                f"**Correction Notice:**\n{event.get('notice', '')}\n\n"
+                "Update your stored memories with the corrected value."
+            )
+        elif etype == "question":
+            return (
+                f"=== Event {idx}/{total} [QUESTION] ===\n\n"
+                f"**Question:**\n{event.get('question', '')}\n\n"
+                "Search your memory and call submit_answer."
+            )
+        return f"=== Event {idx}/{total} [DONE] ==="
+
+    def reset(self, seed: int | None = None) -> str:
+        """Reset environment. Returns first event as text observation."""
         seed = seed if seed is not None else self._default_seed
         tmpl_cls = TEMPLATES[self.template_name]
         self._tmpl = tmpl_cls()
@@ -325,16 +377,23 @@ class MemoryEnv:
         self._memory = {}
         self._mem_counter = 0
         self._writes_used = 0
-        self._pending_answer = None
+        self._questions_answered = 0
+        self._correct_count = 0
         self._world = world
 
+        # Precompute question/correction counts
+        self._total_questions = sum(
+            1 for e in self._stream if e["type"] == "question")
+        self._n_corrections = sum(
+            1 for e in self._stream if e["type"] == "correction")
+
         if not self._stream:
-            return {"type": "done"}
-        return self._stream[0]
+            return "No events in stream."
+        return self._format_event(self._stream[0])
 
     def step(
         self, action: dict[str, Any],
-    ) -> tuple[dict, float, bool, dict[str, Any]]:
+    ) -> tuple[str, float, bool, dict[str, Any]]:
         """Execute action, return (observation, reward, done, info).
 
         Actions:
@@ -387,6 +446,9 @@ class MemoryEnv:
                 reward = 1.0 if is_correct else 0.0
                 info["correct"] = is_correct
                 info["ground_truth"] = gt
+                self._questions_answered += 1
+                if is_correct:
+                    self._correct_count += 1
             # Advance after answering
             self._event_idx += 1
 
@@ -394,5 +456,24 @@ class MemoryEnv:
             self._event_idx += 1
 
         done = self._event_idx >= len(self._stream)
-        obs = self._stream[self._event_idx] if not done else {"type": "done"}
+
+        # Episode stats always included
+        info["episode_stats"] = {
+            "writes_used": self._writes_used,
+            "budget_remaining": self.write_budget - self._writes_used,
+            "questions_answered": self._questions_answered,
+            "correct_count": self._correct_count,
+            "total_questions": self._total_questions,
+        }
+
+        if done:
+            obs = "Episode complete."
+        else:
+            obs = self._format_event(self._stream[self._event_idx])
         return obs, reward, done, info
+
+    def get_verifiable_reward(self) -> float:
+        """Episode composite score for GRPO."""
+        if self._total_questions == 0:
+            return 0.0
+        return self._correct_count / self._total_questions

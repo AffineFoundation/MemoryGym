@@ -16,7 +16,7 @@ from __future__ import annotations
 from random import Random
 from typing import Any
 
-from memorybench.worlds.base import (
+from memorygym.worlds.base import (
     AttrDef, EntitySpec, SentenceTemplate, WorldTemplate, _possessive,
 )
 

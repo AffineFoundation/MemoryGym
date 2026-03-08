@@ -18,10 +18,10 @@ from openai import OpenAI
 
 load_dotenv()
 
-from memorybench.evaluation.llm_judge import llm_judge_validate_sync
-from memorybench.evaluation.validators import validate_with_fallback
-from memorybench.memory.backends.chromadb_backend import ChromaDBBackend
-from memorybench.memory.budget import MemoryBudget
+from memorygym.evaluation.llm_judge import llm_judge_validate_sync
+from memorygym.evaluation.validators import validate_with_fallback
+from memorygym.memory.backends.chromadb_backend import ChromaDBBackend
+from memorygym.memory.budget import MemoryBudget
 
 # Type alias: any backend implementing store/search/get/forget/list
 MemoryBackend = Any
@@ -306,6 +306,22 @@ def _run_tool_loop(
             break
 
         if not results:
+            # If no tool calls and no answer on the first attempt,
+            # nudge the model to use submit_answer. This handles
+            # models that generate reasoning text (e.g. <think> blocks)
+            # without producing tool calls.
+            if turn == 0 and answer is None:
+                messages.append({
+                    "role": "user",
+                    "content": (
+                        "You must call submit_answer(answer=\"...\") "
+                        "with your answer, or "
+                        "submit_answer(answer=\"I don't have enough "
+                        "information\") if unsure. "
+                        "Use memory_search first if needed."
+                    ),
+                })
+                continue
             break
 
         messages.append({
@@ -382,6 +398,14 @@ def run_stream_agent(
     total_api_calls = 0
     run_t0 = time.time()
 
+    # Precompute stream stats for dynamic budget context
+    total_entities = sum(
+        len(e.get("entity_names", []))
+        for e in stream if e["type"] == "ingest"
+    )
+    n_corrections_total = sum(1 for e in stream if e["type"] == "correction")
+    entities_seen = 0
+
     for event_idx, event in enumerate(stream):
         msg_start = len(messages)
         event_type = event["type"]
@@ -393,11 +417,24 @@ def run_stream_agent(
                   end="", flush=True)
 
             docs_text = _format_documents(event["documents"])
+            # Dynamic budget context
+            remaining = budget.remaining()
+            suggested = min(n_ents, remaining - n_corrections_total)
+            suggested = max(0, suggested)
+            budget_ctx = (
+                f"⚠️ Budget: {remaining}/{write_budget} writes remaining. "
+                f"Entities seen: {entities_seen}/{total_entities}. "
+                f"Corrections coming: {n_corrections_total}.\n"
+                f"   Suggestion: store ≤{suggested} from this batch "
+                f"to reserve budget for corrections."
+            )
             content = (
                 f"=== Event {event_idx+1}/{total_events} [DOCUMENTS] ===\n\n"
+                f"{budget_ctx}\n\n"
                 f"**Documents:**\n{docs_text}\n\n"
                 "No question. Store important entity data."
             )
+            entities_seen += n_ents
             messages.append({"role": "user", "content": content})
             stats = _run_tool_loop(client, model, messages, backend, budget)
             total_api_calls += stats.api_calls

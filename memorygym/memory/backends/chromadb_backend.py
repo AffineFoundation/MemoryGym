@@ -20,7 +20,7 @@ class ChromaDBBackend:
 
     def __init__(
         self,
-        collection_name: str = "memorybench",
+        collection_name: str = "memorygym",
         model_name: str = "all-MiniLM-L6-v2",
     ) -> None:
         self._ef = SentenceTransformerEmbeddingFunction(

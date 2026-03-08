@@ -18,7 +18,7 @@ from mem0 import Memory
 class Mem0Backend:
     """Production backend using mem0 (https://github.com/mem0ai/mem0).
 
-    Delegates all operations to the mem0 SDK, mapping the MemoryBench
+    Delegates all operations to the mem0 SDK, mapping the MemoryGym
     backend interface to mem0's API.
 
     Args:
@@ -35,7 +35,7 @@ class Mem0Backend:
                         "model": "all-MiniLM-L6-v2",
                     }},
                     "vector_store": {"provider": "qdrant", "config": {
-                        "collection_name": "memorybench",
+                        "collection_name": "memorygym",
                         "path": "/tmp/mem0_qdrant",
                         "embedding_model_dims": 384,
                     }},
@@ -46,7 +46,7 @@ class Mem0Backend:
     def __init__(
         self,
         config: dict[str, Any] | None = None,
-        user_id: str = "memorybench",
+        user_id: str = "memorygym",
     ) -> None:
         if config is not None:
             self._m = Memory.from_config(config)

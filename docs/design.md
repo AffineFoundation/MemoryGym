@@ -1,8 +1,8 @@
-# MemoryBench v3 — System Design
+# MemoryGym v3 — System Design
 
 ## 1. Overview
 
-MemoryBench evaluates LLM agents' **memory management** ability — the capacity to make strategic storage decisions under constraints that maximize future task performance.
+MemoryGym evaluates LLM agents' **memory management** ability — the capacity to make strategic storage decisions under constraints that maximize future task performance.
 
 **Core loop**: seed → select 2 domains → generate KB per domain → build 25-task stream → agent processes tasks using MCP memory tools → 4-dimensional scoring.
 
@@ -109,7 +109,7 @@ Tracks `searched_before_answering` — whether the agent consulted memory before
 
 ## 6. Task Registry & Reproducibility
 
-**Task ID format**: `memorybench:v3:{seed}`
+**Task ID format**: `memorygym:v3:{seed}`
 
 Determinism guarantee: same seed → identical KB, documents, questions, and ground truth. Agent behavior and memory backend behavior are intentionally non-deterministic.
 
@@ -127,7 +127,7 @@ Determinism guarantee: same seed → identical KB, documents, questions, and gro
 ## 8. Package Structure
 
 ```
-memorybench/
+memorygym/
   domains/          # 3 domain definitions + name pool
     base.py         # Domain ABC
     organization.py

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""MemoryBench — Memory Management Evaluation CLI.
+"""MemoryGym — Memory Management Evaluation CLI.
 
 Usage:
     python eval.py --seed 0 -v              # Single seed, verbose
@@ -10,7 +10,7 @@ Usage:
 
 import sys
 
-from memorybench.bench import main
+from memorygym.bench import main
 
 if __name__ == "__main__":
     sys.exit(main())

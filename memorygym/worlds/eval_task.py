@@ -2,11 +2,11 @@
 
 Usage:
     # Run with specific seed and template:
-    inspect eval memorybench/worlds/eval_task.py -M openai/gpt-4o \
+    inspect eval memorygym/worlds/eval_task.py -M openai/gpt-4o \
         -T seed=42 -T template=company
 
     # Run with mem0 backend:
-    inspect eval memorybench/worlds/eval_task.py -M openai/gpt-4o \
+    inspect eval memorygym/worlds/eval_task.py -M openai/gpt-4o \
         -T seed=42 -T backend=mem0
 """
 
@@ -22,9 +22,9 @@ from inspect_ai.dataset import MemoryDataset, Sample
 from inspect_ai.model import ChatMessageAssistant, ChatMessageUser
 from inspect_ai.solver import Generate, Solver, TaskState, chain, solver, use_tools
 
-from memorybench.inspect_task.tools import create_memory_tools, submit_answer
-from memorybench.worlds import ALL_TEMPLATES
-from memorybench.worlds.base import Correction, World, WorldTemplate
+from memorygym.inspect_task.tools import create_memory_tools, submit_answer
+from memorygym.worlds import ALL_TEMPLATES
+from memorygym.worlds.base import Correction, World, WorldTemplate
 
 _TEMPLATES = ALL_TEMPLATES
 
@@ -68,6 +68,8 @@ Corrections will arrive later and each costs 1 write to update.
 """
 
 INGEST_TEMPLATE = """=== Event {event_num}/{total_events} [DOCUMENTS] ===
+
+{budget_context}
 
 **Documents:**
 {documents}
@@ -215,6 +217,16 @@ def worldbench_solver(
         answers: list[dict[str, Any]] = []
         qi = 0  # question counter
 
+        # Precompute stream stats for dynamic budget context
+        total_entities = sum(
+            len(e.get("entity_names", []))
+            for e in stream if e["type"] == "ingest"
+        )
+        n_corrections_total = sum(
+            1 for e in stream if e["type"] == "correction"
+        )
+        entities_seen = 0
+
         # Anchor: keep only initial messages (system prompt + sample input).
         # After each event, delete everything past this point and add 2
         # placeholder messages. Matches stream_agent.py behavior — agent
@@ -226,11 +238,26 @@ def worldbench_solver(
             event_type = event["type"]
 
             if event_type == "ingest":
+                n_ents = len(event.get("entity_names", []))
+                remaining = mem_budget.remaining() if mem_budget else 0
+                suggested = max(0, min(
+                    n_ents, remaining - n_corrections_total))
+                budget_context = (
+                    f"⚠️ Budget: {remaining}/"
+                    f"{mem_budget.total_writes if mem_budget else 0} "
+                    f"writes remaining. "
+                    f"Entities seen: {entities_seen}/{total_entities}. "
+                    f"Corrections coming: {n_corrections_total}.\n"
+                    f"   Suggestion: store ≤{suggested} from this batch "
+                    f"to reserve budget for corrections."
+                )
+                entities_seen += n_ents
                 docs_text = _format_documents(event["documents"])
                 state.messages.append(ChatMessageUser(
                     content=INGEST_TEMPLATE.format(
                         event_num=event_idx + 1, total_events=total_events,
-                        documents=docs_text)))
+                        documents=docs_text,
+                        budget_context=budget_context)))
                 state = await generate(state, tool_calls="loop")
                 # Selective redaction: keep memory state summary
                 del state.messages[initial_len:]
@@ -383,7 +410,7 @@ def worldbench(
     dataset = MemoryDataset([sample])
 
     from inspect_ai.solver import system_message as sys_msg
-    from memorybench.worlds.eval_scorer import worldbench_scorer
+    from memorygym.worlds.eval_scorer import worldbench_scorer
 
     n_total_events = len(stream_data["stream"])
 

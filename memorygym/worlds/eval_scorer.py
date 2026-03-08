@@ -21,8 +21,8 @@ from typing import Any
 from inspect_ai.model import get_model
 from inspect_ai.scorer import Score, Target, scorer
 
-from memorybench.evaluation.llm_judge import llm_judge_validate
-from memorybench.evaluation.validators import (
+from memorygym.evaluation.llm_judge import llm_judge_validate
+from memorygym.evaluation.validators import (
     AnswerValidator,
     async_validate_with_fallback,
 )

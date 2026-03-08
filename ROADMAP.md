@@ -1,4 +1,4 @@
-# MemoryBench Development Roadmap
+# MemoryGym Development Roadmap
 
 **Goal**: A hack-proof, valuable open-source memory management evaluation system.
 

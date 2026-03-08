@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from memorybench.evaluation.llm_judge import _parse_verdict
+from memorygym.evaluation.llm_judge import _parse_verdict
 
 
 class TestVerdictInjection:

@@ -1,16 +1,16 @@
-"""MemoryBench — CLI for real agent evaluation + simulation self-tests.
+"""MemoryGym — CLI for real agent evaluation + simulation self-tests.
 
 Real evaluation (--model):
-    python -m memorybench.bench --model openai/gpt-4o --seed 42
-    python -m memorybench.bench --model openai/gpt-4o --seeds 3 --template company
+    python -m memorygym.bench --model openai/gpt-4o --seed 42
+    python -m memorygym.bench --model openai/gpt-4o --seeds 3 --template company
 
 Standard protocol:
-    python -m memorybench.bench --model openai/gpt-4o --tier standard
-    python -m memorybench.bench --model openai/gpt-4o --official -o results.json
+    python -m memorygym.bench --model openai/gpt-4o --tier standard
+    python -m memorygym.bench --model openai/gpt-4o --official -o results.json
 
 Simulation (system self-testing, no LLM):
-    python -m memorybench.bench --seed 0 -v
-    python -m memorybench.bench --seeds 10 --validate
+    python -m memorygym.bench --seed 0 -v
+    python -m memorygym.bench --seeds 10 --validate
 """
 
 from __future__ import annotations
@@ -22,7 +22,7 @@ from collections import defaultdict
 from pathlib import Path
 from random import Random
 
-from memorybench.protocol import (
+from memorygym.protocol import (
     OFFICIAL_SEEDS,
     OFFICIAL_TEMPLATES,
     TIERS,
@@ -31,8 +31,8 @@ from memorybench.protocol import (
 )
 
 # Re-export simulation symbols for backward compatibility with tests.
-# All simulation logic lives in memorybench.simulation.
-from memorybench.simulation import (  # noqa: F401
+# All simulation logic lives in memorygym.simulation.
+from memorygym.simulation import (  # noqa: F401
     STRATEGIES,
     TEMPLATES,
     _VALIDATOR,
@@ -48,7 +48,7 @@ from memorybench.simulation import (  # noqa: F401
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p = argparse.ArgumentParser(
-        description="MemoryBench — Memory Management Evaluation",
+        description="MemoryGym — Memory Management Evaluation",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     g = p.add_mutually_exclusive_group()
@@ -146,7 +146,7 @@ def main(argv: list[str] | None = None) -> int:
     # Header
     tier_label = args.tier or ("standard" if args.official else "custom")
     print("=" * 70)
-    print("MemoryBench — Memory Management Evaluation")
+    print("MemoryGym — Memory Management Evaluation")
     print("=" * 70)
     label = (f"Model: {args.model}" if is_model_eval
              else f"Strategies: {', '.join(strategy_names)}")
@@ -169,7 +169,7 @@ def main(argv: list[str] | None = None) -> int:
 
             if is_model_eval:
                 # Real LLM agent evaluation
-                from memorybench.agents.stream_agent import run_stream_agent
+                from memorygym.agents.stream_agent import run_stream_agent
 
                 print(f"\n  [{tmpl.name}] seed={seed} — Generating world ...",
                       end="", flush=True)
@@ -269,7 +269,7 @@ def main(argv: list[str] | None = None) -> int:
 
                 # Save per-seed result in LiveWeb-compatible format
                 eval_result = {
-                    "task_name": (f"memorybench:{tmpl.name}"
+                    "task_name": (f"memorygym:{tmpl.name}"
                                   f":{n_entities}e:{n_questions}q"),
                     "score": correct / total if total else 0.0,
                     "success": total > 0 and eval_error is None,
@@ -479,7 +479,7 @@ def _build_per_seed_axis_scores(
     write_budget: int,
 ) -> list[dict]:
     """Build per-seed axis scores from aggregated results."""
-    from memorybench.protocol import compute_composite
+    from memorygym.protocol import compute_composite
 
     per_seed: list[dict] = []
     for v in agg.get(strategy_name, []):
@@ -535,7 +535,7 @@ def _build_per_seed_axis_scores(
 
 
 def _cli_entry() -> None:
-    """Entry point for `memorybench` console script."""
+    """Entry point for `memorygym` console script."""
     import sys
     sys.exit(main())
 

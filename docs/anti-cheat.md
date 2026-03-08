@@ -1,4 +1,4 @@
-# MemoryBench v3 — Anti-Cheat Design
+# MemoryGym v3 — Anti-Cheat Design
 
 ## 1. Threat Model
 

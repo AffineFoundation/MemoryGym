@@ -17,14 +17,14 @@ from collections import Counter, defaultdict
 from dataclasses import dataclass, field
 from random import Random
 
-from memorybench.worlds.base import (
+from memorygym.worlds.base import (
     Correction, GeneratedQA, World, WorldTemplate,
 )
-from memorybench.worlds.city import CityWorld
-from memorybench.worlds.company import CompanyWorld
-from memorybench.worlds.hospital import HospitalWorld
-from memorybench.worlds.research import ResearchWorld
-from memorybench.worlds.sport import SportWorld
+from memorygym.worlds.city import CityWorld
+from memorygym.worlds.company import CompanyWorld
+from memorygym.worlds.hospital import HospitalWorld
+from memorygym.worlds.research import ResearchWorld
+from memorygym.worlds.sport import SportWorld
 
 
 @dataclass
@@ -84,7 +84,7 @@ def _construct_and_validate(q: GeneratedQA, tmpl: WorldTemplate,
                             applies_updates: bool,
                             n_total: int = 60) -> bool:
     """Delegate to bench._construct_and_validate."""
-    from memorybench.bench import _construct_and_validate as _cv
+    from memorygym.bench import _construct_and_validate as _cv
     return _cv(q, tmpl, world, stored_names, updated_names,
                applies_updates, n_total)
 
@@ -615,7 +615,7 @@ def test_year_guessing_fails():
     Integer-exact matching completely prevents year/count guessing.
     Float tolerance handles display rounding (e.g., $1234.5M → 1235).
     """
-    from memorybench.evaluation.validators import AnswerValidator
+    from memorygym.evaluation.validators import AnswerValidator
     v = AnswerValidator()
 
     # Integer GT: exact match only
@@ -648,7 +648,7 @@ def test_year_guessing_fails():
 
 def test_seed_not_in_visible_ids():
     """V11: Seed must not appear in sample ID or task name."""
-    from memorybench.worlds.eval_task import worldbench
+    from memorygym.worlds.eval_task import worldbench
     task = worldbench(seed=42, template="company", n_entities=20,
                       n_questions=5, write_budget=10, backend="mock")
     # Task name and sample ID must not contain the seed
@@ -667,7 +667,7 @@ def test_judge_skips_abstention():
     - Without judge: everything → rule-based
     Rule-based _abstention_match is authoritative for abstention.
     """
-    from memorybench.evaluation.validators import AnswerValidator
+    from memorygym.evaluation.validators import AnswerValidator
     v = AnswerValidator()
 
     # Abstention: rule-based validator handles correctly
@@ -708,7 +708,7 @@ def test_stream_interleave():
 
 def test_stream_invariants():
     """Stream mode must preserve core invariants: perfect=100%, guesser=0%."""
-    from memorybench.bench import simulate_one_stream, STRATEGIES
+    from memorygym.bench import simulate_one_stream, STRATEGIES
     for TmplClass in [CompanyWorld, ResearchWorld, CityWorld, HospitalWorld, SportWorld]:
         tmpl = TmplClass()
         accs = {}
@@ -821,7 +821,7 @@ def test_always_abstain_fails():
     everything cannot score perfectly because trick_retrieval questions
     have real answers.
     """
-    from memorybench.evaluation.validators import AnswerValidator
+    from memorygym.evaluation.validators import AnswerValidator
     validator = AnswerValidator()
 
     for TmplClass in [CompanyWorld, ResearchWorld, CityWorld, HospitalWorld, SportWorld]:
@@ -850,7 +850,7 @@ def test_smart_guesser_ceiling():
     make plausible guesses (midpoints, quartiles). V14's integer-exact
     matching defeats this: random integers almost never match exact GT.
     """
-    from memorybench.bench import _smart_guess, _VALIDATOR
+    from memorygym.bench import _smart_guess, _VALIDATOR
 
     for TmplClass in [CompanyWorld, ResearchWorld, CityWorld, HospitalWorld, SportWorld]:
         tmpl = TmplClass()
@@ -886,7 +886,7 @@ def test_validator_handles_formatted_values():
     Skips values near 0 where display rounding may exceed 2% tolerance
     (e.g. 0.49 → "0.5%" is 2.04% off — edge case, not a scoring bug).
     """
-    from memorybench.evaluation.validators import AnswerValidator
+    from memorygym.evaluation.validators import AnswerValidator
     v = AnswerValidator()
 
     failures = []
@@ -921,7 +921,7 @@ def test_km_suffix_guesser_still_zero():
     Verifies that trying both suffix interpretations doesn't create
     a new attack vector for midpoint/quartile guessing.
     """
-    from memorybench.bench import _smart_guess, _VALIDATOR
+    from memorygym.bench import _smart_guess, _VALIDATOR
 
     for TmplClass in [CompanyWorld, ResearchWorld, CityWorld, HospitalWorld, SportWorld]:
         tmpl = TmplClass()
@@ -977,7 +977,7 @@ def test_priority_beats_random():
     attribute completeness, extreme values). This proves that storage
     strategy quality matters — not just storage quantity.
     """
-    from memorybench.bench import _entity_priority_score
+    from memorygym.bench import _entity_priority_score
 
     for TmplClass in [CompanyWorld, ResearchWorld, CityWorld,
                        HospitalWorld, SportWorld]:
@@ -1059,7 +1059,7 @@ def test_format_roundtrip_in_simulation():
     This catches precision/suffix bugs that would be invisible with
     a boolean _can_answer() shortcut.
     """
-    from memorybench.evaluation.validators import AnswerValidator
+    from memorygym.evaluation.validators import AnswerValidator
     validator = AnswerValidator()
 
     for TmplClass in [CompanyWorld, ResearchWorld, CityWorld,
