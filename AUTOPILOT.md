@@ -29,13 +29,17 @@ eval 数据（ROADMAP.md §3）← 衡量差距
 
 ## 任务执行规范
 
-**eval 任务**：默认模型见 CLAUDE.md。结果自动保存到 `eval/` 目录。跑完后将分数记录到 ROADMAP.md §3。
+**eval 任务**：默认模型见 CLAUDE.md。结果自动保存到 `eval/` 目录。跑完后将分数记录到 ROADMAP.md §3。**注意**：如果 eval 因 API 故障（503/429/timeout）失败，将结果文件重命名为 `*.503_error.json`，不要计入 ROADMAP.md 数据表。只有 `success: true` 的结果才是有效数据。
 
 **代码任务**：改代码 → 跑测试 → 测试通过才算完成。
 
 **完成判定**：任务有明确产出（eval JSON / 代码通过测试 / 文档已更新）即为完成。无产出不算完成。
 
-**提交时机**：Phase 级别完成时提交（如 Phase 0 全部 eval 跑完并汇总后）。单个 eval 不需要单独提交。
+**闭环验证**：代码改进（评分/问题/agent 逻辑）后，必须跑一次 eval 验证改进效果。不能只改代码就宣布 Phase 完成——需要有 eval 数据证明改进有效或至少无退化。
+
+**提交粒度**：每个 Phase 独立提交，一个 commit 对应一个 Phase。不合并多个 Phase 到一个 commit。
+
+**文档同步**：每次 Phase 完成时检查 CLAUDE.md 是否与代码实际状态一致（模板数、评分权重、架构模块等）。如有漂移，立即修正。关键决策（框架选型、设计变更）必须同步到 ROADMAP.md §5。
 
 **长时间任务**：eval 可能耗时较长，一次 loop 只执行一个 eval 任务即可，不必赶进度。
 
@@ -62,28 +66,68 @@ eval 数据（ROADMAP.md §3）← 衡量差距
 
 ## 当前任务
 
-### Phase 9 — 评测过程可视化增强
+### Phase 14 — 公开发布准备
+1. 写 README.md（项目简介、安装、quickstart、评测命令、排行榜）
+2. 验证 `pip install -e .` 完整可用（依赖链完整性）
+3. 用 scripts/leaderboard.py 生成 LEADERBOARD.md
+4. CLAUDE.md 与代码实际状态一致性检查（评分权重、模板数、架构模块）
+5. 实现 `memorygym/env.py` — affinetes OpenEnvResponse 兼容接口
+    - 参考 `/home/claudeuser/work/liveweb-arena/env.py` 的 Actor 模式
+    - Actor 类实现 `reset()`, `step()`, `state()`, `stop()`, `evaluate()` 方法
+    - 所有方法返回 `OpenEnvResponse(observation, reward, done, truncated, episode_id, info)`
+    - `evaluate()` 编排完整评测流程（生成世界 → agent 运行 → 评分），返回结果 dict
+    - eval 结果 JSON 格式：顶层 `{task_name, score, success, time_taken, extra}`
+    - `extra.conversation` 必须包含完整对话历史（当前 trajectory 只有 tool_calls，需增加完整 messages）
+    - `extra.answer_details` 保持现有格式
+    - 依赖：`pip install affinetes` 并加入 pyproject.toml optional dependencies
+    - stream_agent.py 需修改：返回完整 conversation history（不仅仅是 trajectory）
+6. 实现 `scripts/affinetes_build.py` — 构建 MemoryGym Docker 镜像
+    - 参考 `/home/claudeuser/work/liveweb-arena/scripts/affinetes_build.py`
+    - 调用 `af.build_image_from_env()` 构建镜像
+    - 支持 `--tag`, `--push`, `--registry`, `--no-cache` 参数
+7. 实现 `scripts/affinetes_example.py` — affinetes 容器化评测示例
+    - 参考 `/home/claudeuser/work/liveweb-arena/scripts/affinetes_example.py`
+    - `af.load_env()` 加载容器 → `env.evaluate()` 运行评测 → 保存结果到 `eval/`
+    - 支持 `--model`, `--seed`, `--template`, `--tier`, `--timeout` 参数
 
-目标：让评测过程输出信息完整、可读、有诊断价值，但不冗余。当前输出过于压缩，缺少关键上下文。
-
-改进点：
-1. **INGEST 事件**：显示实体名列表（前几个+总数）、agent 实际存了哪些（tool_calls 中 memory_store 的 key）、跳过了哪些、写入效率（stored/seen）
-2. **CORRECTION 事件**：显示修正内容摘要（entity.attr: old→new）、agent 操作链（search→forget→store）、是否成功更新了值
-3. **QUESTION 事件**：显示完整问题文本、GT 答案、agent 答案、判定结果（不仅在 verbose 模式）、搜索了什么关键词
-4. **阶段分隔**：用清晰的分隔线区分 ingest/correction/question 阶段，显示阶段汇总统计
-5. **实时预算仪表**：每个事件后显示预算进度条（如 `[████░░░░░░] 6/15 writes`）
-6. **最终报告增强**：per-competency 分数、存储覆盖率、correction 成功率、耗时分布
-
-约束：默认开启增强输出，`--quiet` 恢复当前简洁模式。不引入 rich/tqdm 等额外依赖。
-
-### Phase 10 — 评测覆盖扩展
-
-1. 用可用模型跑多模板评测（hospital/research/city/sport），打破 company-only 偏斜
-2. 核心模型多 seed（至少 3 个），报告均值±标准差
-3. 重跑旧评测带轨迹（用当前代码获取完整轨迹）
-4. 更新 STATUS_REPORT.md 和 ROADMAP.md
+### 阻塞任务（等待外部资源）
+- GPU 端到端训练验证（需 4+ GPU）
 
 ## 已完成
+
+### Phase 13 — 评测数据整理 ✅
+1. ~~movie 模板 eval~~ ✅ → Kimi-K2.5 movie seed=0: 55%（首个 movie 结果）
+2. ~~sport 补充 eval~~ ✅ → Kimi-K2.5 sport seed=1: 40%
+3. ~~ROADMAP.md §3 更新~~ ✅ → 覆盖矩阵增加 movie 列，详细数据表补充 3 行
+4. 评测跑分已委托 eval session（EVAL_QUEUE.md 批次 2-6）
+
+### Phase 12 — 评测系统完备性修复 ✅
+1. ~~`--backend {chromadb,mem0}` CLI 参数~~ ✅ → bench.py 创建对应 backend 对象并传递
+2. ~~eval JSON 加 `backend` 字段~~ ✅
+3. ~~`--official` 模式强制 eval_salt~~ ✅ → eval_salt=0 时自动设为 1
+4. ~~judge 崩溃处理~~ ✅ → 已有 try/except 捕获 RuntimeError，无需额外修复
+
+### Phase 11 — Maintenance 弱点诊断与系统改进 ✅
+1. ~~轨迹分析~~ ✅ → MISS 模式（搜索但不存储）确认为主要失败模式
+2. ~~改进 correction 提示~~ ✅ → stream_agent.py + eval_task.py 添加明确 search→forget→store 步骤
+3. ~~验证 eval~~ ✅ → Kimi-K2.5 company seed=0: maintenance 0%→33%, corrections 1/5 成功
+4. ~~更新 ROADMAP.md~~ ✅ → §3.2 发现 2 已更新
+
+### Phase 10 — 评测覆盖扩展 ✅
+1. ~~多模板评测~~ ✅ → Kimi×5模板, MiniMax×5模板, Qwen3.5×3模板
+2. ~~多 seed~~ ✅ → Kimi company 4 seeds (38%均值)
+3. ~~轨迹~~ ✅ → 新 eval 均含 trajectory
+4. ~~ROADMAP.md §3~~ ✅ → 覆盖矩阵 + 5 条发现
+5. ~~补充验证~~ ✅ → 503 重命名、§6 验证、Phase 5 确认
+
+### Phase 9 — 评测过程可视化增强 ✅
+1. ~~INGEST~~ ✅ → 实体名列表 + 存储/跳过统计
+2. ~~CORRECTION~~ ✅ → old→new 值 + 操作链 + 成功检测
+3. ~~QUESTION~~ ✅ → 默认显示问题/GT/答案/搜索关键词
+4. ~~阶段分隔~~ ✅ → 分隔线 + 阶段汇总
+5. ~~预算仪表~~ ✅ → `[████░░░░░░] 6/15 writes` 进度条
+6. ~~最终报告~~ ✅ → per-competency + correction 成功率 + 耗时
+7. `--quiet` 恢复简洁模式
 
 ### Phase 8 — 评测可靠性 + 工具链 ✅
 1. ~~Judge 超时机制~~ ✅ → 300s 总超时 + 7 备用模型
@@ -128,9 +172,3 @@ eval 数据（ROADMAP.md §3）← 衡量差距
 
 ### 战略调研 ✅
 1. ~~REDSearcher + agent RL 训练范式调研~~ ✅ → 产出 devlog/2026-03-08-agent-rl-research.md
-
-## 待办
-
-### 阻塞任务（等待外部资源）
-- GPU 端到端训练验证（需 4+ GPU）
-- Movie 模板 real eval（需 API key）

@@ -11,9 +11,9 @@
 
 > 新 session 先看这里 + `AUTOPILOT.md`。上下文不足时可读最近的 devlog 文件。
 
-**当前焦点**: RL 训练闭环（verl 端到端验证）
+**当前焦点**: 评测系统完备性修复（Phase 12）
 
-**最大差距**: 端到端训练验证（verl 集成已完成，需 GPU 环境验证）
+**最大差距**: 评测工具链完善（backend CLI、judge fallback）+ RL 训练验证（需 GPU）
 
 **已完成**:
 - Phase 0: 多模板 eval（3 模板 × Qwen3.5-397B）✅
@@ -21,8 +21,9 @@
 - Phase 2: 任务复杂度升级（实体关系 + MovieWorld）✅
 - 6 个领域模板（company/research/city/hospital/sport/movie）
 - 实体关系层（5 种关系题型：lookup/hop/chain/count/filter）
-- 247 tests passing
+- 249 tests passing
 - 动态预算上下文 + tool loop nudge
+- Phase 11: Correction 提示改进（maintenance 0%→33%）
 - MemoryEnv 完整可用（tier/text obs/stats/get_verifiable_reward/ChromaDB embedding search）
 - verl + slime 双适配器 + 训练基础设施（config/data gen/reward func）
 - 小模型基线（Qwen3-14B=20%, Qwen3-32B=30%）
@@ -114,7 +115,7 @@ abstention_diagnostic 单独报告，不计入 composite。
 
 ### 2.6 测试覆盖
 
-247 tests: test_worlds(37) + test_validators(61) + test_bench(22) + test_stream_agent(21) + test_training(21) + test_backend_bench(7) + test_llm_judge(11) + test_narrative(15) + test_adapters(27) + other(25)
+249 tests: test_worlds(37) + test_validators(61) + test_bench(22) + test_stream_agent(21) + test_training(21) + test_backend_bench(7) + test_llm_judge(11) + test_narrative(15) + test_adapters(27) + other(25)
 
 ---
 
@@ -122,58 +123,101 @@ abstention_diagnostic 单独报告，不计入 composite。
 
 ### 3.1 评测数据
 
-| 模型 | 模板 | Tier | Seeds | Composite | Breadth | Maintenance | Reasoning | Abstention |
-|------|------|------|-------|-----------|---------|-------------|-----------|------------|
-| Qwen3.5-397B | research | lite | 1 | **70%** | 100% | **33%** | 50% | 100% |
-| Qwen3.5-397B | city | lite | 1 | **60%** | 100% | **33%** | 0% | 100% |
-| Qwen3.5-397B | hospital | lite | 1 | **90%** | 100% | **100%** | 50% | 100% |
-| MiniMax-M2.5 | company | lite | 1 | **50%** | 50% | **67%** | 0% | 100% |
-| Kimi-K2.5 | company | lite | 1 | **80%** | 75% | **100%** | 50% | 100% |
-| Qwen2.5-72B | company | 极简(30e/5q) | 0 | **83%** | 100% | **100%** | n/a | 100% |
-| Qwen3-235B | company | lite | 1,2 | **27%** | 55% | **33-100%** | 33% | 0% |
-| Qwen3-235B | company | standard | 0 | 10% | 20% | 0% | 0% | 0% |
-| Qwen3-32B | company | mixed | 0,1,2 | **30%** | 33% | 11% | 33% | 50% |
-| DeepSeek-V3 | company | 旧格式(200e) | 0,1,2 | **37%** | 22% | 0% | 67% | 71% |
-| Qwen3-14B | company | lite | 1 | **20%** | 0% | **33%** | 0% | 100% |
-| Qwen3-32B | company | lite | 1 | **30%** | 25% | **33%** | 0% | 100% |
+**跨模型 × 跨模板覆盖矩阵（lite tier, seed=0）**
+
+| 模型 | company | research | city | hospital | sport | movie | 均值 |
+|------|---------|----------|------|----------|-------|-------|------|
+| Qwen3.5-397B | 503 | 70%¹ | 60%¹ | 90%¹ | — | — | **73%** |
+| Kimi-K2.5 | 45% | 40% | 30% | 40% | 30% | 55% | **40%** |
+| MiniMax-M2.5 | 20% | 10% | 20% | 50% | 10% | — | **22%** |
+
+¹ seed=1 数据（seed=0 时 Qwen3.5-397B 503 不可用）
+
+**多 seed 数据（lite tier）**
+
+| 模型 | 模板 | Seeds | Composite | 备注 |
+|------|------|-------|-----------|------|
+| Kimi-K2.5 | company | 0,1,2,42 | 40%, 50%, 20%, 40% | 均值 38% |
+| MiniMax-M2.5 | company | 0,1 | 20%, 50% | 均值 35% |
+| Qwen3-235B | company | 0,1,2,3 | 10%, 50%, 30%, 10% | 均值 25% |
+| Qwen3-32B | company | 0,1,2 | 25%, 30%, 45% | 均值 33% |
+
+**全量详细数据**
+
+| 模型 | 模板 | Tier | Seed | Composite | Breadth | Maintenance | Reasoning | Abstention |
+|------|------|------|------|-----------|---------|-------------|-----------|------------|
+| Qwen3.5-397B | research | lite | 1 | **70%** | 100% | 33% | 50% | 100% |
+| Qwen3.5-397B | city | lite | 1 | **60%** | 100% | 33% | 0% | 100% |
+| Qwen3.5-397B | hospital | lite | 1 | **90%** | 100% | 100% | 50% | 100% |
+| Kimi-K2.5 | company | lite | 0 | **45%** | 67% | 33% | 0% | 100% |
+| Kimi-K2.5 | company | lite | 1 | **50%** | 75% | 33% | 0% | 100% |
+| Kimi-K2.5 | company | lite | 2 | **20%** | 25% | 0% | 0% | 100% |
+| Kimi-K2.5 | company | lite | 42 | **40%** | 50% | 0% | 0% | 100% |
+| Kimi-K2.5 | hospital | lite | 0 | **40%** | 40% | 50% | 0% | 100% |
+| Kimi-K2.5 | research | lite | 0 | **40%** | 60% | 0% | 0% | 100% |
+| Kimi-K2.5 | city | lite | 0 | **30%** | 20% | 0% | 50% | 100% |
+| Kimi-K2.5 | sport | lite | 0 | **30%** | 40% | 0% | 0% | 100% |
+| Kimi-K2.5 | sport | lite | 1 | **40%** | 12% | 33% | 50% | 100% |
+| Kimi-K2.5 | movie | lite | 0 | **55%** | 56% | 25% | 60% | 100% |
+| MiniMax-M2.5 | company | lite | 0 | **20%** | 25% | 0% | 0% | 50% |
+| MiniMax-M2.5 | company | lite | 1 | **50%** | 50% | 67% | 0% | 100% |
+| MiniMax-M2.5 | hospital | lite | 0 | **50%** | 40% | 50% | 50% | 100% |
+| MiniMax-M2.5 | research | lite | 0 | **10%** | 20% | 0% | 0% | 0% |
+| MiniMax-M2.5 | city | lite | 0 | **20%** | 0% | 0% | 50% | 100% |
+| MiniMax-M2.5 | sport | lite | 0 | **10%** | 0% | 0% | 0% | 100% |
+| Qwen2.5-72B | company | 极简(30e/5q) | 0 | **83%** | 100% | 100% | n/a | 100% |
+| Qwen3-235B | company | lite | 0-3 | **25%** | 20-75% | 0-100% | 0-33% | 0% |
+| Qwen3-32B | company | mixed | 0,1,2 | **33%** | 25-50% | 0-33% | 0-33% | 50-100% |
+| Qwen3-14B | company | lite | 1 | **20%** | 0% | 33% | 0% | 100% |
 | GPT-OSS-120B | company | standard | 0 | 0% | 0% | 0% | 0% | 0% |
 
 ### 3.2 关键发现与解读
 
-**1. 预算分配是 maintenance 的瓶颈，不是模型能力**
-- 事实：所有模型在前 2 个 batch 耗尽预算 → correction 时 budget=0 → maintenance=0%
-- 事实：动态预算上下文注入后，Qwen3-235B seed=2 maintenance=100%
-- 事实：Qwen2.5-72B 在宽松预算下 update=100%
-- 解读：评测系统需要给模型足够的决策信息（预算状态），否则测的是"信息是否充分"而非"决策是否正确"
-- 影响：系统改进（非 RL）就能显著提升表现。说明当前基础设施还有优化空间
+**1. 跨模板覆盖已完成，评测有效性确认**
+- 事实：3 个模型 × 5 个模板（company/research/city/hospital/sport）均有数据
+- 事实：同一模型跨模板分数差异合理（Kimi: 30-50%, MiniMax: 10-50%），不存在系统性偏差
+- 事实：Qwen3.5-397B 跨模板一致性最高（60-90%），breadth=100%、abstention=100% 稳定
+- 解读：模板差异来自任务难度（hospital 数据结构化程度高→高分），非系统偏差
 
-**2. 工具调用格式是跨模型的主要障碍**
-- 事实：Qwen3 `<think>` 块消耗整个响应，无 tool_call → 空答案
-- 事实：GPT-OSS-120B 全零分，可能是工具格式兼容问题
-- 解读：当前 stream_agent 的 text-based tool parsing 对非标准输出格式脆弱
-- 影响：提升跨模型兼容性可能比 RL 训练更紧急
+**2. Maintenance（更新能力）已通过提示改进部分解决**
+- 事实：Phase 10 时 Kimi-K2.5 跨 5 模板 maintenance 均为 0%（除 hospital=50%）
+- 事实：Phase 11 改进 correction 提示后，Kimi-K2.5 company seed=0 maintenance 从 0% → 33%
+- 事实：改进内容：correction 事件中添加明确的 search→forget→store 操作步骤 + 实体名
+- 事实：仍有 4/5 corrections 失败（MISS 模式：搜索到但不执行完整更新流程）
+- 解读：明确的操作指引有效但不充分，RL 训练是进一步提升的方向
 
-**3. 跨模板评测有效性已确认（Qwen3.5-397B × 3 模板）**
-- 事实：research=70%, city=60%, hospital=90%（同一模型, seed=1, lite）
-- 事实：breadth=100% 在所有模板一致 → 存储决策稳定
-- 事实：abstention=100% 在所有模板一致 → 弃权能力稳定
-- 事实：maintenance 波动大（33%-100%）→ 取决于 correction 时是否还有预算 + 是否成功执行更新
-- 事实：reasoning 波动最大（0%-50%）→ 模板间推理难度差异显著
-- 解读：评测系统跨模板有效，无明显领域偏好。差异来自任务难度而非系统偏差
-- 影响：可以进入跨模型兼容性阶段
+**3. MiniMax-M2.5 空答案问题严重**
+- 事实：MiniMax 在 research(10%), sport(10%) 大量提交空答案
+- 事实：同模型在 hospital(50%) 表现明显更好
+- 解读：模型对某些领域的实体名称不够敏感，search 成功率低
+
+**4. Abstention 能力普遍优秀**
+- 事实：Kimi-K2.5 在所有模板 abstention=100%
+- 事实：MiniMax-M2.5 在 4/5 模板 abstention=100%（research=0% 例外）
+- 解读：弃权能力是最容易掌握的技能
+
+**5. Reasoning 能力普遍薄弱**
+- 事实：Kimi-K2.5 reasoning 仅在 city(50%) 非零，其余 4 模板均 0%
+- 事实：MiniMax-M2.5 reasoning 在 city(50%), hospital(50%) 非零
+- 解读：推理题需要模型搜索多个实体并做比较/计算，当前模型很少这样做
 
 ### 3.3 数据索引
 
 ```
 eval/
 ├── Qwen_Qwen3.5-397B-A17B-TEE_{research,city,hospital}_s1.json
+├── moonshotai_Kimi-K2.5-TEE_{company,hospital,research,city,sport,movie}_s0.json
+├── moonshotai_Kimi-K2.5-TEE_sport_s1.json
+├── moonshotai_Kimi-K2.5-TEE_company_s{1,2,42}.json
+├── MiniMaxAI_MiniMax-M2.5-TEE_{company,hospital,research,city,sport}_s0.json
 ├── MiniMaxAI_MiniMax-M2.5-TEE_company_s1.json
-├── moonshotai_Kimi-K2.5-TEE_company_s1.json
 ├── Qwen_Qwen2.5-72B-Instruct_company_s0.json
 ├── Qwen_Qwen3-235B-*_company_s{0,1,2,3}.json
 ├── Qwen_Qwen3-32B_company_s{0,1,2}.json
+├── Qwen_Qwen3-14B_company_s1.json
 ├── openai_gpt-oss-120b-TEE_company_s0.json
-└── deepseek_DeepSeek-V3-0324_aggregate.json
+├── deepseek_DeepSeek-V3-0324_aggregate.json
+└── *_trajectory.json  # 轨迹文件（Phase 6+ 新格式）
 ```
 
 ---
