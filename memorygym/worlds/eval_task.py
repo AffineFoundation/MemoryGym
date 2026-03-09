@@ -93,6 +93,12 @@ QUESTION_TEMPLATE = """=== Event {event_num}/{total_events} [QUESTION] ===
 
 Search your memory and call submit_answer(answer="...") with your final answer."""
 
+NOISE_TEMPLATE = """=== Event {event_num}/{total_events} [INFO] ===
+
+{noise_text}
+
+This is supplementary information. Store only if relevant to your tasks."""
+
 
 def _build_mem_summary(
     backend: Any, mem_budget: Any, event_idx: int, total_events: int,
@@ -210,6 +216,7 @@ def worldbench_solver(
     stream_data: dict[str, Any],
     mem_budget: Any = None,
     backend: Any = None,
+    no_redaction: bool = False,
 ) -> Solver:
     """Interleaved stream solver: events arrive in unpredictable order.
 
@@ -259,7 +266,7 @@ def worldbench_solver(
                     f"⚠️ Budget: {remaining}/"
                     f"{mem_budget.total_writes if mem_budget else 0} "
                     f"writes remaining. "
-                    f"Entities seen: {entities_seen}/{total_entities}. "
+                    f"Entities seen so far: {entities_seen} (more may follow). "
                     f"Corrections coming: {n_corrections_total}.\n"
                     f"   Suggestion: store ≤{suggested} from this batch "
                     f"to reserve budget for corrections."
@@ -272,14 +279,14 @@ def worldbench_solver(
                         documents=docs_text,
                         budget_context=budget_context)))
                 state = await generate(state, tool_calls="loop")
-                # Selective redaction: keep memory state summary
-                del state.messages[initial_len:]
-                mem_summary = _build_mem_summary(
-                    backend, mem_budget, event_idx, total_events)
-                state.messages.append(ChatMessageUser(
-                    content=mem_summary))
-                state.messages.append(ChatMessageAssistant(
-                    content="OK."))
+                if not no_redaction:
+                    del state.messages[initial_len:]
+                    mem_summary = _build_mem_summary(
+                        backend, mem_budget, event_idx, total_events)
+                    state.messages.append(ChatMessageUser(
+                        content=mem_summary))
+                    state.messages.append(ChatMessageAssistant(
+                        content="OK."))
 
             elif event_type == "correction":
                 state.messages.append(ChatMessageUser(
@@ -288,13 +295,14 @@ def worldbench_solver(
                         notice=event["notice"],
                         entity_name=event["entity_name"])))
                 state = await generate(state, tool_calls="loop")
-                del state.messages[initial_len:]
-                mem_summary = _build_mem_summary(
-                    backend, mem_budget, event_idx, total_events)
-                state.messages.append(ChatMessageUser(
-                    content=mem_summary))
-                state.messages.append(ChatMessageAssistant(
-                    content="OK."))
+                if not no_redaction:
+                    del state.messages[initial_len:]
+                    mem_summary = _build_mem_summary(
+                        backend, mem_budget, event_idx, total_events)
+                    state.messages.append(ChatMessageUser(
+                        content=mem_summary))
+                    state.messages.append(ChatMessageAssistant(
+                        content="OK."))
 
             elif event_type == "question":
                 qi += 1
@@ -317,14 +325,14 @@ def worldbench_solver(
                 n_writes, n_searches = _count_tool_calls(
                     state.messages, msg_start)
 
-                # Selective redaction: keep memory state summary
-                del state.messages[initial_len:]
-                mem_summary = _build_mem_summary(
-                    backend, mem_budget, event_idx, total_events)
-                state.messages.append(ChatMessageUser(
-                    content=mem_summary))
-                state.messages.append(ChatMessageAssistant(
-                    content="OK."))
+                if not no_redaction:
+                    del state.messages[initial_len:]
+                    mem_summary = _build_mem_summary(
+                        backend, mem_budget, event_idx, total_events)
+                    state.messages.append(ChatMessageUser(
+                        content=mem_summary))
+                    state.messages.append(ChatMessageAssistant(
+                        content="OK."))
 
                 answers.append({
                     "task_id": qi - 1,
@@ -338,6 +346,21 @@ def worldbench_solver(
                     "n_searches": n_searches,
                     "searched_before_answering": n_searches > 0,
                 })
+
+            elif event_type == "noise":
+                state.messages.append(ChatMessageUser(
+                    content=NOISE_TEMPLATE.format(
+                        event_num=event_idx + 1, total_events=total_events,
+                        noise_text=event["document"])))
+                state = await generate(state, tool_calls="loop")
+                if not no_redaction:
+                    del state.messages[initial_len:]
+                    mem_summary = _build_mem_summary(
+                        backend, mem_budget, event_idx, total_events)
+                    state.messages.append(ChatMessageUser(
+                        content=mem_summary))
+                    state.messages.append(ChatMessageAssistant(
+                        content="OK."))
 
         writes_used = mem_budget.writes_used if mem_budget else 0
 

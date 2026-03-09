@@ -79,6 +79,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
                    help="minimal output (single-line per event)")
     p.add_argument("--stream", action="store_true",
                    help="use interleaved stream (vs 3-phase)")
+    p.add_argument("--no-redaction", action="store_true",
+                   help="long-context mode: keep full history (no selective redaction)")
     p.add_argument("--model", "-m", type=str, metavar="MODEL",
                    help="run real LLM agent (requires API key)")
     p.add_argument("--api-base", type=str, metavar="URL",
@@ -236,6 +238,7 @@ def main(argv: list[str] | None = None) -> int:
                     world=world,
                     template=tmpl,
                     seed=seed,
+                    no_redaction=args.no_redaction,
                 )
 
                 # Convert to standard format

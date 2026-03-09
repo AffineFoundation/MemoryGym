@@ -370,6 +370,23 @@ class ResearchWorld(WorldTemplate):
     def entity_word(self) -> str:
         return "researcher"
 
+    @property
+    def correction_rate(self) -> float:
+        return 0.08  # moderate-low — publications rarely revised
+
+    @property
+    def correction_timing(self) -> tuple[float, float]:
+        return (0.4, 0.7)  # standard timing
+
+    @property
+    def question_weights(self) -> dict[str, float]:
+        return {
+            "retrieval": 0.30,
+            "comprehension": 0.35,   # high — citation/impact reasoning
+            "update": 0.20,
+            "abstention": 0.15,
+        }
+
     def _generate_names(self, rng: Random, n: int) -> list[str]:
         pool = [(f, l) for f in _FIRST for l in _LAST]
         selected = rng.sample(pool, min(n, len(pool)))

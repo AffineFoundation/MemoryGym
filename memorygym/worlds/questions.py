@@ -69,7 +69,7 @@ class QuestionGeneratorMixin:
     def _gq_retrieval_diverse(self, world, rng, available,
                               used_entities: set[str],
                               used_attrs: set[str]):
-        """Retrieval with entity and attribute deduplication."""
+        """Retrieval with entity/attribute dedup and importance weighting."""
         unused_attrs = [a for a in world.active_attrs if a not in used_attrs]
         attr_pool = unused_attrs if unused_attrs else list(world.active_attrs)
         rng.shuffle(attr_pool)
@@ -80,7 +80,7 @@ class QuestionGeneratorMixin:
                 continue
             fresh = [e for e in cands if e.name not in used_entities]
             pool = fresh if fresh else cands
-            e = rng.choice(pool)
+            e = self._weighted_choice(pool, world, rng)
             used_attrs.add(attr)
             return GeneratedQA(
                 self._q_text(attr, e.name, rng),
@@ -88,6 +88,22 @@ class QuestionGeneratorMixin:
                 source_attr=attr,
             )
         return None
+
+    def _weighted_choice(self, pool, world, rng):
+        """Select entity from pool weighted by importance."""
+        if len(pool) <= 1:
+            return pool[0] if pool else None
+        weights = [self.entity_importance(e, world) for e in pool]
+        total = sum(weights)
+        if total <= 0:
+            return rng.choice(pool)
+        r = rng.uniform(0, total)
+        cumulative = 0.0
+        for e, w in zip(pool, weights):
+            cumulative += w
+            if r <= cumulative:
+                return e
+        return pool[-1]
 
     def _gq_synthesis(self, world, rng, available):
         if len(available) < 5:

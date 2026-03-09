@@ -444,6 +444,7 @@ def run_stream_agent(
     world: Any = None,
     template: Any = None,
     seed: int = 0,
+    no_redaction: bool = False,
 ) -> tuple[list[AgentResult], int, list[dict], str | None]:
     """Run a real LLM agent on a WorldTemplate event stream.
 
@@ -460,6 +461,7 @@ def run_stream_agent(
         world: World instance for adaptive comprehension questions.
         template: WorldTemplate instance for adaptive comprehension questions.
         seed: Random seed for replacement question generation.
+        no_redaction: Keep full conversation history (long-context mode).
 
     Returns:
         (results, writes_used, stored_contents, error_or_none)
@@ -560,7 +562,7 @@ def run_stream_agent(
             suggested = max(0, suggested)
             budget_ctx = (
                 f"⚠️ Budget: {remaining}/{write_budget} writes remaining. "
-                f"Entities seen: {entities_seen}/{total_entities}. "
+                f"Entities seen so far: {entities_seen} (more may follow). "
                 f"Corrections coming: {n_corrections_total}.\n"
                 f"   Suggestion: store ≤{suggested} from this batch "
                 f"to reserve budget for corrections."
@@ -812,30 +814,48 @@ def run_stream_agent(
                 "turns": stats.turns,
             })
 
+        elif event_type == "noise":
+            # Noise documents: agent sees them but no action required.
+            # Tests ability to filter irrelevant information.
+            noise_text = event["document"]
+            if not quiet:
+                print(f"  {event_label} NOISE   {noise_text[:60]}...")
+            content = (
+                f"=== Event {event_idx+1}/{total_events} [INFO] ===\n\n"
+                f"{noise_text}\n\n"
+                "This is supplementary information. "
+                "Store only if relevant to your tasks."
+            )
+            messages.append({"role": "user", "content": content})
+            stats = _run_tool_loop(client, model, messages, backend, budget)
+            total_api_calls += stats.api_calls
+
         # Selective redaction: keep system prompt + memory state summary.
         # Without this, the model enters each event with zero context
         # about what it stored, causing widespread empty answers.
-        del messages[1:]  # Remove everything after system prompt
-        stored_entries = backend.list()
-        if stored_entries:
-            stored_names = [e["content"].split("|")[0].strip()
-                            for e in stored_entries]
-            mem_summary = (
-                f"[{event_idx+1}/{total_events} done]\n\n"
-                f"Your memory contains {len(stored_entries)} entries: "
-                + ", ".join(stored_names[:30])
-                + (f" ... (+{len(stored_names)-30} more)"
-                   if len(stored_names) > 30 else "")
-                + f"\nBudget: {budget.remaining()} writes remaining."
-            )
-        else:
-            mem_summary = (
-                f"[{event_idx+1}/{total_events} done]\n"
-                f"Your memory is empty. Budget: {budget.remaining()} "
-                f"writes remaining."
-            )
-        messages.append({"role": "user", "content": mem_summary})
-        messages.append({"role": "assistant", "content": "OK."})
+        # In no_redaction mode (long-context), keep full history.
+        if not no_redaction:
+            del messages[1:]  # Remove everything after system prompt
+            stored_entries = backend.list()
+            if stored_entries:
+                stored_names = [e["content"].split("|")[0].strip()
+                                for e in stored_entries]
+                mem_summary = (
+                    f"[{event_idx+1}/{total_events} done]\n\n"
+                    f"Your memory contains {len(stored_entries)} entries: "
+                    + ", ".join(stored_names[:30])
+                    + (f" ... (+{len(stored_names)-30} more)"
+                       if len(stored_names) > 30 else "")
+                    + f"\nBudget: {budget.remaining()} writes remaining."
+                )
+            else:
+                mem_summary = (
+                    f"[{event_idx+1}/{total_events} done]\n"
+                    f"Your memory is empty. Budget: {budget.remaining()} "
+                    f"writes remaining."
+                )
+            messages.append({"role": "user", "content": mem_summary})
+            messages.append({"role": "assistant", "content": "OK."})
 
     # Parallel judge validation for rule-failed answers.
     # This runs all pending judge calls concurrently instead of

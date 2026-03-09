@@ -424,6 +424,23 @@ class CityWorld(WorldTemplate):
     def entity_word_plural(self) -> str:
         return "cities"
 
+    @property
+    def correction_rate(self) -> float:
+        return 0.05  # low — stable municipal data
+
+    @property
+    def correction_timing(self) -> tuple[float, float]:
+        return (0.5, 0.8)  # late corrections — data rarely changes
+
+    @property
+    def question_weights(self) -> dict[str, float]:
+        return {
+            "retrieval": 0.45,       # high — stable data, recall matters
+            "comprehension": 0.30,   # trend analysis for city data
+            "update": 0.10,          # low — few corrections
+            "abstention": 0.15,
+        }
+
     def _generate_names(self, rng: Random, n: int) -> list[str]:
         pool = [(a, b) for a in _ADJECTIVES for b in _NOUNS]
         selected = rng.sample(pool, min(n, len(pool)))

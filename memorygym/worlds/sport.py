@@ -400,6 +400,23 @@ class SportWorld(WorldTemplate):
     def entity_word(self) -> str:
         return "team"
 
+    @property
+    def correction_rate(self) -> float:
+        return 0.12  # high — frequent stat updates
+
+    @property
+    def correction_timing(self) -> tuple[float, float]:
+        return (0.3, 0.6)  # mid-early corrections
+
+    @property
+    def question_weights(self) -> dict[str, float]:
+        return {
+            "retrieval": 0.35,
+            "comprehension": 0.25,
+            "update": 0.25,          # high — frequent stat updates
+            "abstention": 0.15,
+        }
+
     def _generate_names(self, rng: Random, n: int) -> list[str]:
         pool = [(c, m) for c in _CITIES for m in _MASCOTS]
         selected = rng.sample(pool, min(n, len(pool)))

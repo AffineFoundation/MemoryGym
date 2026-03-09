@@ -101,6 +101,81 @@ class WorldTemplate(AdvancedQuestionMixin, QuestionGeneratorMixin, ABC):
         """Return (attr1, attr2, label) triples for ratio questions."""
         ...
 
+    @property
+    def correction_rate(self) -> float:
+        """Fraction of entities that typically receive corrections.
+
+        Higher = more volatile domain (hospital, sport).
+        Lower = more stable domain (city, movie).
+        Override in subclasses for domain-specific rates.
+        """
+        return 0.08
+
+    @property
+    def correction_timing(self) -> tuple[float, float]:
+        """(min, max) fraction through batches when corrections appear.
+
+        High-correction domains get earlier corrections (more time to update).
+        Low-correction domains get later corrections.
+        Override in subclasses.
+        """
+        return (0.4, 0.7)
+
+    @property
+    def entities_per_batch(self) -> int:
+        """Number of entities per ingest batch. Override for domain tuning."""
+        return 10
+
+    @property
+    def question_weights(self) -> dict[str, float]:
+        """Question type proportions: retrieval, comprehension, update, abstention.
+
+        Override in subclasses for domain-specific emphasis.
+        Values are relative weights (normalized internally).
+        """
+        return {
+            "retrieval": 0.40,
+            "comprehension": 0.25,
+            "update": 0.20,
+            "abstention": 0.15,
+        }
+
+    def entity_importance(self, entity: EntitySpec, world: World) -> float:
+        """Score entity importance for question targeting.
+
+        Higher score = more likely to appear in questions.
+        Factors: relationship degree, attribute extremeness, completeness.
+        Override for domain-specific importance signals.
+        """
+        score = 1.0  # base importance
+
+        # Relationship degree bonus
+        if world.relationships:
+            degree = (len(world.get_outgoing(entity.name))
+                      + len(world.get_incoming(entity.name)))
+            score += degree * 1.5
+
+        # Attribute completeness
+        n_attrs = sum(1 for a in world.active_attrs
+                      if entity.get(a) is not None)
+        score += n_attrs * 0.3
+
+        # Extremeness: top/bottom 20% on numeric attrs
+        for attr in world.active_attrs:
+            val = entity.get(attr)
+            if not isinstance(val, (int, float)):
+                continue
+            all_vals = sorted(e.get(attr) for e in world.entities
+                              if isinstance(e.get(attr), (int, float)))
+            if len(all_vals) < 5:
+                continue
+            rank = sum(1 for v in all_vals if v <= val)
+            pct = rank / len(all_vals)
+            if pct <= 0.2 or pct >= 0.8:
+                score += 1.5
+
+        return score
+
     def _relationship_types(self) -> list[tuple[str, str, bool]]:
         """Return (relation, description, symmetric) for this domain.
 
@@ -570,12 +645,39 @@ class WorldTemplate(AdvancedQuestionMixin, QuestionGeneratorMixin, ABC):
 
         return contradictions
 
+    def _generate_noise_doc(self, rng: Random,
+                            known_entities: list[EntitySpec],
+                            active_attrs: list[str]) -> str:
+        """Generate a noise document that mentions entity names but has
+        no complete attribute data. Tests agent's ability to filter noise.
+        """
+        # Pick 1-3 entity names to mention
+        n_mention = min(rng.randint(1, 3), len(known_entities))
+        mentioned = rng.sample(known_entities, n_mention)
+        names = [e.name for e in mentioned]
+
+        templates = [
+            "Internal memo: {names} were discussed in the quarterly review. "
+            "No action items were finalized. Follow-up scheduled for next week.",
+            "Meeting notes — Participants mentioned {names} in passing "
+            "during the strategy session. Details to be confirmed.",
+            "News brief: Sources report activity involving {names}. "
+            "Exact figures are not yet available pending verification.",
+            "Email thread RE: {names} — Please review the attached "
+            "documents before the next planning meeting.",
+            "Preliminary report draft mentions {names} among others. "
+            "Data collection is still in progress.",
+        ]
+        template = rng.choice(templates)
+        name_str = ", ".join(names[:-1]) + " and " + names[-1] if len(names) > 1 else names[0]
+        return template.format(names=name_str)
+
     def generate_stream(
         self, world: World, rng: Random,
         corrections: list[Correction],
         stored_names: set[str],
         n_questions: int,
-        entities_per_batch: int = 10,
+        entities_per_batch: int | None = None,
         contradictions: list[Contradiction] | None = None,
     ) -> list[dict]:
         """Generate an interleaved evaluation stream.
@@ -587,8 +689,8 @@ class WorldTemplate(AdvancedQuestionMixin, QuestionGeneratorMixin, ABC):
         Stream structure:
           - Entities arrive in batches of entities_per_batch
           - After batch 2+, questions may appear (30% per batch)
-          - Corrections arrive at ~60% through entity batches
-          - Contradictions arrive at ~80% as normal ingest docs
+          - Corrections arrive based on template's correction_timing
+          - Contradictions arrive after corrections
           - Remaining questions come after all entities are ingested
           - Agent never knows what event comes next
 
@@ -596,11 +698,14 @@ class WorldTemplate(AdvancedQuestionMixin, QuestionGeneratorMixin, ABC):
         "store everything first, answer later" because questions
         arrive during ingest.
         """
+        if entities_per_batch is None:
+            entities_per_batch = self.entities_per_batch
         events: list[dict] = []
         entities = list(world.entities)
         n_batches = max(1, len(entities) // entities_per_batch)
-        # Randomize correction timing to prevent position-based gaming
-        corr_frac = rng.uniform(0.4, 0.7)
+        # Use template-specific correction timing
+        ct_min, ct_max = self.correction_timing
+        corr_frac = rng.uniform(ct_min, ct_max)
         correction_batch = max(1, int(n_batches * corr_frac))
         contra_frac = rng.uniform(0.7, 0.9)
         contradiction_batch = max(correction_batch + 1,
@@ -621,10 +726,28 @@ class WorldTemplate(AdvancedQuestionMixin, QuestionGeneratorMixin, ABC):
             for i in range(min(n_mid_questions, len(possible))):
                 mid_q_schedule.add(possible[i])
 
+        # Schedule noise events (~30% of batches, after batch 1)
+        noise_schedule: set[int] = set()
+        if n_batches > 2:
+            noise_candidates = list(range(1, n_batches))
+            rng_noise = Random(rng.randint(0, 2**31))
+            rng_noise.shuffle(noise_candidates)
+            n_noise = max(1, n_batches // 3)
+            noise_schedule = set(noise_candidates[:n_noise])
+
         for batch_idx in range(n_batches):
             start = batch_idx * entities_per_batch
             end = min(start + entities_per_batch, len(entities))
             batch_entities = entities[start:end]
+
+            # Inject noise before entity batch (tests filtering ability)
+            if batch_idx in noise_schedule and introduced:
+                noise_doc = self._generate_noise_doc(
+                    rng, introduced, world.active_attrs)
+                events.append({
+                    "type": "noise",
+                    "document": noise_doc,
+                })
 
             # Render and emit ingest event (narrative mode)
             docs = []
@@ -755,10 +878,12 @@ class WorldTemplate(AdvancedQuestionMixin, QuestionGeneratorMixin, ABC):
     ) -> list[GeneratedQA]:
         """Generate post-storage adaptive questions.
 
-        Budget allocation (with corrections):
+        Budget allocation uses self.question_weights (template-customizable).
+        Default with corrections:
           retrieval 40% | comprehension 25% | update 20% | abstention 15%
-        Budget allocation (without corrections):
-          retrieval 50% | comprehension 40% | abstention 10%
+        Without corrections: update weight redistributed.
+
+        Entity selection is importance-weighted (self.entity_importance).
 
         Update questions use the same _q_text as retrieval → agent cannot
         distinguish them by wording. The GT is the CORRECTED value.
@@ -768,6 +893,7 @@ class WorldTemplate(AdvancedQuestionMixin, QuestionGeneratorMixin, ABC):
         """
         has_corrections = bool(corrections)
         has_contradictions = bool(contradictions)
+        w = self.question_weights
 
         # Trick retrieval: ~2 per evaluation — phrased like abstention
         # but with real GT. Defeats always-abstain strategy.
@@ -780,19 +906,22 @@ class WorldTemplate(AdvancedQuestionMixin, QuestionGeneratorMixin, ABC):
                                   max(1, n_questions // 10))
 
         if has_corrections:
-            n_update = max(1, round(n_questions * 0.2)) - n_contradiction
+            n_update = max(1, round(n_questions * w["update"])) - n_contradiction
             n_update = max(0, min(n_update, len(corrections)))
             n_delta = max(1, n_update // 3) if n_update > 0 else 0
-            n_retrieval = round(n_questions * 0.4) - n_trick
-            n_abstention = max(1, round(n_questions * 0.15))
+            n_retrieval = round(n_questions * w["retrieval"]) - n_trick
+            n_abstention = max(1, round(n_questions * w["abstention"]))
             n_comprehension = (n_questions - n_retrieval - n_update
                                - n_abstention - n_trick - n_delta
                                - n_contradiction)
         else:
             n_update = 0
             n_delta = 0
-            n_retrieval = round(n_questions * 0.5) - n_trick
-            n_abstention = max(1, round(n_questions * 0.1))
+            # Without corrections, redistribute update weight to retrieval
+            no_corr_retrieval = w["retrieval"] + w["update"] * 0.5
+            no_corr_abstention = w["abstention"] * 0.67
+            n_retrieval = round(n_questions * no_corr_retrieval) - n_trick
+            n_abstention = max(1, round(n_questions * no_corr_abstention))
             n_comprehension = (n_questions - n_retrieval - n_abstention
                                - n_trick - n_contradiction)
 

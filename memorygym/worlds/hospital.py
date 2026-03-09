@@ -451,6 +451,23 @@ class HospitalWorld(WorldTemplate):
     def entity_word(self) -> str:
         return "hospital"
 
+    @property
+    def correction_rate(self) -> float:
+        return 0.15  # high — frequent status changes
+
+    @property
+    def correction_timing(self) -> tuple[float, float]:
+        return (0.3, 0.5)  # early corrections — more time to update
+
+    @property
+    def question_weights(self) -> dict[str, float]:
+        return {
+            "retrieval": 0.35,
+            "comprehension": 0.20,
+            "update": 0.30,          # high — frequent status changes
+            "abstention": 0.15,
+        }
+
     def _generate_names(self, rng: Random, n: int) -> list[str]:
         pool = [(a, b) for a in _ADJECTIVES for b in _NOUNS]
         selected = rng.sample(pool, min(n, len(pool)))

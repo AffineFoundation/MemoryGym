@@ -66,22 +66,76 @@ eval 数据（ROADMAP.md §3）← 衡量差距
 
 ## 当前任务
 
-### Phase 31 — 模板事件流差异化
-（从待办提升）
-- 各模板 override generate_stream()
-- correction_rate 属性（hospital 高、city 低）
-- 新增 template_expert 策略
-- 验证：template_expert > generic_strategic
-
-### Phase 32 — 实体重要性分化 + 问题分布定制
-
-### Phase 33 — 信息隐藏 + 噪声注入
-
-### Phase 34 — 长上下文评测模式
-
 ### Phase 35 — V2 评测数据收集
+- [x] V2 端到端验证：Qwen3.5-397B company lite seed=1 → 20% (系统工作正常)
+- [ ] 多模板评测：research/city/hospital/sport/movie
+- [ ] 多模型评测：MiniMax-M2.5, Kimi-K2.5, Qwen3-235B
+- [ ] 对比 V1 数据
+
+## 待办
+
+### Phase 36 — 模板策略差异化修复（审计线程发现）
+
+**依据**：审计 A1 发现 Phase 31 的 template_expert 策略**未实现真正的模板差异化**。
+
+代码证据：
+- `simulation.py` 的 `_template_expert_ratio()` 用 `0.6 + correction_rate` 计算存储比例
+- correction_rate 范围 0.05-0.15 → 存储比例范围 0.65-0.75 → 与固定 0.7 仅差 ±5%
+- 固定 0.7 + priority_store 的全局均值与 template_expert 相当甚至更高
+- template_expert 的优势完全来自 priority_store，correction_rate 调整贡献 ~0%
+
+**本质问题**：correction_rate 差异（5%-15%）太小，不足以创造质变的策略需求。所有模板的最优策略仍然是"存 ~70% + priority_store + 处理 correction"。
+
+**要求**：
+1. 分析 Phase 32（实体重要性分化）是否已解决此问题——如果 entity_importance 让不同模板有不同的"高价值实体"定义，则问题可能已缓解
+2. 如果未解决，设计真正的差异化机制（如：不同模板的问题分布权重不同、不同模板需要不同的存储粒度）
+3. 验证标准：新增一个 `universal_strategy` 基线（固定 0.7 + priority_store），template_expert 必须在**至少 4/6 模板**上显著优于 universal_strategy（>2% 差距）
+
+### Phase 37 — 新题型采样率提升（审计线程发现）
+
+**依据**：Phase 30 新增的 counterfactual 和 multi_constraint 题型采样率过低。
+
+代码证据：
+- `base.py:1006-1022` 的 comprehension 采样池有 14-19 种类型
+- 20 题评测中 comprehension ≈ 5-7 题，round-robin 从 14-19 类型中选
+- counterfactual 期望出现 ~0.4 次/eval，multi_constraint ~0.4 次/eval
+- 这些新题型对 reasoning 轴得分几乎无影响
+
+**要求**：
+1. 提升 counterfactual/multi_constraint 的采样优先级（如：corrections 存在时，至少保证 1 个 counterfactual）
+2. 不破坏现有 simulation 不变量
+3. 验证：standard tier（20 题）中 counterfactual ≥ 1 且 multi_constraint ≥ 1 的概率 > 80%（10 seeds 验证）
 
 ## 已完成
+
+### Phase 34 — 长上下文评测模式 ✅
+- --no-redaction flag：stream_agent.py + eval_task.py + bench.py CLI
+- 保留完整对话历史，不做 selective redaction
+- 对比"长上下文 vs 工具辅助记忆"的能力差异
+- 265 tests, ALL simulation invariants PASS (5 seeds)
+
+### Phase 33 — 信息隐藏 + 噪声注入 ✅
+- C1: 隐藏 total_entities（"Entities seen so far: N (more may follow)"），stream_agent + eval_task 同步
+- C3: 噪声文档注入 — _generate_noise_doc() 生成含实体名但无属性的干扰文本
+- 噪声穿插在 ingest 批次间（~30% 批次），"noise" event type
+- stream_agent + eval_task 处理噪声事件（展示给 agent，不需要存储）
+- simulation 自动跳过噪声事件（只处理 question 类型）
+- 265 tests, ALL simulation invariants PASS
+
+### Phase 32 — 实体重要性分化 + 问题分布定制 ✅
+- entity_importance() 方法：关系度数 + 属性极值 + 完整度 → 重要性评分
+- question_weights 属性：5 模板自定义问题比例（company/research 偏推理，hospital/sport 偏更新，city 偏检索）
+- _weighted_choice() 在 retrieval 问题中按重要性加权选择实体
+- simulation _entity_priority_score() 对齐 entity_importance（priority_store 更有效）
+- 265 tests, 9 策略 × 6 模板 × 5 seeds ALL PASS
+
+### Phase 31 — 模板事件流差异化 ✅
+- correction_rate 属性：hospital=0.15, sport=0.12, company=0.10, research=0.08, movie=0.07, city=0.05
+- correction_timing 属性：高频模板早修正(0.3-0.5), 低频模板晚修正(0.5-0.8)
+- entities_per_batch 属性（可覆盖，默认 10）
+- generate_stream() 使用 self 属性替代硬编码
+- 新增 template_expert 策略（priority_store + template-aware ratio）
+- 验证：template_expert > strategic (global avg) PASS，9 策略 × 6 模板 × 5 seeds ALL PASS
 
 ### Phase 30 — 反事实推理 + 多约束过滤题型 ✅
 - counterfactual: GT=correction.old_val, 需要 agent 记住修正前值

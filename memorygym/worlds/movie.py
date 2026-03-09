@@ -419,6 +419,14 @@ class MovieWorld(WorldTemplate):
     def entity_word(self) -> str:
         return "movie"
 
+    @property
+    def correction_rate(self) -> float:
+        return 0.07  # low — box office data stable
+
+    @property
+    def correction_timing(self) -> tuple[float, float]:
+        return (0.5, 0.8)  # late corrections
+
     def _generate_names(self, rng: Random, n: int) -> list[str]:
         pool = [(a, noun) for a in _ADJECTIVES for noun in _NOUNS]
         selected = rng.sample(pool, min(n, len(pool)))

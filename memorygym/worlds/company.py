@@ -379,6 +379,23 @@ class CompanyWorld(WorldTemplate):
     def entity_word(self) -> str:
         return "company"
 
+    @property
+    def correction_rate(self) -> float:
+        return 0.10  # moderate — quarterly updates
+
+    @property
+    def correction_timing(self) -> tuple[float, float]:
+        return (0.4, 0.7)  # standard timing
+
+    @property
+    def question_weights(self) -> dict[str, float]:
+        return {
+            "retrieval": 0.30,       # less — financial reasoning matters more
+            "comprehension": 0.35,   # more — ratio/comparison/aggregation
+            "update": 0.20,
+            "abstention": 0.15,
+        }
+
     def _generate_names(self, rng: Random, n: int) -> list[str]:
         pool = [(p, s) for p in _PREFIXES for s in _SUFFIXES]
         selected = rng.sample(pool, min(n, len(pool)))

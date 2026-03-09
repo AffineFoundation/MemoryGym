@@ -29,6 +29,8 @@ STRATEGIES = [
      "applies_updates": True, "priority_store": True},
     {"name": "random_strategic", "store_ratio": 0.5,
      "applies_updates": True},
+    {"name": "template_expert", "store_ratio": 0.0, "applies_updates": True,
+     "priority_store": True, "template_aware": True},
     {"name": "naive", "store_ratio": 0.4, "applies_updates": False},
     {"name": "guesser", "store_ratio": 0.0, "applies_updates": False},
     {"name": "abstainer", "store_ratio": 1.0, "applies_updates": True,
@@ -41,30 +43,26 @@ STRATEGIES = [
 _VALIDATOR = AnswerValidator()
 
 
-def _entity_priority_score(entity: EntitySpec, world: World) -> float:
-    """Score entity by question likelihood.
+def _entity_priority_score(
+    entity: EntitySpec, world: World,
+    tmpl: WorldTemplate | None = None,
+) -> float:
+    """Score entity by question likelihood using template's importance model.
 
-    Higher score = more likely to appear in questions.
-    Factors:
-    - Category population: entities in larger categories are more likely
-      to appear in aggregation/synthesis/comparison questions.
-    - Attribute completeness: entities with more non-None attributes
-      are more useful for ratio/conditional questions.
-    - Extremeness: entities with extreme values (top/bottom 20%) are
-      more likely targets for synthesis (max/min) and outlier questions.
+    When tmpl is provided, delegates to tmpl.entity_importance() which
+    aligns with question generation's importance-weighted entity selection.
+    Falls back to a standalone heuristic when tmpl is not available.
     """
-    score = 0.0
-    # Category population bonus
-    cat_size = len(world.entities_in_category(entity.category))
-    score += min(cat_size, 10)  # cap at 10
+    if tmpl is not None:
+        return tmpl.entity_importance(entity, world)
 
-    # Attribute completeness
+    # Standalone fallback (backward compat)
+    score = 0.0
+    cat_size = len(world.entities_in_category(entity.category))
+    score += min(cat_size, 10)
     n_attrs = sum(1 for a in world.active_attrs
                   if entity.get(a) is not None)
     score += n_attrs * 0.5
-
-    # Extremeness: count how many attributes this entity ranks in
-    # top/bottom 20% among all entities
     for attr in world.active_attrs:
         val = entity.get(attr)
         if not isinstance(val, (int, float)):
@@ -76,9 +74,21 @@ def _entity_priority_score(entity: EntitySpec, world: World) -> float:
         rank = sum(1 for v in all_vals if v <= val)
         percentile = rank / len(all_vals)
         if percentile <= 0.2 or percentile >= 0.8:
-            score += 2.0  # extreme value bonus
-
+            score += 2.0
     return score
+
+
+def _template_expert_ratio(tmpl: WorldTemplate) -> float:
+    """Compute optimal store_ratio using template's correction_rate.
+
+    High-correction templates (hospital): store more to ensure corrections
+    can be applied (maintenance axis).
+    Low-correction templates (city): store at moderate level, prioritizing
+    high-value entities via priority_store.
+    """
+    # Base ratio 0.6 + bonus for high-correction templates
+    # hospital (0.15) → 0.75, city (0.05) → 0.65, company (0.10) → 0.70
+    return min(0.8, 0.6 + tmpl.correction_rate)
 
 
 def _smart_guess(q: GeneratedQA, world: World, rng: Random) -> str | None:
@@ -247,6 +257,9 @@ def simulate_one(
     # Storage decision
     rng_store = Random(seed + 111)
     ratio = profile["store_ratio"]
+    # Template-aware: compute ratio from template's correction_rate
+    if profile.get("template_aware"):
+        ratio = _template_expert_ratio(tmpl)
     if ratio >= 1.0:
         stored_docs = [doc for _, doc in all_docs]
     elif ratio <= 0.0:
@@ -255,7 +268,7 @@ def simulate_one(
         # Priority storage: score entities by question likelihood,
         # store the top-N. Proves WHAT you store matters.
         n_store = max(1, int(len(all_docs) * ratio))
-        scored = [(i, _entity_priority_score(e, world))
+        scored = [(i, _entity_priority_score(e, world, tmpl))
                   for i, (e, _) in enumerate(all_docs)]
         scored.sort(key=lambda x: -x[1])
         indices = [i for i, _ in scored[:n_store]]
@@ -378,13 +391,15 @@ def simulate_one_stream(
     # Storage decision (same as non-stream)
     rng_store = Random(seed + 111)
     ratio = profile["store_ratio"]
+    if profile.get("template_aware"):
+        ratio = _template_expert_ratio(tmpl)
     if ratio >= 1.0:
         stored_docs = [doc for _, doc in all_docs]
     elif ratio <= 0.0:
         stored_docs = []
     elif profile.get("priority_store"):
         n_store = max(1, int(len(all_docs) * ratio))
-        scored = [(i, _entity_priority_score(e, world))
+        scored = [(i, _entity_priority_score(e, world, tmpl))
                   for i, (e, _) in enumerate(all_docs)]
         scored.sort(key=lambda x: -x[1])
         indices = [i for i, _ in scored[:n_store]]
@@ -537,6 +552,14 @@ def run_validation(agg: dict, templates_used: list[str]) -> dict[str, bool]:
         avg_ps = sum(all_ps) / len(all_ps)
         avg_rs = sum(all_rs) / len(all_rs)
         checks["priority >= random (global avg)"] = avg_ps >= avg_rs - 0.05
+
+    # Template expert: priority store + template-aware ratio > generic strategic
+    all_te = [v["accuracy"] for v in agg.get("template_expert", [])]
+    all_st = [v["accuracy"] for v in agg.get("strategic", [])]
+    if all_te and all_st:
+        avg_te = sum(all_te) / len(all_te)
+        avg_st = sum(all_st) / len(all_st)
+        checks["template_expert > strategic (global avg)"] = avg_te > avg_st
 
     # Abstainer ceiling: always-abstain must stay below 20%
     for tmpl_name in templates_used:
