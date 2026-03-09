@@ -24,7 +24,7 @@ from inspect_ai.solver import Generate, Solver, TaskState, chain, solver, use_to
 
 from memorygym.inspect_task.tools import create_memory_tools, submit_answer
 from memorygym.worlds import ALL_TEMPLATES
-from memorygym.worlds.base import Correction, World, WorldTemplate
+from memorygym.worlds.base import World, WorldTemplate
 
 _TEMPLATES = ALL_TEMPLATES
 

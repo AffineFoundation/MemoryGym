@@ -74,60 +74,43 @@ eval 数据（ROADMAP.md §3）← 衡量差距
 
 ## 待办
 
-### Phase 18 — 项目全面自审（代码 + 文档 + 架构）
+### Phase 19 — 评测数据重建（归档旧数据 + 全面重测）
 
-**依据**：经过 Phase 3-16 的快速迭代开发，项目中可能积累了冗余代码、过时文档、废弃模块。在继续新功能开发前，需要一次全面清理。
+**依据**：Phase 16 大幅改变了所有 6 个模板的结构（属性 10→22-24，新增 text/enum/list_float/date，新问题类型），旧版评测数据基于 10 属性模板产出，与当前代码不兼容，分数不可比较。
 
-**代码审查**：
-1. **死代码清理**：
-    - 搜索所有未被引用的函数、类、常量（用 grep 交叉验证 import/调用）
-    - 检查 `memorygym/` 下是否有废弃模块（如 v3 时代的 `domains/`, `generation/` 残留）
-    - 检查 tests/ 中是否有测试已删除功能的用例
-    - 检查 `# TODO`, `# FIXME`, `# HACK` 注释是否已过时
-2. **冗余逻辑检查**：
-    - bench.py 和 env.py 是否有重复的评分计算逻辑（Phase 15 已部分解决，需确认）
-    - stream_agent.py 和 eval_task.py 的 system prompt 是否同步
-    - simulation.py 的策略逻辑与 bench.py 的 re-export 是否还必要
-3. **依赖清理**：
-    - pyproject.toml 中的依赖是否都在用（是否有装了但没用的包）
-    - optional dependencies 分组是否合理
-4. **架构一致性**：
-    - `memorygym/worlds/__init__.py` 的 ALL_TEMPLATES 是否与实际模板一致
-    - `memorygym/protocol.py` 的 TIERS/权重是否与 CLAUDE.md 一致
-    - eval_scorer.py 的 _REASONING_COMPETENCIES 是否覆盖了 Phase 16 新增的所有 competency
-
-**文档审查**：
-5. **ROADMAP.md 全面检查**：
-    - §0 当前状态是否反映 Phase 16 后的实际状态（属性数、dtype 种类、问题类型数）
-    - §2 架构描述是否与代码一致（模块列表、评分公式、流程图）
-    - §3 评测数据是否有过时条目（旧版代码产出的数据、已废弃格式）
-    - §4 优先级是否需要更新（Phase 16 完成后优先级可能变化）
-    - §5 技术决策是否记录了 Phase 16 的关键设计决策
-    - §6 验证记录是否包含最新的 simulation 结果
-    - §7 参考文献是否需要补充（最近的 agent memory 相关工作）
-6. **CLAUDE.md 同步检查**：
-    - 评分权重是否与 protocol.py 一致
-    - 模板数量和属性描述是否反映 Phase 16 增强
-    - 架构模块列表是否完整
-    - 死胡同列表是否需要补充新发现
-    - 常用命令是否还准确
-7. **devlog/ 整理**：
-    - 是否有重复或过时的 devlog
-    - 关键决策是否都有 devlog 记录
-8. **README.md 检查**：
-    - 安装指南是否与最新 pyproject.toml 一致
-    - quickstart 示例是否能实际运行
-    - 排行榜数据是否过时
-
-**输出**：
-- 产出审查报告 `devlog/project-audit.md`
-- 直接修复发现的问题（删除死代码、更新过时文档）
-- 无法立即修复的问题记录为后续待办
-
-### 阻塞任务（等待外部资源）
-- GPU 端到端训练验证（需 4+ GPU）
+1. **归档旧评测数据**：
+    - `eval/` 目录中所有现有 JSON 移动到 `eval/archive_v1/`
+    - 创建 `eval/archive_v1/README.md` 说明：数据基于 Phase 16 前的 10 属性模板，仅供历史参考
+    - ROADMAP.md §3 旧数据标注为 `[v1, archived]`
+2. **EVAL_QUEUE.md 全面重写**：
+    - 清空现有批次（全部基于旧模板）
+    - 批次 1：冒烟测试 — 每模板 × 1 seed × Kimi-K2.5（6 任务，验证 agent 能处理新 dtype）
+    - 批次 2：新基线 — Kimi-K2.5 全模板 × 3 seeds（18 任务，计算均值±标准差）
+    - 批次 3：横评 — Qwen3.5-397B 全模板 × 1 seed（6 任务）
+    - 批次 4：补充 — MiniMax + GLM-5 各 company+movie × 1 seed（4 任务）
+    - 批次 5：standard tier — Kimi × company × 1 seed
+    - 批次 6：hard tier — Kimi × company × 1 seed
+3. **LEADERBOARD.md 重置**：
+    - 清空旧排行，标注 "v2 — Phase 16 enhanced templates"
+    - 新数据到位后重新生成
+4. **ROADMAP.md §3 更新**：
+    - 新增 v2 数据表
+    - 新旧基线定性对比（预期分数下降，属性更多+问题更复杂）
 
 ## 已完成
+
+### Phase 18 — 项目全面自审 ✅
+1. ~~死代码清理~~ ✅ → 6 处未用导入移除，无死函数/类
+2. ~~架构一致性~~ ✅ → cross_category 补入 protocol.py, OFFICIAL_TEMPLATES 加 movie, eval_scorer 改为引用 protocol
+3. ~~版本同步~~ ✅ → __init__.py 0.3.0→0.4.0
+4. ~~文档同步~~ ✅ → ROADMAP.md §0/§2 更新，CLAUDE.md 架构描述修正
+5. ~~审查报告~~ ✅ → devlog/2026-03-09-project-audit.md
+6. ~~验证~~ ✅ → 256 tests + simulation ALL PASS
+
+### Phase 17 — 增强模板系统性验证 ✅
+1. ~~simulation 全 PASS~~ ✅ → 10 seeds × 6 templates × 8 strategies
+2. ~~test_new_dtypes.py~~ ✅ → 7 focused tests
+3. ~~EVAL_QUEUE.md 批次 P17~~ ✅
 
 ### Phase 16 — 模板结构分化 ✅
 1. ~~types.py AttrDef 扩展~~ ✅ → 6 种 dtype (int/float/text/enum/list_float/date), EntitySpec 加 parent/children

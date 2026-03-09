@@ -20,7 +20,7 @@ import time
 import uuid
 from collections import defaultdict
 from random import Random
-from typing import Any, Optional
+from typing import Any
 
 from affinetes.core.openenv import OpenEnvResponse
 

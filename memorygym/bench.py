@@ -24,7 +24,6 @@ from random import Random
 
 from memorygym.protocol import (
     OFFICIAL_SEEDS,
-    OFFICIAL_TEMPLATES,
     TIERS,
     compute_axis_scores,
     compute_composite,

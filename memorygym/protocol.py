@@ -32,7 +32,7 @@ TIERS: dict[str, dict[str, int]] = {
 
 OFFICIAL_SEEDS = list(range(10))
 
-OFFICIAL_TEMPLATES = ["company", "research", "city", "hospital", "sport"]
+OFFICIAL_TEMPLATES = ["company", "research", "city", "hospital", "sport", "movie"]
 
 SCHEMA_VERSION = "1.0"
 
@@ -94,7 +94,7 @@ def compute_composite(
 
 # Comprehension competency types that map to the reasoning axis.
 REASONING_COMPETENCIES = [
-    "synthesis", "aggregation", "conditional", "ratio",
+    "synthesis", "aggregation", "cross_category", "conditional", "ratio",
     "comparison", "multi_hop", "outlier", "delta",
     "relationship_lookup", "relationship_hop", "relationship_chain",
     "relationship_count", "relationship_filter",

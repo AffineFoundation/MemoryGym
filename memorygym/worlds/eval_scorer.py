@@ -22,23 +22,13 @@ from inspect_ai.model import get_model
 from inspect_ai.scorer import Score, Target, scorer
 
 from memorygym.evaluation.llm_judge import llm_judge_validate
-from memorygym.evaluation.validators import (
-    AnswerValidator,
-    async_validate_with_fallback,
-)
+from memorygym.evaluation.validators import async_validate_with_fallback
+from memorygym.protocol import REASONING_COMPETENCIES
 
 log = logging.getLogger(__name__)
 
-# All comprehension competency types for the reasoning axis
-_REASONING_COMPETENCIES = frozenset({
-    "synthesis", "aggregation", "cross_category", "conditional", "ratio",
-    "comparison", "multi_hop", "outlier", "delta",
-    "relationship_lookup", "relationship_hop",
-    "relationship_chain", "relationship_count", "relationship_filter",
-    "temporal_trend", "temporal_extreme",
-    "hierarchy_aggregate", "hierarchy_lookup",
-    "text_match", "enum_filter",
-})
+# Frozenset for O(1) lookup during scoring
+_REASONING_COMPETENCIES = frozenset(REASONING_COMPETENCIES)
 
 
 @scorer(metrics=[])

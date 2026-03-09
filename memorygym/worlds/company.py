@@ -12,7 +12,7 @@ from random import Random
 from typing import Any
 
 from memorygym.worlds.base import (
-    AttrDef, EntitySpec, Relationship, SentenceTemplate, WorldTemplate,
+    AttrDef, EntitySpec, SentenceTemplate, WorldTemplate,
     _possessive,
 )
 

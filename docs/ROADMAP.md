@@ -3,7 +3,7 @@
 > 项目状态、证据、优先级、架构、技术决策的权威文档。
 > 由自治演进协议持续维护。
 
-**最后更新**: 2026-03-08
+**最后更新**: 2026-03-09
 
 ---
 
@@ -11,22 +11,20 @@
 
 > 新 session 先看这里 + `AUTOPILOT.md`。上下文不足时可读最近的 devlog 文件。
 
-**当前焦点**: 评测系统完备性修复（Phase 12）
+**当前焦点**: Phase 18 — 项目全面自审（代码 + 文档 + 架构）
 
-**最大差距**: 评测工具链完善（backend CLI、judge fallback）+ RL 训练验证（需 GPU）
+**最大差距**: 代码/文档卫生（快速迭代积累的技术债务）+ RL 训练验证（需 GPU）
 
 **已完成**:
-- Phase 0: 多模板 eval（3 模板 × Qwen3.5-397B）✅
-- Phase 1: 跨模型兼容性（3 厂商非零分）✅
-- Phase 2: 任务复杂度升级（实体关系 + MovieWorld）✅
+- Phase 0-2: 多模板 eval + 跨模型兼容 + 任务复杂度升级 ✅
+- Phase 3: RL 训练闭环（代码完成，待 GPU 验证）
+- Phase 5-15: 评测质量迭代、工具链、训练基础设施 ✅
+- Phase 16: 模板结构分化（6 dtypes, 22-23 attrs/template, 20 种 reasoning competency）✅
+- Phase 17: 增强模板系统性验证（7 新测试, simulation 全 PASS）✅
 - 6 个领域模板（company/research/city/hospital/sport/movie）
-- 实体关系层（5 种关系题型：lookup/hop/chain/count/filter）
-- 249 tests passing
-- 动态预算上下文 + tool loop nudge
-- Phase 11: Correction 提示改进（maintenance 0%→33%）
-- MemoryEnv 完整可用（tier/text obs/stats/get_verifiable_reward/ChromaDB embedding search）
-- verl + slime 双适配器 + 训练基础设施（config/data gen/reward func）
-- 小模型基线（Qwen3-14B=20%, Qwen3-32B=30%）
+- 实体关系层（5 种关系题型）+ 6 种新 dtype 题型
+- 256 tests passing
+- MemoryEnv + verl/slime 适配器完整可用
 
 ---
 
@@ -83,9 +81,9 @@ memorygym/
 
 | 轴 | 权重 | 测什么 |
 |----|------|--------|
-| breadth | 0.25 | 存储广度（retrieval 正确率）|
+| breadth | 0.30 | 存储广度（retrieval 正确率）|
 | maintenance | 0.25 | 记忆维护（update 正确率 × coverage gate）|
-| reasoning | 0.30 | 推理能力（14 种 comprehension 题型，含 5 种关系推理）|
+| reasoning | 0.25 | 推理能力（20 种 competency：8 基础 + 5 关系推理 + 7 新 dtype 题型）|
 | efficiency | 0.20 | 效率（correct/writes_used）|
 
 abstention_diagnostic 单独报告，不计入 composite。
@@ -102,6 +100,12 @@ abstention_diagnostic 单独报告，不计入 composite。
 
 8 种策略验证评分有效性：perfect=100%, guesser=0%, strategic>naive+10%, abstainer<15%, smart_guesser<5%。
 
+### 2.6 推理题型（20 types）
+
+基础: synthesis, aggregation, cross_category, conditional, ratio, comparison, multi_hop, outlier, delta
+关系: relationship_lookup, relationship_hop, relationship_chain, relationship_count, relationship_filter
+新 dtype: temporal_trend, temporal_extreme, hierarchy_aggregate, hierarchy_lookup, text_match, enum_filter
+
 ### 2.5 MemoryEnv (RL 环境)
 
 | 属性 | 状态 |
@@ -113,9 +117,9 @@ abstention_diagnostic 单独报告，不计入 composite。
 | get_verifiable_reward() | accuracy，供 GRPO 使用 |
 | Search | ChromaDB embedding search（all-MiniLM-L6-v2），与真实 eval 一致 |
 
-### 2.6 测试覆盖
+### 2.7 测试覆盖
 
-249 tests: test_worlds(37) + test_validators(61) + test_bench(22) + test_stream_agent(21) + test_training(21) + test_backend_bench(7) + test_llm_judge(11) + test_narrative(15) + test_adapters(27) + other(25)
+256 tests: test_worlds(37) + test_validators(61) + test_bench(22) + test_stream_agent(21) + test_training(21) + test_backend_bench(7) + test_llm_judge(11) + test_narrative(15) + test_adapters(27) + test_new_dtypes(7) + other(25)
 
 ---
 
@@ -254,6 +258,7 @@ eval/
 | 2026-03-08 | 初始优先级设定 | 基于已有 eval 数据分析 |
 | 2026-03-08 | 任务复杂度升级从 #4 提升到 #3 | 用户指示：增加新世界模板和题型复杂度优先于 RL |
 | 2026-03-08 | Phase 1-3 完成，RL 训练闭环提升为最高优先 | 评测系统稳定，训练是最大差距 |
+| 2026-03-09 | Phase 18 项目自审提升为当前任务 | Phase 3-17 快速迭代积累技术债务；ROADMAP §0/§2 权重与代码不同步；RL 阻塞于 GPU 无法推进 |
 
 ---
 
