@@ -1,0 +1,7 @@
+# Agent loop config for MemoryGym
+# Referenced by verl_memorygym.yaml: agent_loop_config_path
+- name: memorygym_agent
+  _target_: memorygym.adapters.verl_adapter.MemoryGymAgentLoop
+  template_name: company
+  tier: lite
+  max_env_turns: 200

@@ -1,0 +1,85 @@
+# verl GRPO training config for MemoryGym
+#
+# Usage:
+#   # 1. Generate training data
+#   python scripts/generate_train_data.py --output data/train.jsonl --tier lite --seeds 100
+#
+#   # 2. Launch training
+#   python -m verl.trainer.main_ppo \
+#     --config-path scripts \
+#     --config-name verl_memorygym
+#
+# Requirements:
+#   - 4+ GPUs (FSDP2)
+#   - verl >= 0.7.0
+#   - Model: Qwen/Qwen3-32B or similar
+
+defaults:
+  - _self_
+
+data:
+  train_files: data/train.jsonl
+  val_files: null
+  train_batch_size: 32
+  val_batch_size: 8
+  max_prompt_length: 4096
+  max_response_length: 8192
+  return_raw_chat: true
+
+tokenizer:
+  tokenizer_path: Qwen/Qwen3-32B
+
+actor_rollout_ref:
+  model:
+    path: Qwen/Qwen3-32B
+
+  actor:
+    optim:
+      lr: 1.0e-6
+      weight_decay: 0.01
+    ppo_mini_batch_size: 4
+    ppo_micro_batch_size_per_gpu: 1
+    grad_clip: 1.0
+    entropy_coeff: 0.01
+
+  rollout:
+    prompt_length: ${data.max_prompt_length}
+    response_length: ${data.max_response_length}
+    temperature: 0.7
+    top_p: 0.95
+    n: 4  # GRPO: 4 trajectories per prompt
+
+    # Agent loop config
+    agent:
+      num_workers: 8
+      default_agent_loop: memorygym_agent
+      agent_loop_config_path: scripts/memorygym_agent.yaml
+
+    # Multi-turn settings
+    multi_turn:
+      enable: true
+      max_assistant_turns: 50
+      max_user_turns: 50
+
+  ref:
+    fsdp_config:
+      param_offload: true
+
+algorithm:
+  adv_estimator: grpo
+  norm_adv_by_std_in_grpo: true
+  kl_ctrl:
+    kl_coef: 0.02
+
+custom_reward_function:
+  path: memorygym/adapters/verl_reward.py
+  name: compute_score
+
+trainer:
+  total_epochs: 3
+  save_freq: 50
+  test_freq: 25
+  project_name: memorygym-grpo
+  experiment_name: qwen3-32b-lite
+  logger:
+    - wandb

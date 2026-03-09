@@ -235,6 +235,13 @@ class MovieWorld(WorldTemplate):
             else:
                 attrs[adef.name] = round(
                     rng.uniform(adef.min_val, adef.max_val), 2)
+
+        # Constraint: opening weekend cannot exceed total box office
+        if ("opening_weekend_m" in attrs and "box_office_m" in attrs
+                and attrs["opening_weekend_m"] > attrs["box_office_m"]):
+            attrs["box_office_m"] = round(
+                attrs["opening_weekend_m"] * rng.uniform(1.1, 3.0), 2)
+
         return EntitySpec(name=name, category=category, attrs=attrs)
 
     def _format_value(self, attr: str, val: Any) -> str:

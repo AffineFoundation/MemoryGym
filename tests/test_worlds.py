@@ -1209,11 +1209,17 @@ def test_relationship_questions():
         world, rng, world.entities, stored, 40, corrections)
     rel_qs = [q for q in qs if "relationship" in q.competency]
     assert len(rel_qs) >= 1, "Should generate at least 1 relationship question"
+    valid_rel_types = (
+        "relationship_lookup", "relationship_hop",
+        "relationship_chain", "relationship_count",
+        "relationship_filter",
+    )
     for q in rel_qs:
-        assert q.competency in ("relationship_lookup", "relationship_hop")
-        assert len(q.required_entities) == 2
+        assert q.competency in valid_rel_types, (
+            f"Unknown relationship type: {q.competency}")
+        assert len(q.required_entities) >= 2
         assert q.answer, "Answer must not be empty"
-        # Both entities must exist in world
+        # All entities must exist in world
         for name in q.required_entities:
             assert world.get_entity(name) is not None, f"Unknown entity: {name}"
 

@@ -77,7 +77,8 @@ Corrections will arrive later and each costs 1 write to update.
 """
 
 _TOOL_CALL_RE = re.compile(
-    r"<tool_call>\s*(\{.*?\})\s*</tool_call>", re.DOTALL,
+    r"<(?:tool_call|function_call)>\s*(\{.*?\})\s*</(?:tool_call|function_call)>",
+    re.DOTALL,
 )
 
 # Valid tool names for bare-JSON detection
@@ -85,6 +86,11 @@ _KNOWN_TOOLS = {
     "memory_store", "memory_search", "memory_get",
     "memory_forget", "memory_list", "submit_answer",
 }
+
+# Markdown code block: ```json\n{...}\n``` or ```\n{...}\n```
+_CODE_BLOCK_RE = re.compile(
+    r"```(?:json)?\s*\n(\{.*?\})\s*\n```", re.DOTALL,
+)
 
 # Bare JSON: {"name": "...", "arguments": {...}}  (no XML wrapper)
 _BARE_JSON_RE = re.compile(
@@ -169,9 +175,15 @@ def _execute_tool(
 
 
 def _extract_tool_calls(text: str) -> list[dict]:
-    """Extract tool calls from text — supports <tool_call> XML and bare JSON."""
+    """Extract tool calls from text.
+
+    Supports (in priority order):
+    1. <tool_call>/<function_call> XML tags
+    2. Markdown code blocks (```json ... ```)
+    3. Bare JSON with "name"/"arguments" keys
+    """
     calls = []
-    # 1) Try XML-wrapped format first
+    # 1) Try XML-wrapped format first (<tool_call> or <function_call>)
     for match in _TOOL_CALL_RE.finditer(text):
         try:
             call = json.loads(match.group(1))
@@ -181,7 +193,17 @@ def _extract_tool_calls(text: str) -> list[dict]:
             continue
     if calls:
         return calls
-    # 2) Fallback: bare JSON (Qwen-style)
+    # 2) Try markdown code blocks
+    for match in _CODE_BLOCK_RE.finditer(text):
+        try:
+            call = json.loads(match.group(1))
+            if call.get("name") in _KNOWN_TOOLS:
+                calls.append(call)
+        except json.JSONDecodeError:
+            continue
+    if calls:
+        return calls
+    # 3) Fallback: bare JSON (Qwen-style)
     for match in _BARE_JSON_RE.finditer(text):
         try:
             call = json.loads(match.group(0))

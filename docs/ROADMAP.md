@@ -11,19 +11,21 @@
 
 > 新 session 先看这里 + `AUTOPILOT.md`。上下文不足时可读最近的 devlog 文件。
 
-**当前焦点**: RL 训练闭环（MemoryEnv embedding search → GRPO 对接）
+**当前焦点**: RL 训练闭环（verl 端到端验证）
 
-**最大差距**: GRPO 框架对接（MemoryEnv embedding search 已完成）
+**最大差距**: 端到端训练验证（verl 集成已完成，需 GPU 环境验证）
 
 **已完成**:
 - Phase 0: 多模板 eval（3 模板 × Qwen3.5-397B）✅
 - Phase 1: 跨模型兼容性（3 厂商非零分）✅
 - Phase 2: 任务复杂度升级（实体关系 + MovieWorld）✅
 - 6 个领域模板（company/research/city/hospital/sport/movie）
-- 实体关系层（relationship_lookup + relationship_hop 题型）
-- 217 tests passing
+- 实体关系层（5 种关系题型：lookup/hop/chain/count/filter）
+- 247 tests passing
 - 动态预算上下文 + tool loop nudge
-- MemoryEnv 基础可用（tier/text obs/stats/get_verifiable_reward）
+- MemoryEnv 完整可用（tier/text obs/stats/get_verifiable_reward/ChromaDB embedding search）
+- verl + slime 双适配器 + 训练基础设施（config/data gen/reward func）
+- 小模型基线（Qwen3-14B=20%, Qwen3-32B=30%）
 
 ---
 
@@ -65,10 +67,15 @@ memorygym/
 ├── bench.py                    # CLI: 真实评测 + simulation
 ├── protocol.py                 # 标准评估协议（tier 定义、JSON schema）
 ├── training.py                 # SFT 轨迹生成 + MemoryEnv（RL 环境）
-└── adapters/                   # RL 框架适配层
-    ├── _common.py              # 共享工具解析 + episode runner
-    ├── verl_adapter.py         # verl AgentLoopBase 集成
-    └── slime_adapter.py        # slime custom generate/reward
+├── adapters/                   # RL 框架适配层
+│   ├── _common.py              # 共享工具解析 + episode runner
+│   ├── verl_adapter.py         # verl AgentLoopBase 集成（@register memorygym_agent）
+│   ├── verl_reward.py          # verl compute_score 奖励函数
+│   └── slime_adapter.py        # slime custom generate/reward
+└── scripts/                    # 训练脚本
+    ├── generate_train_data.py  # 生成训练 prompts JSONL
+    ├── verl_memorygym.yaml     # verl GRPO 训练配置
+    └── memorygym_agent.yaml    # agent loop 配置
 ```
 
 ### 2.2 评分体系 (4 轴)
@@ -77,7 +84,7 @@ memorygym/
 |----|------|--------|
 | breadth | 0.30 | 存储广度（retrieval 正确率）|
 | maintenance | 0.25 | 记忆维护（update 正确率 × coverage gate）|
-| reasoning | 0.25 | 推理能力（10 种 comprehension 题型，含关系推理）|
+| reasoning | 0.25 | 推理能力（13 种 comprehension 题型，含 5 种关系推理）|
 | efficiency | 0.20 | 效率（correct/writes_used）|
 
 abstention_diagnostic 单独报告，不计入 composite。
@@ -107,7 +114,7 @@ abstention_diagnostic 单独报告，不计入 composite。
 
 ### 2.6 测试覆盖
 
-233 tests: test_worlds(37) + test_validators(61) + test_bench(22) + test_stream_agent(17) + test_training(21) + test_backend_bench(7) + test_llm_judge(11) + test_narrative(15) + test_adapters(16) + other(26)
+247 tests: test_worlds(37) + test_validators(61) + test_bench(22) + test_stream_agent(21) + test_training(21) + test_backend_bench(7) + test_llm_judge(11) + test_narrative(15) + test_adapters(27) + other(25)
 
 ---
 
@@ -127,6 +134,8 @@ abstention_diagnostic 单独报告，不计入 composite。
 | Qwen3-235B | company | standard | 0 | 10% | 20% | 0% | 0% | 0% |
 | Qwen3-32B | company | mixed | 0,1,2 | **30%** | 33% | 11% | 33% | 50% |
 | DeepSeek-V3 | company | 旧格式(200e) | 0,1,2 | **37%** | 22% | 0% | 67% | 71% |
+| Qwen3-14B | company | lite | 1 | **20%** | 0% | **33%** | 0% | 100% |
+| Qwen3-32B | company | lite | 1 | **30%** | 25% | **33%** | 0% | 100% |
 | GPT-OSS-120B | company | standard | 0 | 0% | 0% | 0% | 0% | 0% |
 
 ### 3.2 关键发现与解读
@@ -186,11 +195,12 @@ eval/
 **3. 任务复杂度升级 + 新世界模板** — ✅ 完成
 - 结果：实体关系层（5 模板 × 2 关系类型 + relationship_lookup/hop 题型）
 - 结果：MovieWorld 新模板（全部 simulation 不变量通过）
-- 结果：10 种 comprehension 题型（原 8 种 + 2 种关系推理）
+- 结果：13 种 comprehension 题型（原 8 种 + 5 种关系推理）
 
 **4. RL 训练闭环** — 高（当前最大差距）
-- 依据：MemoryEnv embedding search 已完成，需对接 GRPO 框架
-- 关键组件：~~embedding search~~ ✅ → GRPO 对接 → shaped reward → curriculum
+- 依据：MemoryEnv embedding search 已完成，verl 集成已完成
+- 关键组件：~~embedding search~~ ✅ → ~~GRPO 对接~~ ✅ → ~~小模型基线~~ ✅ → ~~curriculum 配置~~ ✅ → GPU 端到端验证 → shaped reward
+- 小模型基线：Qwen3-14B=20%, Qwen3-32B=30%（breadth/maintenance 是主要瓶颈，reasoning=0%）
 - 成功标准：7B 模型 composite ≥ 45%, maintenance ≥ 30%
 
 ### 优先级变更记录
@@ -237,9 +247,9 @@ eval/
 
 | 问题 | 严重度 | 备注 |
 |------|--------|------|
-| sport priority>random 偶尔 flaky | 低 | 某些 seed 下差异不显著 |
+| ~~sport priority>random 偶尔 flaky~~ | ~~低~~ | ✅ 改为 global avg 软检查（2% 容差）|
 | ~~MemoryEnv search 是 substring~~ | ~~中~~ | ✅ 已改为 ChromaDB embedding search |
-| stream_agent 工具解析对非标准格式脆弱 | 中 | GPT-OSS-120B 零分可能与此相关 |
+| ~~stream_agent 工具解析对非标准格式脆弱~~ | ~~中~~ | ✅ 支持 tool_call/function_call/code block/bare JSON 四种格式 |
 
 ---
 
@@ -252,6 +262,7 @@ eval/
 ### Agent RL Training
 - DeepSeek-R1 (2501.12948), Agent-R1 (2511.14460), WebAgent-R1 (2505.16421)
 - REDSearcher (2602.14234), Simia (2511.01824)
+- Search-R1 (2503.09516), VerlTool (2509.01055), AgentGym-RL (ICLR 2026)
 
 ### Benchmarks
 - LoCoMo (2402.17753), MemoryAgentBench (ICLR 2026), LongMemEval (2024)

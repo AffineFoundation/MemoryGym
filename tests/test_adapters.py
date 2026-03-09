@@ -1,12 +1,28 @@
 """Tests for RL framework adapter shared utilities."""
 
+import importlib
+import sys
+from pathlib import Path
+
+import pytest
+
 from memorygym.adapters._common import (
     format_tool_result,
     parse_tool_calls,
     get_system_prompt,
     run_episode,
 )
+from memorygym.adapters.verl_reward import compute_score
 from memorygym.training import MemoryEnv
+
+
+def _verl_importable() -> bool:
+    """Check if verl's full import chain works."""
+    try:
+        from verl.experimental.agent_loop.agent_loop import AgentLoopBase
+        return True
+    except (ImportError, Exception):
+        return False
 
 
 class TestParseToolCalls:
@@ -158,3 +174,84 @@ class TestRunEpisode:
         # Should have both model tokens (1) and env tokens (0)
         assert 1 in result["loss_mask"]
         assert 0 in result["loss_mask"]
+
+
+class TestVerlReward:
+    def test_exact_match(self):
+        assert compute_score("memorygym", "42", "42") == 1.0
+
+    def test_case_insensitive(self):
+        assert compute_score("memorygym", "Alice", "alice") == 1.0
+
+    def test_mismatch(self):
+        assert compute_score("memorygym", "43", "42") == 0.0
+
+    def test_numeric_tolerance(self):
+        # 2% tolerance: 100 vs 101 → within tolerance
+        assert compute_score("memorygym", "101", "100") == 1.0
+        # 5% → outside tolerance
+        assert compute_score("memorygym", "105", "100") == 0.0
+
+    def test_empty_strings(self):
+        assert compute_score("memorygym", "", "42") == 0.0
+        assert compute_score("memorygym", "42", "") == 0.0
+
+    def test_pre_computed_reward(self):
+        score = compute_score(
+            "memorygym", "", "",
+            extra_info={"env_reward": 0.75},
+        )
+        assert score == 0.75
+
+    def test_percentage_format(self):
+        assert compute_score("memorygym", "50%", "50%") == 1.0
+
+
+class TestVerlAdapterImport:
+    def test_verl_adapter_importable(self):
+        """Verify verl adapter module loads without error."""
+        from memorygym.adapters import verl_adapter
+        assert hasattr(verl_adapter, "MemoryGymAgentLoop")
+
+    def test_verl_available_detected(self):
+        """_VERL_AVAILABLE depends on full verl import chain."""
+        from memorygym.adapters import verl_adapter
+        # May be False if transformers version incompatible
+        assert isinstance(verl_adapter._VERL_AVAILABLE, bool)
+
+    @pytest.mark.skipif(
+        not _verl_importable(),
+        reason="verl import chain requires compatible transformers",
+    )
+    def test_agent_registered(self):
+        """Verify the agent loop is registered with verl."""
+        from verl.experimental.agent_loop.agent_loop import (
+            _agent_loop_registry,
+        )
+        assert "memorygym_agent" in _agent_loop_registry
+
+
+class TestGenerateTrainData:
+    def test_generate_prompts(self):
+        # Import from scripts/ directory
+        spec = importlib.util.spec_from_file_location(
+            "generate_train_data",
+            Path(__file__).parent.parent / "scripts" / "generate_train_data.py",
+        )
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+
+        prompts = mod.generate_prompts(
+            templates=["company"],
+            tier="lite",
+            seeds=2,
+        )
+        assert len(prompts) == 2
+        for p in prompts:
+            assert "prompt" in p
+            assert "extra_info" in p
+            assert p["extra_info"]["template"] == "company"
+            assert p["extra_info"]["tier"] == "lite"
+            assert len(p["prompt"]) == 2  # system + user
+            assert p["prompt"][0]["role"] == "system"
+            assert p["prompt"][1]["role"] == "user"

@@ -288,7 +288,7 @@ class WorldTemplate(ABC):
         # Generate relationships if template supports them
         if self._relationship_types():
             rng_rel = Random(seed + 9191)
-            n_rels = max(3, n_entities // 5)
+            n_rels = max(6, n_entities // 3)
             world.relationships = self.generate_relationships(
                 rng_rel, world, n_rels)
 
@@ -489,6 +489,9 @@ class WorldTemplate(ABC):
             "outlier": self._gq_outlier,
             "relationship_lookup": self._gq_relationship_lookup,
             "relationship_hop": self._gq_relationship_hop,
+            "relationship_chain": self._gq_relationship_chain,
+            "relationship_count": self._gq_relationship_count,
+            "relationship_filter": self._gq_relationship_filter,
         }.get(competency)
         return fn(world, rng, available) if fn else None
 
@@ -955,6 +958,143 @@ class WorldTemplate(ABC):
             )
         return None
 
+    def _gq_relationship_chain(self, world, rng, available):
+        """2-hop path: A→B→C, ask about C's attribute.
+
+        Example: "CompanyA supplies to CompanyB. CompanyB partners with
+        CompanyC. What is CompanyC's revenue?"
+        """
+        if not world.relationships:
+            return None
+        avail_names = {e.name for e in available}
+        # Build adjacency
+        adj: dict[str, list[tuple[str, str]]] = {}
+        for r in world.relationships:
+            if r.source in avail_names and r.target in avail_names:
+                adj.setdefault(r.source, []).append((r.target, r.relation))
+
+        # Find 2-hop chains A→B→C where A≠C
+        chains = []
+        for a, neighbors_a in adj.items():
+            for b, r1 in neighbors_a:
+                if b in adj:
+                    for c, r2 in adj[b]:
+                        if c != a:
+                            chains.append((a, r1, b, r2, c))
+        if not chains:
+            return None
+
+        a, r1, b, r2, c = rng.choice(chains)
+        c_entity = world.get_entity(c)
+        if not c_entity:
+            return None
+        numeric = [attr for attr in world.active_attrs
+                   if isinstance(c_entity.get(attr), (int, float))]
+        if not numeric:
+            return None
+        attr = rng.choice(numeric)
+        label = self.attr_label(attr)
+        val = c_entity.get(attr)
+        fmt_val = self._format_value(attr, val)
+        ew = self.entity_word
+        r1_phrase = r1.replace("_", " ")
+        r2_phrase = r2.replace("_", " ")
+        q = rng.choice([
+            f"{a} {r1_phrase} {b}. {b} {r2_phrase} another {ew}. "
+            f"What is that {ew}'s {label}?",
+            f"Follow the chain: {a} {r1_phrase} {b}, then {b} "
+            f"{r2_phrase} a third {ew}. Report the third {ew}'s "
+            f"{label}.",
+        ])
+        return GeneratedQA(
+            q, fmt_val, "relationship_chain",
+            [a, b, c], purpose="comprehension",
+            source_attr=attr,
+        )
+
+    def _gq_relationship_count(self, world, rng, available):
+        """Count outgoing relationships of a given type.
+
+        Example: "How many companies does CompanyA supply to?"
+        """
+        if not world.relationships:
+            return None
+        avail_names = {e.name for e in available}
+        # Group outgoing rels by (source, relation)
+        groups: dict[tuple[str, str], list[str]] = {}
+        for r in world.relationships:
+            if r.source in avail_names and r.target in avail_names:
+                key = (r.source, r.relation)
+                groups.setdefault(key, []).append(r.target)
+        # Need groups with count >= 2 for meaningful questions
+        valid = [(k, v) for k, v in groups.items() if len(v) >= 2]
+        if not valid:
+            return None
+
+        (source, relation), targets = rng.choice(valid)
+        count = len(targets)
+        rel_phrase = relation.replace("_", " ")
+        ew = self.entity_word
+        q = rng.choice([
+            f"How many {ew}s does {source} {rel_phrase}?",
+            f"Count the number of {ew}s that {source} {rel_phrase}.",
+        ])
+        return GeneratedQA(
+            q, str(count), "relationship_count",
+            [source] + targets, purpose="comprehension",
+            source_attr=relation,
+        )
+
+    def _gq_relationship_filter(self, world, rng, available):
+        """Among an entity's relationships, find the one with max/min attr.
+
+        Example: "Among all companies that CompanyA supplies to,
+        which has the highest revenue?"
+        """
+        if not world.relationships:
+            return None
+        avail_names = {e.name for e in available}
+        # Group outgoing rels by (source, relation)
+        groups: dict[tuple[str, str], list[str]] = {}
+        for r in world.relationships:
+            if r.source in avail_names and r.target in avail_names:
+                key = (r.source, r.relation)
+                groups.setdefault(key, []).append(r.target)
+        valid = [(k, v) for k, v in groups.items() if len(v) >= 2]
+        if not valid:
+            return None
+
+        (source, relation), targets = rng.choice(valid)
+        # Pick a numeric attribute
+        attr = rng.choice(world.active_attrs)
+        target_entities = [world.get_entity(t) for t in targets]
+        target_entities = [e for e in target_entities
+                          if e and isinstance(e.get(attr), (int, float))]
+        if len(target_entities) < 2:
+            return None
+
+        use_max = rng.choice([True, False])
+        if use_max:
+            best = max(target_entities, key=lambda e: e.get(attr))
+        else:
+            best = min(target_entities, key=lambda e: e.get(attr))
+        label = self.attr_label(attr)
+        rel_phrase = relation.replace("_", " ")
+        ew = self.entity_word
+        extreme = "highest" if use_max else "lowest"
+        q = rng.choice([
+            f"Among all {ew}s that {source} {rel_phrase}, which has "
+            f"the {extreme} {label}?",
+            f"Of the {ew}s {source} {rel_phrase}, name the one with "
+            f"the {extreme} {label}.",
+        ])
+        return GeneratedQA(
+            q, best.name, "relationship_filter",
+            [source] + [e.name for e in target_entities],
+            purpose="comprehension",
+            source_attr=attr,
+        )
+
     # ── Concrete: post-storage adaptive questioning ──
 
     def _numeric_variants(self, attr: str, val: Any) -> list[str]:
@@ -1312,7 +1452,11 @@ class WorldTemplate(ABC):
                       "ratio", "comparison", "multi_hop", "outlier"]
         # Add relationship types only if world has relationships
         if world.relationships:
-            comp_types.extend(["relationship_lookup", "relationship_hop"])
+            comp_types.extend([
+                "relationship_lookup", "relationship_hop",
+                "relationship_chain", "relationship_count",
+                "relationship_filter",
+            ])
         rng.shuffle(comp_types)
         comp_fn_map = {
             "synthesis": self._gq_synthesis,
@@ -1324,14 +1468,22 @@ class WorldTemplate(ABC):
             "outlier": self._gq_outlier,
             "relationship_lookup": self._gq_relationship_lookup,
             "relationship_hop": self._gq_relationship_hop,
+            "relationship_chain": self._gq_relationship_chain,
+            "relationship_count": self._gq_relationship_count,
+            "relationship_filter": self._gq_relationship_filter,
         }
         for i in range(n_comprehension):
-            ctype = comp_types[i % len(comp_types)]
-            fn = comp_fn_map[ctype]
-            q = fn(world, rng, comp_pool)
-            if q:
-                q.purpose = "comprehension"
-                questions.append(q)
+            q = None
+            # Try the assigned type first, then fall back to others
+            primary = comp_types[i % len(comp_types)]
+            candidates = [primary] + [t for t in comp_types if t != primary]
+            for ctype in candidates:
+                fn = comp_fn_map[ctype]
+                q = fn(world, rng, comp_pool)
+                if q:
+                    q.purpose = "comprehension"
+                    questions.append(q)
+                    break
 
         # Abstention
         for _ in range(n_abstention):

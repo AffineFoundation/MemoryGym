@@ -33,6 +33,7 @@ htmlcov/
 
 # Secrets
 .env
+*.lock
 
 # Development log (local only, not committed)
 devlog/

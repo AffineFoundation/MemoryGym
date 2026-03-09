@@ -277,6 +277,41 @@ def test_bare_json_ignores_unknown_tools():
     assert len(calls) == 0
 
 
+def test_function_call_tag():
+    """<function_call> tag variant is parsed correctly."""
+    text = '<function_call>{"name": "memory_store", "arguments": {"content": "test data"}}</function_call>'
+    calls = _extract_tool_calls(text)
+    assert len(calls) == 1
+    assert calls[0]["name"] == "memory_store"
+
+
+def test_markdown_code_block():
+    """Markdown code block format is parsed correctly."""
+    text = 'Let me search for that.\n```json\n{"name": "memory_search", "arguments": {"query": "Alice"}}\n```'
+    calls = _extract_tool_calls(text)
+    assert len(calls) == 1
+    assert calls[0]["name"] == "memory_search"
+
+
+def test_markdown_code_block_no_lang():
+    """Markdown code block without language tag works."""
+    text = '```\n{"name": "submit_answer", "arguments": {"answer": "42"}}\n```'
+    calls = _extract_tool_calls(text)
+    assert len(calls) == 1
+    assert calls[0]["name"] == "submit_answer"
+
+
+def test_xml_preferred_over_code_block():
+    """XML tool_call tags take priority over code blocks."""
+    text = (
+        '<tool_call>{"name": "submit_answer", "arguments": {"answer": "from_xml"}}</tool_call>\n'
+        '```json\n{"name": "submit_answer", "arguments": {"answer": "from_block"}}\n```'
+    )
+    calls = _extract_tool_calls(text)
+    assert len(calls) == 1
+    assert calls[0]["arguments"]["answer"] == "from_xml"
+
+
 if __name__ == "__main__":
     import sys
     tests = [v for k, v in sorted(globals().items()) if k.startswith("test_")]

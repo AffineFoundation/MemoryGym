@@ -1,0 +1,115 @@
+# verl GRPO curriculum training for MemoryGym
+#
+# Progressive difficulty: lite → standard → hard (ScalingInter-RL inspired)
+#
+# Stage 1 (lite):    30 entities, budget=15, short episodes → learn tool usage
+# Stage 2 (standard): 60 entities, budget=30, medium episodes → learn strategy
+# Stage 3 (hard):   120 entities, budget=30 (4:1 pressure) → learn efficiency
+#
+# Usage:
+#   # 1. Generate curriculum data (mixed tiers)
+#   python scripts/generate_train_data.py --curriculum --seeds 100 \
+#       --output data/curriculum_train.jsonl
+#
+#   # 2. Generate stage-specific data
+#   python scripts/generate_train_data.py --tier lite --seeds 100 \
+#       --output data/stage1_lite.jsonl
+#   python scripts/generate_train_data.py --tier standard --seeds 50 \
+#       --output data/stage2_standard.jsonl
+#   python scripts/generate_train_data.py --tier hard --seeds 30 \
+#       --output data/stage3_hard.jsonl
+#
+#   # 3. Train stage by stage (swap data + config overrides)
+#   # Stage 1: lite only
+#   python -m verl.trainer.main_ppo --config-path scripts \
+#       --config-name verl_curriculum \
+#       data.train_files=data/stage1_lite.jsonl \
+#       trainer.total_epochs=2 \
+#       trainer.experiment_name=stage1-lite
+#
+#   # Stage 2: standard (resume from stage 1 checkpoint)
+#   python -m verl.trainer.main_ppo --config-path scripts \
+#       --config-name verl_curriculum \
+#       data.train_files=data/stage2_standard.jsonl \
+#       data.max_response_length=12288 \
+#       actor_rollout_ref.rollout.multi_turn.max_assistant_turns=80 \
+#       trainer.total_epochs=2 \
+#       trainer.experiment_name=stage2-standard \
+#       trainer.resume_from=<stage1_checkpoint>
+#
+#   # Stage 3: hard (resume from stage 2 checkpoint)
+#   python -m verl.trainer.main_ppo --config-path scripts \
+#       --config-name verl_curriculum \
+#       data.train_files=data/stage3_hard.jsonl \
+#       data.max_response_length=16384 \
+#       actor_rollout_ref.rollout.multi_turn.max_assistant_turns=120 \
+#       trainer.total_epochs=3 \
+#       trainer.experiment_name=stage3-hard \
+#       trainer.resume_from=<stage2_checkpoint>
+
+defaults:
+  - _self_
+
+data:
+  train_files: data/curriculum_train.jsonl
+  val_files: null
+  train_batch_size: 16  # smaller batch for curriculum stability
+  val_batch_size: 4
+  max_prompt_length: 4096
+  max_response_length: 8192  # stage 1 default; increase for harder stages
+
+tokenizer:
+  tokenizer_path: Qwen/Qwen3-32B
+
+actor_rollout_ref:
+  model:
+    path: Qwen/Qwen3-32B
+
+  actor:
+    optim:
+      lr: 5.0e-7  # lower LR for curriculum stability
+      weight_decay: 0.01
+    ppo_mini_batch_size: 4
+    ppo_micro_batch_size_per_gpu: 1
+    grad_clip: 1.0
+    entropy_coeff: 0.01
+
+  rollout:
+    prompt_length: ${data.max_prompt_length}
+    response_length: ${data.max_response_length}
+    temperature: 0.7
+    top_p: 0.95
+    n: 4  # GRPO: 4 trajectories per prompt
+
+    agent:
+      num_workers: 8
+      default_agent_loop: memorygym_agent
+      agent_loop_config_path: scripts/memorygym_agent.yaml
+
+    multi_turn:
+      enable: true
+      max_assistant_turns: 50  # stage 1 default; increase for harder stages
+      max_user_turns: 50
+
+  ref:
+    fsdp_config:
+      param_offload: true
+
+algorithm:
+  adv_estimator: grpo
+  norm_adv_by_std_in_grpo: true
+  kl_ctrl:
+    kl_coef: 0.02
+
+custom_reward_function:
+  path: memorygym/adapters/verl_reward.py
+  name: compute_score
+
+trainer:
+  total_epochs: 2  # per stage
+  save_freq: 50
+  test_freq: 25
+  project_name: memorygym-curriculum
+  experiment_name: curriculum-stage1
+  logger:
+    - wandb

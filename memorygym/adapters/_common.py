@@ -10,22 +10,69 @@ import re
 from typing import Any
 
 
-_TOOL_CALL_RE = re.compile(r"<tool_call>(.*?)</tool_call>", re.DOTALL)
+_TOOL_CALL_RE = re.compile(
+    r"<(?:tool_call|function_call)>(.*?)</(?:tool_call|function_call)>",
+    re.DOTALL,
+)
+_CODE_BLOCK_RE = re.compile(
+    r"```(?:json)?\s*\n(\{.*?\})\s*\n```", re.DOTALL,
+)
+_BARE_JSON_RE = re.compile(
+    r'\{[^{}]*"name"\s*:\s*"[^"]+?"[^{}]*"arguments"\s*:\s*\{[^{}]*\}[^{}]*\}',
+)
+
+_KNOWN_TOOLS = {
+    "memory_store", "memory_search", "memory_get",
+    "memory_forget", "memory_list", "submit_answer",
+}
 
 
 def parse_tool_calls(text: str) -> list[dict[str, Any]]:
-    """Parse <tool_call>...</tool_call> blocks from model output.
+    """Parse tool calls from model output.
+
+    Supports (in priority order):
+    1. <tool_call>/<function_call> XML tags
+    2. Markdown code blocks
+    3. Bare JSON with "name"/"arguments" keys
 
     Returns list of {"tool": str, "args": dict}.
     """
     calls = []
+    # 1) XML-wrapped format
     for match in _TOOL_CALL_RE.finditer(text):
         try:
             data = json.loads(match.group(1))
-            calls.append({
-                "tool": data["name"],
-                "args": data.get("arguments", {}),
-            })
+            if data.get("name") in _KNOWN_TOOLS:
+                calls.append({
+                    "tool": data["name"],
+                    "args": data.get("arguments", {}),
+                })
+        except (json.JSONDecodeError, KeyError):
+            continue
+    if calls:
+        return calls
+    # 2) Markdown code blocks
+    for match in _CODE_BLOCK_RE.finditer(text):
+        try:
+            data = json.loads(match.group(1))
+            if data.get("name") in _KNOWN_TOOLS:
+                calls.append({
+                    "tool": data["name"],
+                    "args": data.get("arguments", {}),
+                })
+        except (json.JSONDecodeError, KeyError):
+            continue
+    if calls:
+        return calls
+    # 3) Bare JSON fallback
+    for match in _BARE_JSON_RE.finditer(text):
+        try:
+            data = json.loads(match.group(0))
+            if data.get("name") in _KNOWN_TOOLS:
+                calls.append({
+                    "tool": data["name"],
+                    "args": data.get("arguments", {}),
+                })
         except (json.JSONDecodeError, KeyError):
             continue
     return calls

@@ -62,19 +62,42 @@ eval 数据（ROADMAP.md §3）← 衡量差距
 
 ## 当前任务
 
-小模型基线 eval（Qwen3-14B/32B），建立 RL 前基准
+待办清空。所有非阻塞任务已完成。剩余任务阻塞于 GPU（端到端训练验证）和 API key（movie eval）。
+
+## 已完成
+
+### Phase 3 — RL 训练闭环（代码完成，待 GPU 验证）
+1. ~~MemoryEnv search 从 substring → embedding~~ ✅
+2. ~~GRPO 框架调研与选型~~ ✅ → verl + slime 双适配
+3. ~~小模型基线 eval（Qwen3-14B/32B）~~ ✅ → 14B=20%, 32B=30%
+4. ~~verl 环境搭建 + MemoryEnv AgentLoopBase 集成~~ ✅ → @register memorygym_agent + config + data gen + reward
+5. GPU 端到端训练验证（需 4+ GPU 环境）— 阻塞于硬件
+
+### 验证新功能
+1. ~~movie 模板验证~~ ✅
+2. ~~standard tier 关系题验证~~ ✅
+3. 用可用模型跑 movie 模板 real eval — 阻塞于 API key
+
+### 质量审查与复杂度提升 ✅
+1. ~~审查世界模板设计质量~~ ✅ → 修复 movie.py opening_weekend > box_office 约束违反
+2. ~~图拓扑方案增加问题复杂度~~ ✅ → 增加关系密度、新增 3 种关系题型、comprehension 重试逻辑
+
+### 战略调研 ✅
+1. ~~REDSearcher + agent RL 训练范式调研~~ ✅ → 产出 devlog/2026-03-08-agent-rl-research.md
 
 ## 待办
 
-> 战略推导生成。依据：对照北极星，RL 训练闭环是最大差距。
+> 战略推导。依据：所有外部依赖任务（GPU/API key）已阻塞，聚焦代码质量和鲁棒性。
 
-### Phase 3 — RL 训练闭环
-1. ~~MemoryEnv search 从 substring → embedding~~ ✅
-2. ~~GRPO 框架调研与选型~~ ✅ → verl（见 devlog/2026-03-08-grpo-framework-selection.md）
-3. 小模型基线 eval（Qwen3-14B/32B），建立 RL 前基准
-4. verl 环境搭建 + MemoryEnv AgentLoopBase 集成
+### Phase 4a — 系统鲁棒性（不依赖外部资源）
+1. ~~修复 priority>random 不变量 flaky~~ ✅ → 改为 global avg 软检查（2% 容差），67/67 invariants PASS
+2. ~~提升 stream_agent 工具解析鲁棒性~~ ✅ → 支持 <function_call>、markdown code block、bare JSON 三种格式，adapters/_common.py 同步更新
+3. ~~更新 ROADMAP §7 参考文献~~ ✅ → 补充 Search-R1, VerlTool, AgentGym-RL
 
-### 验证新功能
-1. 用可用模型跑 movie 模板 eval（seed=1, lite）
-2. 用 standard tier（更多问题）验证关系题出现率
+### Phase 4b — 训练准备（不依赖 GPU）
+1. ~~渐进式训练 curriculum 配置~~ ✅ → verl_curriculum.yaml（3 阶段）+ generate_train_data.py --curriculum（60/30/10 分布）
+2. ~~VerlTool 分离 tokenization 方案预研~~ ✅ → 设计文档 devlog/2026-03-08-verltool-tokenization.md（待 GPU 验证后实施）
 
+### 阻塞任务（等待外部资源）
+- GPU 端到端训练验证（需 4+ GPU）
+- Movie 模板 real eval（需 API key）
