@@ -213,96 +213,102 @@ _Q_TEXTS: dict[str, list[str]] = {
 _SENTENCE_TMPLS: dict[str, list[tuple[str, str]]] = {
     "citations": [
         ("has accumulated {val} citations across all publications", "none"),
-        ("citation count grew from {distractor} to {val} this year",
-         "temporal"),
-        ("holds {val} total citations, outpacing {other_name} at "
-         "{other_val}", "comparative"),
+        ("citation counts of {distractor} and {val} across reporting "
+         "periods", "temporal"),
+        ("citation tallies of {val} and {other_val} in separate "
+         "databases", "comparative"),
     ],
     "h_index": [
         ("maintains an h-index of {val}", "none"),
-        ("h-index improved from {distractor} to {val} following recent "
-         "publications", "temporal"),
-        ("achieved an h-index of {val}, compared to {other_name}'s "
-         "{other_val}", "comparative"),
+        ("h-index readings of {val} and {distractor} in different "
+         "assessments", "temporal"),
+        ("h-index values of {other_val} and {val} from separate "
+         "analyses", "comparative"),
     ],
     "funding_k": [
         ("holds {val} in active research funding", "none"),
-        ("secured funding growth from {distractor} to {val}", "temporal"),
-        ("manages {val} in grants, though only {distractor} is for current "
-         "projects", "qualified"),
+        ("funding figures of {distractor} and {val} across periods",
+         "temporal"),
+        ("grant amounts of {val} and {distractor} by different "
+         "categorizations", "qualified"),
     ],
     "students": [
         ("supervises {val} doctoral students", "none"),
-        ("student count rose from {distractor} to {val}", "temporal"),
-        ("advises {val} PhD students, with {distractor} expected to "
-         "graduate this year", "qualified"),
+        ("student counts of {val} and {distractor} in different terms",
+         "temporal"),
+        ("student tallies of {distractor} and {val} under different "
+         "criteria", "qualified"),
     ],
     "review_score": [
         ("earned an average review score of {val}", "none"),
-        ("review scores improved from {distractor} to {val}", "temporal"),
-        ("rated {val} by peers, versus {other_name}'s {other_val}",
-         "comparative"),
+        ("review scores of {distractor} and {val} across evaluation "
+         "rounds", "temporal"),
+        ("review ratings of {val} and {other_val} from separate "
+         "panels", "comparative"),
     ],
     "papers": [
         ("has published {val} peer-reviewed papers", "none"),
-        ("publication count increased from {distractor} to {val}",
+        ("publication counts of {val} and {distractor} across periods",
          "temporal"),
-        ("authored {val} papers, of which {distractor} are first-author",
-         "qualified"),
+        ("paper tallies of {distractor} and {val} by different counting "
+         "methods", "qualified"),
     ],
     "patents": [
         ("holds {val} patents from research innovations", "none"),
-        ("patent portfolio grew from {distractor} to {val}", "temporal"),
-        ("owns {val} patents, compared to {other_name}'s {other_val}",
-         "comparative"),
+        ("patent counts of {distractor} and {val} in different filings",
+         "temporal"),
+        ("patent holdings of {val} and {other_val} in separate "
+         "records", "comparative"),
     ],
     "collaborators": [
         ("works with {val} research collaborators", "none"),
-        ("collaboration network expanded from {distractor} to {val}",
+        ("collaborator counts of {val} and {distractor} across periods",
          "temporal"),
-        ("maintains {val} collaborators, though only {distractor} are "
-         "active this year", "qualified"),
+        ("collaboration figures of {distractor} and {val} by different "
+         "definitions", "qualified"),
     ],
     "years_active": [
         ("has been active in research for {val} years", "none"),
         ("career spans {val} years in the field", "none"),
-        ("active for {val} years, compared to {other_name}'s {other_val}",
-         "comparative"),
+        ("career lengths of {other_val} and {val} years in different "
+         "records", "comparative"),
     ],
     "awards": [
         ("has received {val} academic awards", "none"),
-        ("award count rose from {distractor} to {val}", "temporal"),
-        ("earned {val} awards, surpassing {other_name}'s {other_val}",
-         "comparative"),
+        ("award counts of {distractor} and {val} in different periods",
+         "temporal"),
+        ("award tallies of {val} and {other_val} from separate "
+         "sources", "comparative"),
     ],
     "grant_count": [
         ("has been awarded {val} research grants", "none"),
-        ("grant count rose from {distractor} to {val}", "temporal"),
-        ("secured {val} grants, compared to {other_name}'s {other_val}",
-         "comparative"),
+        ("grant counts of {val} and {distractor} across periods",
+         "temporal"),
+        ("grant figures of {other_val} and {val} in separate "
+         "databases", "comparative"),
     ],
     "phd_supervised": [
         ("has supervised {val} PhD students to completion", "none"),
-        ("PhD supervision count grew from {distractor} to {val}",
-         "temporal"),
-        ("graduated {val} doctoral students, versus {other_name}'s "
-         "{other_val}", "comparative"),
+        ("PhD supervision counts of {distractor} and {val} in different "
+         "records", "temporal"),
+        ("doctoral graduate tallies of {val} and {other_val} from "
+         "separate counts", "comparative"),
     ],
     "conference_talks": [
         ("has delivered {val} talks at international conferences", "none"),
-        ("conference presentations grew from {distractor} to {val}",
-         "temporal"),
+        ("conference talk counts of {val} and {distractor} across "
+         "periods", "temporal"),
     ],
     "industry_projects": [
         ("has participated in {val} industry-funded projects", "none"),
-        ("industry project count rose from {distractor} to {val}",
-         "temporal"),
+        ("industry project counts of {distractor} and {val} in different "
+         "tallies", "temporal"),
     ],
     "review_count": [
         ("has completed {val} peer reviews for journals and conferences",
          "none"),
-        ("review workload grew from {distractor} to {val} this year",
-         "temporal"),
+        ("peer review counts of {val} and {distractor} in successive "
+         "periods", "temporal"),
     ],
     "publication_years": [
         ("reported yearly publication counts of {val}", "none"),

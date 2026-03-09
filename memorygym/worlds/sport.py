@@ -224,92 +224,108 @@ _Q_TEXTS: dict[str, list[str]] = {
 _SENTENCE_TMPLS: dict[str, list[tuple[str, str]]] = {
     "wins": [
         ("recorded {val} wins this season", "none"),
-        ("improved from {distractor} to {val} wins", "temporal"),
-        ("tallied {val} wins, ahead of {other_name}'s {other_val}",
-         "comparative"),
+        ("win counts of {val} and {distractor} across seasons",
+         "temporal"),
+        ("win tallies of {other_val} and {val} from different "
+         "records", "comparative"),
     ],
     "losses": [
         ("suffered {val} losses on the season", "none"),
-        ("losses increased from {distractor} to {val}", "temporal"),
-        ("recorded {val} losses, versus {other_name}'s {other_val}",
-         "comparative"),
+        ("loss counts of {distractor} and {val} in successive seasons",
+         "temporal"),
+        ("loss figures of {val} and {other_val} from separate "
+         "tallies", "comparative"),
     ],
     "win_pct": [
         ("holds a winning percentage of {val}", "none"),
-        ("win rate climbed from {distractor} to {val}", "temporal"),
-        ("maintains {val} win rate, outpacing {other_name} at "
-         "{other_val}", "comparative"),
+        ("win rate figures of {val} and {distractor} across periods",
+         "temporal"),
+        ("win percentages of {other_val} and {val} from different "
+         "sources", "comparative"),
     ],
     "points_scored": [
         ("put up {val} points on offense", "none"),
-        ("scoring improved from {distractor} to {val} points", "temporal"),
-        ("scored {val}, of which {distractor} came in the second half",
-         "qualified"),
+        ("scoring figures of {distractor} and {val} points in different "
+         "periods", "temporal"),
+        ("point totals of {val} and {distractor} by different counting "
+         "methods", "qualified"),
     ],
     "points_allowed": [
         ("allowed {val} points defensively", "none"),
-        ("points allowed changed from {distractor} to {val}", "temporal"),
-        ("conceded {val} points, compared to {other_name}'s {other_val}",
-         "comparative"),
+        ("points allowed readings of {val} and {distractor} across "
+         "seasons", "temporal"),
+        ("defensive point figures of {other_val} and {val} from separate "
+         "analyses", "comparative"),
     ],
     "roster_size": [
         ("carries {val} players on the active roster", "none"),
-        ("roster expanded from {distractor} to {val} players", "temporal"),
-        ("has {val} players, though only {distractor} are starters",
-         "qualified"),
+        ("roster counts of {distractor} and {val} players in different "
+         "periods", "temporal"),
+        ("roster figures of {val} and {distractor} under different "
+         "classifications", "qualified"),
     ],
     "avg_age": [
         ("fields a squad with an average age of {val}", "none"),
-        ("average age shifted from {distractor} to {val}", "temporal"),
-        ("averages {val} in age, compared to {other_name}'s {other_val}",
-         "comparative"),
+        ("average age figures of {val} and {distractor} across seasons",
+         "temporal"),
+        ("average age readings of {val} and {other_val} from different "
+         "rosters", "comparative"),
     ],
     "revenue_m": [
         ("generated {val} in total revenue", "none"),
-        ("revenue grew from {distractor} to {val}", "temporal"),
-        ("earned {val}, surpassing {other_name}'s {other_val}",
-         "comparative"),
+        ("revenue figures of {distractor} and {val} in successive "
+         "periods", "temporal"),
+        ("revenue amounts of {val} and {other_val} from separate "
+         "reports", "comparative"),
     ],
     "attendance_avg": [
         ("draws an average crowd of {val} per game", "none"),
-        ("attendance grew from {distractor} to {val}", "temporal"),
-        ("averages {val} fans, compared to {other_name}'s {other_val}",
-         "comparative"),
+        ("attendance figures of {val} and {distractor} across seasons",
+         "temporal"),
+        ("attendance counts of {other_val} and {val} from different "
+         "sources", "comparative"),
     ],
     "championships": [
         ("has won {val} championships in franchise history", "none"),
-        ("championship count grew from {distractor} to {val}", "temporal"),
-        ("holds {val} titles, ahead of {other_name}'s {other_val}",
-         "comparative"),
+        ("championship counts of {distractor} and {val} in different "
+         "records", "temporal"),
+        ("title counts of {val} and {other_val} from separate "
+         "databases", "comparative"),
     ],
     # New numeric attrs
     "playoff_appearances": [
         ("has made {val} playoff appearances", "none"),
-        ("playoff appearances grew from {distractor} to {val}", "temporal"),
-        ("has {val} playoff berths, compared to {other_name}'s {other_val}",
-         "comparative"),
+        ("playoff appearance counts of {val} and {distractor} across "
+         "eras", "temporal"),
+        ("playoff figures of {other_val} and {val} from different "
+         "records", "comparative"),
     ],
     "draft_picks": [
         ("holds {val} draft picks in total", "none"),
-        ("draft pick count increased from {distractor} to {val}", "temporal"),
+        ("draft pick counts of {distractor} and {val} in different "
+         "tallies", "temporal"),
     ],
     "salary_cap_m": [
         ("operates under a salary cap of {val}", "none"),
-        ("salary cap shifted from {distractor} to {val}", "temporal"),
-        ("carries {val} in payroll, versus {other_name}'s {other_val}",
-         "comparative"),
+        ("salary cap figures of {val} and {distractor} across years",
+         "temporal"),
+        ("payroll amounts of {val} and {other_val} from separate "
+         "filings", "comparative"),
     ],
     "social_media_followers": [
         ("boasts {val} social media followers", "none"),
-        ("online following grew from {distractor} to {val}", "temporal"),
+        ("follower counts of {distractor} and {val} across platforms",
+         "temporal"),
     ],
     "stadium_capacity": [
         ("plays in a stadium seating {val}", "none"),
-        ("stadium capacity expanded from {distractor} to {val}", "temporal"),
+        ("stadium capacity figures of {val} and {distractor} in different "
+         "reports", "temporal"),
     ],
     "injury_count": [
         ("has dealt with {val} injuries this season", "none"),
-        ("injury count rose from {distractor} to {val}", "temporal"),
+        ("injury counts of {distractor} and {val} in successive "
+         "periods", "temporal"),
     ],
     # New dtype attrs
     "season_wins": [

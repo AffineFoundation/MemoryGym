@@ -533,28 +533,6 @@ def test_fictitious_entity_not_in_world():
                     f"{q.required_entities[0]} exists in world")
 
 
-def _compute_simulated_composite(
-    accuracy, storage, maintenance_raw, reasoning,
-    n_correct, writes_used, n_questions, budget,
-    retrieval_acc,
-):
-    """Mirror eval_scorer.py composite for simulation testing."""
-    # Maintenance: gated by retrieval accuracy (V8)
-    maintenance = maintenance_raw * min(retrieval_acc / 0.5, 1.0)
-    # Efficiency: raw × accuracy, 0 when no writes (V7)
-    ideal_rate = n_questions / max(budget, 1)
-    if writes_used == 0:
-        efficiency = 0.0
-    else:
-        raw_eff = min(n_correct / writes_used / ideal_rate, 1.0)
-        efficiency = raw_eff * accuracy
-    # Process
-    write_rate = min(writes_used / max(n_questions * 0.5, 1), 1.0)
-    process = write_rate * accuracy
-    return (0.25 * accuracy + 0.20 * storage + 0.20 * reasoning
-            + 0.15 * maintenance + 0.10 * efficiency + 0.10 * process)
-
-
 def test_name_index_composite():
     """Name-only storage attack must score below naive in composite.
 
@@ -562,33 +540,43 @@ def test_name_index_composite():
     After V8 fix, detect_stored_entities requires name+value → coverage=0%.
     Agent can't answer any questions → composite ≈ 0.
     """
-    # Name-index: 0 correct (no values stored), 1 write
-    name_idx = _compute_simulated_composite(
-        accuracy=0.0, storage=0.0, maintenance_raw=0.0, reasoning=0.0,
-        n_correct=0, writes_used=1, n_questions=20, budget=30,
-        retrieval_acc=0.0)
+    from memorygym.protocol import compute_axis_scores
 
-    # Naive: ~21.5% accuracy, 12 writes
-    naive = _compute_simulated_composite(
-        accuracy=0.215, storage=0.25, maintenance_raw=0.0, reasoning=0.10,
-        n_correct=4, writes_used=12, n_questions=20, budget=30,
-        retrieval_acc=0.25)
+    # Name-index: 0 correct, 0 stored entities, 1 write
+    name_idx = compute_axis_scores(
+        by_competency={"retrieval": [False] * 8, "update": [],
+                       "abstention": [True] * 3},
+        n_entities=60, stored_count=0, writes_used=1, write_budget=30,
+    )
 
-    assert name_idx < naive, (
-        f"name_index ({name_idx:.4f}) should be < naive ({naive:.4f})")
-    assert name_idx < 0.05, (
-        f"name_index ({name_idx:.4f}) should be near 0")
+    # Naive: some retrieval correct, 0 updates, 12 writes
+    naive = compute_axis_scores(
+        by_competency={"retrieval": [True] * 2 + [False] * 6,
+                       "update": [False] * 3,
+                       "synthesis": [True] + [False] * 2,
+                       "abstention": [True] * 3},
+        n_entities=60, stored_count=15, writes_used=12, write_budget=30,
+    )
+
+    assert name_idx["composite"] < naive["composite"], (
+        f"name_index ({name_idx['composite']:.4f}) should be < "
+        f"naive ({naive['composite']:.4f})")
+    assert name_idx["composite"] < 0.05, (
+        f"name_index ({name_idx['composite']:.4f}) should be near 0")
 
 
 def test_efficiency_zero_writes():
-    """Zero writes must produce zero efficiency and process."""
-    comp = _compute_simulated_composite(
-        accuracy=0.15, storage=0.0, maintenance_raw=0.0, reasoning=0.0,
-        n_correct=3, writes_used=0, n_questions=20, budget=30,
-        retrieval_acc=0.0)
-    # Only source of score: 0.25 × 0.15 = 0.0375 (from accuracy alone)
-    assert comp <= 0.05, (
-        f"Zero-write composite ({comp:.4f}) should be ≤ 0.05")
+    """Zero writes must produce zero efficiency."""
+    from memorygym.protocol import compute_axis_scores
+
+    axes = compute_axis_scores(
+        by_competency={"retrieval": [False] * 8,
+                       "abstention": [True] * 3},
+        n_entities=60, stored_count=0, writes_used=0, write_budget=30,
+    )
+    assert axes["efficiency"] == 0.0
+    assert axes["composite"] < 0.05, (
+        f"Zero-write composite ({axes['composite']:.4f}) should be ≤ 0.05")
 
 
 def test_detect_stored_requires_values():

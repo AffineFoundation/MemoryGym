@@ -26,7 +26,6 @@ from memorygym.protocol import (
     OFFICIAL_SEEDS,
     TIERS,
     compute_axis_scores,
-    compute_composite,
     format_leaderboard_entry,
     trajectory_to_conversation,
 )
@@ -409,10 +408,11 @@ def main(argv: list[str] | None = None) -> int:
                         t_tot += t
                 return f"{c_tot/t_tot:.0%}" if t_tot else "n/a"
 
+            from memorygym.protocol import REASONING_COMPETENCIES
             print(f"  {s_name:<12s} {acc:>8.0%} {stored:>6.0f} "
                   f"{comp_pct('retrieval'):>8s} "
                   f"{comp_pct('update'):>7s} "
-                  f"{comp_pct('synthesis', 'aggregation', 'conditional', 'ratio', 'comparison', 'multi_hop', 'outlier', 'delta'):>10s} "
+                  f"{comp_pct(*REASONING_COMPETENCIES):>10s} "
                   f"{comp_pct('abstention'):>11s}")
         print()
 
@@ -436,8 +436,8 @@ def main(argv: list[str] | None = None) -> int:
             # Official mode: use standard schema
             model_name = args.model or strategy_names[0]
             per_seed_out = _build_per_seed_axis_scores(
-                agg, strategy_names[0], template_names, n_questions,
-                write_budget)
+                agg, strategy_names[0], template_names, n_entities,
+                n_questions, write_budget)
             per_template_out = {}
             for tname in template_names:
                 per_template_out[tname] = [
@@ -525,61 +525,39 @@ def _build_per_seed_axis_scores(
     agg: dict[str, list[dict]],
     strategy_name: str,
     template_names: list[str],
+    n_entities: int,
     n_questions: int,
     write_budget: int,
 ) -> list[dict]:
     """Build per-seed axis scores from aggregated results."""
-    from memorygym.protocol import compute_composite
 
     per_seed: list[dict] = []
     for v in agg.get(strategy_name, []):
-        by_comp = v["by_competency"]
+        by_comp_tuples = v["by_competency"]  # {comp: (correct, total)}
 
-        def _comp_rate(*comps: str) -> float:
-            c_tot = t_tot = 0
-            for comp in comps:
-                c, t = by_comp.get(comp, (0, 0))
-                c_tot += c
-                t_tot += t
-            return c_tot / t_tot if t_tot else 0.0
+        # Convert (correct, total) tuples to list[bool] for compute_axis_scores
+        by_comp_bools: dict[str, list[bool]] = {}
+        for comp, (c, t) in by_comp_tuples.items():
+            by_comp_bools[comp] = [True] * c + [False] * (t - c)
 
-        breadth = _comp_rate("retrieval")
-        maintenance_raw = _comp_rate("update")
-        # Gate on breadth
-        maintenance = maintenance_raw * min(breadth / 0.5, 1.0)
-        reasoning = _comp_rate(
-            "synthesis", "aggregation", "conditional", "ratio",
-            "comparison", "multi_hop", "outlier", "delta")
-        abstention_diagnostic = _comp_rate("abstention")
+        stored_count = v.get("stored", 0)
+        writes_used = stored_count  # simulation: writes ≈ stored count
 
-        # Efficiency
-        n_correct = v["correct"]
-        n_total = v["total"]
-        accuracy = v["accuracy"]
-        # Approximate writes_used from stored count
-        writes_used = v.get("stored", 0)
-        ideal_rate = n_total / max(write_budget, 1)
-        if writes_used == 0:
-            efficiency = 0.0
-        else:
-            raw_eff = min(n_correct / writes_used / ideal_rate, 1.0)
-            efficiency = raw_eff * accuracy
-
-        composite = compute_composite(breadth, maintenance, reasoning,
-                                      efficiency)
+        axes = compute_axis_scores(
+            by_competency=by_comp_bools,
+            n_entities=n_entities,
+            stored_count=stored_count,
+            writes_used=writes_used,
+            write_budget=write_budget,
+        )
 
         per_seed.append({
             "template": v["template"],
             "seed": v["seed"],
-            "composite": round(composite, 4),
-            "breadth": round(breadth, 4),
-            "maintenance": round(maintenance, 4),
-            "reasoning": round(reasoning, 4),
-            "efficiency": round(efficiency, 4),
-            "abstention_diagnostic": round(abstention_diagnostic, 4),
-            "accuracy": round(accuracy, 4),
-            "correct": n_correct,
-            "total": n_total,
+            **axes,
+            "accuracy": round(v["accuracy"], 4),
+            "correct": v["correct"],
+            "total": v["total"],
         })
     return per_seed
 

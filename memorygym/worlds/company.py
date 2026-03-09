@@ -214,88 +214,98 @@ _Q_TEXTS: dict[str, list[str]] = {
 _SENTENCE_TMPLS: dict[str, list[tuple[str, str]]] = {
     "revenue_m": [
         ("reported annual revenue of {val}", "none"),
-        ("saw revenue climb from {distractor} to {val} over the fiscal year",
+        ("reported revenue figures of {distractor} and {val} across periods",
          "temporal"),
-        ("generated {val} in total revenue, compared to {other_name}'s "
-         "{other_val}", "comparative"),
+        ("generated revenue of {val} in one analysis and {other_val} in a "
+         "separate estimate", "comparative"),
     ],
     "profit_margin_pct": [
         ("maintains a profit margin of {val}", "none"),
-        ("improved its margin from {distractor} to {val} year-over-year",
-         "temporal"),
-        ("reported {val} net margin, though operating margin stands at "
-         "{distractor}", "qualified"),
+        ("recorded margin figures of {val} and {distractor} in different "
+         "assessments", "temporal"),
+        ("shows margin readings of {distractor} and {val} by different "
+         "accounting methods", "qualified"),
     ],
     "employees": [
         ("employs {val} staff members across its global operations", "none"),
-        ("expanded from {distractor} to {val} employees during the period",
+        ("workforce numbers show {val} and {distractor} across periods",
          "temporal"),
-        ("maintains a workforce of {val}, though only {distractor} are "
-         "full-time", "qualified"),
+        ("workforce counts of {distractor} and {val} by different "
+         "metrics", "qualified"),
     ],
     "market_cap_m": [
         ("carries a market capitalization of {val}", "none"),
-        ("market cap rose from {distractor} to {val} this quarter",
-         "temporal"),
-        ("valued at {val}, outpacing {other_name} at {other_val}",
-         "comparative"),
+        ("market cap figures of {distractor} and {val} were reported across "
+         "quarters", "temporal"),
+        ("with market valuations of {other_val} and {val} from different "
+         "sources", "comparative"),
     ],
     "debt_ratio_pct": [
         ("holds a debt-to-equity ratio of {val}", "none"),
-        ("saw its debt ratio shift from {distractor} to {val}", "temporal"),
-        ("carries {val} total leverage, with {distractor} in short-term "
-         "obligations", "qualified"),
+        ("debt ratio readings of {val} and {distractor} across reporting "
+         "periods", "temporal"),
+        ("leverage figures of {distractor} and {val} under different "
+         "calculations", "qualified"),
     ],
     "rd_spend_pct": [
         ("allocates {val} of revenue to R&D", "none"),
-        ("increased R&D spending from {distractor} to {val}", "temporal"),
-        ("invests {val} in R&D, compared to {other_name}'s {other_val}",
-         "comparative"),
+        ("R&D spending figures of {distractor} and {val} in successive "
+         "periods", "temporal"),
+        ("R&D investment estimates of {val} and {other_val} from different "
+         "analyses", "comparative"),
     ],
     "customer_count": [
         ("serves {val} customers worldwide", "none"),
-        ("grew its customer base from {distractor} to {val}", "temporal"),
-        ("counts {val} total customers, of which {distractor} are "
-         "enterprise accounts", "qualified"),
+        ("customer counts of {val} and {distractor} across periods",
+         "temporal"),
+        ("with customer tallies of {distractor} and {val} by different "
+         "criteria", "qualified"),
     ],
     "patent_count": [
         ("holds {val} active patents in its portfolio", "none"),
-        ("expanded its patent portfolio from {distractor} to {val}",
+        ("patent counts of {distractor} and {val} in different filings",
          "temporal"),
-        ("owns {val} patents, versus {other_name}'s {other_val}",
+        ("patent holdings of {val} and {other_val} in separate tallies",
          "comparative"),
     ],
     "offices": [
         ("operates {val} offices globally", "none"),
-        ("grew from {distractor} to {val} office locations", "temporal"),
-        ("has {val} offices, though only {distractor} are fully staffed",
-         "qualified"),
+        ("office counts of {val} and {distractor} reported in different "
+         "periods", "temporal"),
+        ("office tallies of {distractor} and {val} under different "
+         "counting methods", "qualified"),
     ],
     "founded_year": [
         ("was established in {val}", "none"),
-        ("traces its origins to {val}, having been reorganized from a "
-         "{distractor} predecessor", "temporal"),
-        ("founded in {val}, predating {other_name}", "comparative"),
+        ("founding dates of {distractor} and {val} appear in different "
+         "records", "temporal"),
+        ("with founding years of {val} and {other_val} in separate "
+         "registries", "comparative"),
     ],
     "gross_profit_m": [
         ("reported gross profit of {val}", "none"),
-        ("grew gross profit from {distractor} to {val}", "temporal"),
+        ("gross profit figures of {val} and {distractor} across periods",
+         "temporal"),
     ],
     "operating_income_m": [
         ("generated operating income of {val}", "none"),
-        ("saw operating income shift from {distractor} to {val}", "temporal"),
+        ("operating income readings of {distractor} and {val} in different "
+         "quarters", "temporal"),
     ],
     "capex_m": [
         ("invested {val} in capital expenditure", "none"),
-        ("increased capex from {distractor} to {val}", "temporal"),
+        ("capex figures of {val} and {distractor} reported in successive "
+         "periods", "temporal"),
     ],
     "dividend_yield_pct": [
         ("offers a dividend yield of {val}", "none"),
-        ("adjusted its dividend yield from {distractor} to {val}", "temporal"),
+        ("dividend yield readings of {distractor} and {val} in different "
+         "reports", "temporal"),
     ],
     "pe_ratio": [
         ("trades at a P/E ratio of {val}", "none"),
-        ("P/E ratio changed from {distractor} to {val}", "temporal"),
+        ("P/E ratio figures of {val} and {distractor} across assessments",
+         "temporal"),
     ],
     "inventory_turnover": [
         ("achieves an inventory turnover of {val}", "none"),
@@ -308,7 +318,8 @@ _SENTENCE_TMPLS: dict[str, list[tuple[str, str]]] = {
     ],
     "esg_score": [
         ("earned an ESG score of {val}", "none"),
-        ("improved its ESG score from {distractor} to {val}", "temporal"),
+        ("ESG scores of {distractor} and {val} in separate evaluations",
+         "temporal"),
     ],
     "business_summary": [
         ("{val}", "none"),

@@ -340,11 +340,22 @@ def worldbench_solver(
                 })
 
         writes_used = mem_budget.writes_used if mem_budget else 0
+
+        # Detect stored entities for scoring
+        n_entities = len(world.entities)
+        stored_count = 0
+        if backend is not None:
+            stored_contents = [e["content"] for e in backend.list()]
+            stored_names, _ = tmpl.detect_stored_entities(
+                world, stored_contents)
+            stored_count = len(stored_names)
+
         state.store.set("benchmark_answers", answers)
         state.store.set("writes_used", writes_used)
         state.store.set("write_budget", mem_budget.total_writes
                         if mem_budget else 30)
-        state.store.set("storage_coverage", 0.0)  # computed by scorer
+        state.store.set("n_entities", n_entities)
+        state.store.set("stored_count", stored_count)
         state.completed = True
         return state
 

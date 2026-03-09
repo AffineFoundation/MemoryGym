@@ -242,105 +242,105 @@ _Q_TEXTS: dict[str, list[str]] = {
 _SENTENCE_TMPLS: dict[str, list[tuple[str, str]]] = {
     "budget_m": [
         ("was produced on a budget of {val}", "none"),
-        ("saw its budget grow from {distractor} to {val} during production",
-         "temporal"),
-        ("cost {val} to produce, compared to {other_name}'s {other_val}",
-         "comparative"),
+        ("production budget figures of {distractor} and {val} in different "
+         "reports", "temporal"),
+        ("budget estimates of {val} and {other_val} from separate "
+         "sources", "comparative"),
     ],
     "box_office_m": [
         ("grossed {val} worldwide at the box office", "none"),
-        ("climbed from {distractor} to {val} in cumulative earnings",
-         "temporal"),
-        ("earned {val} globally, outperforming {other_name} at {other_val}",
-         "comparative"),
+        ("box office figures of {val} and {distractor} across reporting "
+         "periods", "temporal"),
+        ("gross earnings of {other_val} and {val} from different "
+         "tracking services", "comparative"),
     ],
     "rating": [
         ("holds an overall rating of {val}", "none"),
-        ("improved its rating from {distractor} to {val} after "
-         "re-evaluation", "temporal"),
-        ("scored {val}, though the director's cut received {distractor}",
-         "qualified"),
+        ("rating figures of {distractor} and {val} in different "
+         "assessments", "temporal"),
+        ("ratings of {val} and {distractor} from separate review "
+         "aggregators", "qualified"),
     ],
     "runtime_min": [
         ("runs for {val}", "none"),
-        ("was trimmed from {distractor} to {val} for theatrical release",
-         "temporal"),
-        ("has a total runtime of {val}, including {distractor} of "
-         "credits", "qualified"),
+        ("runtime figures of {val} and {distractor} in different "
+         "listings", "temporal"),
+        ("runtime readings of {distractor} and {val} by different "
+         "measurement standards", "qualified"),
     ],
     "screens": [
         ("was shown on {val} screens at peak distribution", "none"),
-        ("expanded from {distractor} to {val} screens during its run",
-         "temporal"),
-        ("screened on {val} screens, versus {other_name}'s {other_val}",
-         "comparative"),
+        ("screen counts of {distractor} and {val} across distribution "
+         "phases", "temporal"),
+        ("screen figures of {val} and {other_val} from separate "
+         "distributors", "comparative"),
     ],
     "audience_score": [
         ("received an audience score of {val}", "none"),
-        ("saw audience approval rise from {distractor} to {val}",
-         "temporal"),
-        ("earned {val} from audiences, compared to {other_name}'s "
-         "{other_val}", "comparative"),
+        ("audience score readings of {val} and {distractor} across "
+         "platforms", "temporal"),
+        ("audience ratings of {other_val} and {val} from different "
+         "polls", "comparative"),
     ],
     "critic_score": [
         ("holds a critic score of {val}", "none"),
-        ("had its critic score revised from {distractor} to {val}",
-         "temporal"),
-        ("scored {val} with critics, though the TV version earned "
-         "{distractor}", "qualified"),
+        ("critic score figures of {distractor} and {val} in different "
+         "reviews", "temporal"),
+        ("critic ratings of {val} and {distractor} from separate "
+         "publications", "qualified"),
     ],
     "opening_weekend_m": [
         ("opened with {val} in its first weekend", "none"),
-        ("surpassed projections of {distractor} to open at {val}",
-         "temporal"),
-        ("debuted at {val}, ahead of {other_name}'s {other_val}",
-         "comparative"),
+        ("opening weekend figures of {val} and {distractor} from different "
+         "trackers", "temporal"),
+        ("opening weekend amounts of {other_val} and {val} in separate "
+         "reports", "comparative"),
     ],
     "awards_count": [
         ("has won {val} awards to date", "none"),
-        ("increased its award tally from {distractor} to {val} this "
-         "season", "temporal"),
-        ("collected {val} awards, beating {other_name}'s {other_val}",
-         "comparative"),
+        ("award counts of {distractor} and {val} in different tallies",
+         "temporal"),
+        ("award figures of {val} and {other_val} from separate "
+         "databases", "comparative"),
     ],
     "release_year": [
         ("was released in {val}", "none"),
-        ("was originally announced for {distractor} but released "
-         "in {val}", "temporal"),
-        ("came out in {val}, the same year as {other_name}",
-         "comparative"),
+        ("release year records of {val} and {distractor} in different "
+         "databases", "temporal"),
+        ("release years of {other_val} and {val} from separate "
+         "registries", "comparative"),
     ],
     "sequel_number": [
         ("is installment number {val} in its franchise", "none"),
-        ("was promoted from part {distractor} to part {val} after a "
-         "reboot", "temporal"),
+        ("installment numbers of {distractor} and {val} in different "
+         "catalogs", "temporal"),
     ],
     "streaming_views_m": [
         ("has accumulated {val} streaming views", "none"),
-        ("grew from {distractor} to {val} streaming views since launch",
-         "temporal"),
-        ("reached {val} streams, surpassing {other_name}'s {other_val}",
-         "comparative"),
+        ("streaming view counts of {val} and {distractor} across "
+         "platforms", "temporal"),
+        ("streaming figures of {val} and {other_val} from separate "
+         "services", "comparative"),
     ],
     "merchandise_revenue_m": [
         ("generated {val} in merchandise revenue", "none"),
-        ("boosted merchandise sales from {distractor} to {val}",
-         "temporal"),
+        ("merchandise revenue figures of {distractor} and {val} in "
+         "different quarters", "temporal"),
     ],
     "trailer_views_m": [
         ("had its trailer viewed {val} times", "none"),
-        ("saw trailer views jump from {distractor} to {val} after "
-         "the Super Bowl spot", "temporal"),
+        ("trailer view counts of {val} and {distractor} from different "
+         "platforms", "temporal"),
     ],
     "cast_size": [
         ("features a cast of {val} actors", "none"),
-        ("expanded its cast from {distractor} to {val} during reshoots",
-         "temporal"),
+        ("cast size figures of {distractor} and {val} in different "
+         "credits listings", "temporal"),
     ],
     "production_days": [
         ("was filmed over {val} days", "none"),
-        ("extended production from {distractor} to {val} days due to "
-         "weather delays", "temporal"),
+        ("production day counts of {val} and {distractor} from different "
+         "sources", "temporal"),
     ],
     "director": [
         ("was directed by {val}", "none"),

@@ -23,12 +23,9 @@ from inspect_ai.scorer import Score, Target, scorer
 
 from memorygym.evaluation.llm_judge import llm_judge_validate
 from memorygym.evaluation.validators import async_validate_with_fallback
-from memorygym.protocol import REASONING_COMPETENCIES
+from memorygym.protocol import compute_axis_scores
 
 log = logging.getLogger(__name__)
-
-# Frozenset for O(1) lookup during scoring
-_REASONING_COMPETENCIES = frozenset(REASONING_COMPETENCIES)
 
 
 @scorer(metrics=[])
@@ -89,55 +86,30 @@ def worldbench_scorer(judge_model: str | None = None) -> Any:
         if not results:
             return Score(value=0.0, explanation="No questions answered.")
 
-        # ── Compute axes ──
-        n_total = len(results)
-        n_correct = sum(r["correct"] for r in results)
-
-        # Breadth axis: retrieval questions (Axis 1: storage breadth)
-        breadth_rs = [r for r in results if r["competency"] == "retrieval"]
-        breadth = (sum(r["correct"] for r in breadth_rs) / len(breadth_rs)
-                   if breadth_rs else 0.0)
-
-        # Maintenance axis: update questions (Axis 2: memory maintenance)
-        maint_rs = [r for r in results if r["competency"] == "update"]
-        maintenance = (sum(r["correct"] for r in maint_rs) / len(maint_rs)
-                       if maint_rs else 0.0)
-
-        # Gate maintenance on retrieval accuracy (V8: robust against
-        # name-only packing — must actually answer retrieval correctly)
-        storage_coverage = breadth
-        maintenance = maintenance * min(storage_coverage / 0.5, 1.0)
-
-        # Reasoning axis: all comprehension question types (Axis 3)
-        reason_rs = [r for r in results
-                     if r["competency"] in _REASONING_COMPETENCIES]
-        reasoning = (sum(r["correct"] for r in reason_rs) / len(reason_rs)
-                     if reason_rs else 0.0)
-
-        # Efficiency axis: correct/write ratio, normalized to budget
-        budget = state.store.get("write_budget", 30)
-        ideal_rate = n_total / max(budget, 1)
-        if writes_used == 0:
-            efficiency = 0.0
-        else:
-            accuracy = n_correct / n_total
-            raw_eff = min(n_correct / writes_used / ideal_rate, 1.0)
-            efficiency = raw_eff * accuracy
-
-        # Abstention diagnostic (not in composite)
-        abs_rs = [r for r in results if r["competency"] == "abstention"]
-        abstention_diagnostic = (
-            sum(r["correct"] for r in abs_rs) / len(abs_rs)
-            if abs_rs else 0.0)
-
-        # Composite: weighted sum (matches protocol.py WEIGHTS)
-        composite = (0.30 * breadth + 0.25 * maintenance
-                     + 0.25 * reasoning + 0.20 * efficiency)
-
-        # Per-competency breakdown
+        # ── Build per-competency lists ──
         by_comp: dict[str, list[bool]] = defaultdict(list)
         for r in results:
             by_comp[r["competency"]].append(r["correct"])
+
+        # ── Compute axes via canonical formula ──
+        n_entities = state.store.get("n_entities", 60)
+        stored_count = state.store.get("stored_count", 0)
+        write_budget = state.store.get("write_budget", 30)
+
+        axes = compute_axis_scores(
+            by_competency=dict(by_comp),
+            n_entities=n_entities,
+            stored_count=stored_count,
+            writes_used=writes_used,
+            write_budget=write_budget,
+        )
+        breadth = axes["breadth"]
+        maintenance = axes["maintenance"]
+        reasoning = axes["reasoning"]
+        efficiency = axes["efficiency"]
+        composite = axes["composite"]
+        abstention_diagnostic = axes["abstention_diagnostic"]
+        storage_coverage = stored_count / n_entities if n_entities else 0.0
 
         # Per-purpose breakdown
         by_purpose: dict[str, list[bool]] = defaultdict(list)

@@ -225,109 +225,123 @@ _Q_TEXTS: dict[str, list[str]] = {
 _SENTENCE_TMPLS: dict[str, list[tuple[str, str]]] = {
     "population": [
         ("is home to {val} residents", "none"),
-        ("population grew from {distractor} to {val} in the latest census",
-         "temporal"),
-        ("has a population of {val}, compared to {other_name}'s "
-         "{other_val}", "comparative"),
+        ("population figures of {distractor} and {val} across census "
+         "periods", "temporal"),
+        ("population counts of {val} and {other_val} from separate "
+         "surveys", "comparative"),
     ],
     "area_km2": [
         ("covers an area of {val}", "none"),
-        ("expanded from {distractor} to {val} after recent annexation",
-         "temporal"),
-        ("spans {val}, though only {distractor} is developed land",
-         "qualified"),
+        ("area measurements of {val} and {distractor} in different "
+         "surveys", "temporal"),
+        ("area figures of {distractor} and {val} by different boundary "
+         "definitions", "qualified"),
     ],
     "median_income": [
         ("reports a median household income of {val}", "none"),
-        ("median income rose from {distractor} to {val}", "temporal"),
-        ("earns a median of {val}, outpacing {other_name} at {other_val}",
-         "comparative"),
+        ("median income figures of {distractor} and {val} across reporting "
+         "years", "temporal"),
+        ("median income readings of {val} and {other_val} from different "
+         "sources", "comparative"),
     ],
     "elevation_m": [
         ("sits at an elevation of {val}", "none"),
-        ("ranges from {distractor} to {val} in elevation across districts",
-         "qualified"),
-        ("is situated at {val}, higher than {other_name} at {other_val}",
-         "comparative"),
+        ("elevation readings of {val} and {distractor} by different "
+         "measurement methods", "qualified"),
+        ("elevation figures of {other_val} and {val} in separate "
+         "surveys", "comparative"),
     ],
     "avg_temp_c": [
         ("experiences an average temperature of {val}", "none"),
-        ("average temperature shifted from {distractor} to {val}",
-         "temporal"),
-        ("records {val} on average, versus {other_name}'s {other_val}",
-         "comparative"),
+        ("average temperature readings of {val} and {distractor} across "
+         "periods", "temporal"),
+        ("temperature averages of {val} and {other_val} from different "
+         "stations", "comparative"),
     ],
     "hospital_count": [
         ("is served by {val} hospitals", "none"),
-        ("hospital count increased from {distractor} to {val}", "temporal"),
-        ("has {val} hospitals, though only {distractor} offer emergency "
-         "services", "qualified"),
+        ("hospital counts of {distractor} and {val} in different "
+         "periods", "temporal"),
+        ("hospital tallies of {val} and {distractor} under different "
+         "criteria", "qualified"),
     ],
     "school_count": [
         ("operates {val} public and private schools", "none"),
-        ("school count grew from {distractor} to {val}", "temporal"),
-        ("has {val} schools, of which {distractor} are public", "qualified"),
+        ("school counts of {val} and {distractor} across census years",
+         "temporal"),
+        ("school figures of {distractor} and {val} by different counting "
+         "methods", "qualified"),
     ],
     "crime_rate": [
         ("reports a crime rate of {val}", "none"),
-        ("crime rate changed from {distractor} to {val}", "temporal"),
-        ("has a crime rate of {val}, compared to {other_name}'s "
-         "{other_val}", "comparative"),
+        ("crime rate figures of {distractor} and {val} in successive "
+         "reports", "temporal"),
+        ("crime rate readings of {val} and {other_val} from different "
+         "agencies", "comparative"),
     ],
     "green_space_pct": [
         ("dedicates {val} of its area to green space", "none"),
-        ("green space grew from {distractor} to {val}", "temporal"),
-        ("maintains {val} green space, surpassing {other_name}'s "
-         "{other_val}", "comparative"),
+        ("green space percentages of {val} and {distractor} across "
+         "assessments", "temporal"),
+        ("green space figures of {other_val} and {val} in separate "
+         "analyses", "comparative"),
     ],
     "transit_score": [
         ("achieved a transit score of {val}", "none"),
-        ("transit score improved from {distractor} to {val}", "temporal"),
-        ("scores {val} for transit, outranking {other_name} at "
-         "{other_val}", "comparative"),
+        ("transit score readings of {distractor} and {val} in different "
+         "evaluations", "temporal"),
+        ("transit scores of {val} and {other_val} from separate "
+         "rankings", "comparative"),
     ],
     "gdp_per_capita": [
         ("produces a GDP per capita of {val}", "none"),
-        ("GDP per capita rose from {distractor} to {val}", "temporal"),
-        ("generates {val} per capita, compared to {other_name}'s "
-         "{other_val}", "comparative"),
+        ("GDP per capita figures of {val} and {distractor} across fiscal "
+         "years", "temporal"),
+        ("per capita GDP readings of {other_val} and {val} from different "
+         "estimates", "comparative"),
     ],
     "unemployment_pct": [
         ("has an unemployment rate of {val}", "none"),
-        ("unemployment shifted from {distractor} to {val}", "temporal"),
-        ("reports {val} unemployment, versus {other_name}'s {other_val}",
-         "comparative"),
+        ("unemployment figures of {distractor} and {val} in different "
+         "quarters", "temporal"),
+        ("unemployment rates of {val} and {other_val} from separate "
+         "reports", "comparative"),
     ],
     "air_quality_index": [
         ("records an air quality index of {val}", "none"),
-        ("air quality index changed from {distractor} to {val}", "temporal"),
-        ("has an AQI of {val}, compared to {other_name}'s {other_val}",
-         "comparative"),
+        ("air quality index readings of {val} and {distractor} across "
+         "seasons", "temporal"),
+        ("AQI values of {other_val} and {val} from different monitoring "
+         "networks", "comparative"),
     ],
     "tourism_visitors": [
         ("attracts {val} tourists annually", "none"),
-        ("tourism grew from {distractor} to {val} visitors", "temporal"),
-        ("welcomes {val} visitors, outpacing {other_name}'s {other_val}",
-         "comparative"),
+        ("tourism figures of {distractor} and {val} visitors in different "
+         "years", "temporal"),
+        ("visitor counts of {val} and {other_val} from separate "
+         "agencies", "comparative"),
     ],
     "housing_price_index": [
         ("has a housing price index of {val}", "none"),
-        ("housing price index climbed from {distractor} to {val}",
-         "temporal"),
+        ("housing price index readings of {val} and {distractor} across "
+         "quarters", "temporal"),
     ],
     "internet_speed_mbps": [
         ("offers average internet speeds of {val}", "none"),
-        ("internet speed improved from {distractor} to {val}", "temporal"),
+        ("internet speed figures of {distractor} and {val} in different "
+         "tests", "temporal"),
     ],
     "life_expectancy": [
         ("has a life expectancy of {val} years", "none"),
-        ("life expectancy increased from {distractor} to {val}", "temporal"),
-        ("residents live an average of {val} years, versus {other_name}'s "
-         "{other_val}", "comparative"),
+        ("life expectancy readings of {val} and {distractor} across study "
+         "periods", "temporal"),
+        ("life expectancy figures of {other_val} and {val} from separate "
+         "studies", "comparative"),
     ],
     "literacy_rate_pct": [
         ("achieves a literacy rate of {val}", "none"),
-        ("literacy rate rose from {distractor} to {val}", "temporal"),
+        ("literacy rate figures of {distractor} and {val} in different "
+         "assessments", "temporal"),
     ],
     "climate_zone": [
         ("is situated in a {val} climate zone", "none"),

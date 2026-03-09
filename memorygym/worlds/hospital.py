@@ -268,96 +268,111 @@ _Q_TEXTS: dict[str, list[str]] = {
 _SENTENCE_TMPLS: dict[str, list[tuple[str, str]]] = {
     "beds": [
         ("has a capacity of {val} patient beds", "none"),
-        ("bed count increased from {distractor} to {val}", "temporal"),
-        ("operates {val} beds, though only {distractor} are currently "
-         "staffed", "qualified"),
+        ("bed counts of {distractor} and {val} in different reporting "
+         "periods", "temporal"),
+        ("bed figures of {val} and {distractor} under different "
+         "criteria", "qualified"),
     ],
     "staff_count": [
         ("employs {val} medical and administrative staff", "none"),
-        ("staffing grew from {distractor} to {val}", "temporal"),
-        ("has {val} total staff, compared to {other_name}'s {other_val}",
-         "comparative"),
+        ("staff counts of {val} and {distractor} across periods",
+         "temporal"),
+        ("staffing figures of {other_val} and {val} from separate "
+         "reports", "comparative"),
     ],
     "annual_patients": [
         ("treats {val} patients annually", "none"),
-        ("patient volume rose from {distractor} to {val}", "temporal"),
-        ("sees {val} patients per year, of which {distractor} are "
-         "outpatient", "qualified"),
+        ("patient volume figures of {distractor} and {val} in successive "
+         "years", "temporal"),
+        ("patient counts of {val} and {distractor} by different "
+         "classifications", "qualified"),
     ],
     "readmission_pct": [
         ("reports a readmission rate of {val}", "none"),
-        ("readmission rate changed from {distractor} to {val}", "temporal"),
-        ("has {val} readmission rate, versus {other_name}'s {other_val}",
-         "comparative"),
+        ("readmission rate readings of {val} and {distractor} across "
+         "periods", "temporal"),
+        ("readmission figures of {val} and {other_val} from different "
+         "audits", "comparative"),
     ],
     "mortality_rate": [
         ("maintains a mortality rate of {val}", "none"),
-        ("mortality rate shifted from {distractor} to {val}", "temporal"),
-        ("records {val} mortality, compared to {other_name}'s "
-         "{other_val}", "comparative"),
+        ("mortality rate figures of {distractor} and {val} in different "
+         "reviews", "temporal"),
+        ("mortality readings of {other_val} and {val} from separate "
+         "assessments", "comparative"),
     ],
     "satisfaction_score": [
         ("earned a patient satisfaction score of {val}", "none"),
-        ("satisfaction improved from {distractor} to {val}", "temporal"),
-        ("rated {val} by patients, outperforming {other_name} at "
-         "{other_val}", "comparative"),
+        ("satisfaction scores of {val} and {distractor} across survey "
+         "rounds", "temporal"),
+        ("satisfaction readings of {val} and {other_val} from separate "
+         "surveys", "comparative"),
     ],
     "wait_time_min": [
         ("has an average wait time of {val}", "none"),
-        ("wait times changed from {distractor} to {val}", "temporal"),
-        ("averages {val} wait, though emergency cases wait only "
-         "{distractor}", "qualified"),
+        ("wait time figures of {distractor} and {val} in different "
+         "periods", "temporal"),
+        ("wait time readings of {val} and {distractor} by different "
+         "measurement methods", "qualified"),
     ],
     "operating_rooms": [
         ("is equipped with {val} operating rooms", "none"),
-        ("OR count grew from {distractor} to {val}", "temporal"),
-        ("has {val} operating rooms, of which {distractor} are for "
-         "outpatient procedures", "qualified"),
+        ("operating room counts of {val} and {distractor} across "
+         "assessments", "temporal"),
+        ("OR tallies of {distractor} and {val} under different "
+         "classifications", "qualified"),
     ],
     "budget_m": [
         ("operates with an annual budget of {val}", "none"),
-        ("budget increased from {distractor} to {val}", "temporal"),
-        ("runs on {val}, compared to {other_name}'s {other_val}",
-         "comparative"),
+        ("budget figures of {distractor} and {val} in successive fiscal "
+         "years", "temporal"),
+        ("budget amounts of {val} and {other_val} from different "
+         "sources", "comparative"),
     ],
     "accreditation_year": [
         ("received its most recent accreditation in {val}", "none"),
-        ("was accredited in {val}, updating from {distractor}", "temporal"),
-        ("accredited in {val}, alongside {other_name}", "comparative"),
+        ("accreditation years of {distractor} and {val} in different "
+         "records", "temporal"),
+        ("accreditation dates of {val} and {other_val} from separate "
+         "registries", "comparative"),
     ],
     "icu_beds": [
         ("maintains {val} intensive care unit beds", "none"),
-        ("ICU capacity grew from {distractor} to {val} beds", "temporal"),
-        ("has {val} ICU beds, compared to {other_name}'s {other_val}",
-         "comparative"),
+        ("ICU bed counts of {val} and {distractor} across reporting "
+         "periods", "temporal"),
+        ("ICU bed figures of {other_val} and {val} from separate "
+         "counts", "comparative"),
     ],
     "er_visits_daily": [
         ("handles {val} emergency room visits per day", "none"),
-        ("daily ER visits increased from {distractor} to {val}", "temporal"),
-        ("sees {val} ER patients daily, of which {distractor} require "
-         "admission", "qualified"),
+        ("daily ER visit counts of {distractor} and {val} in different "
+         "periods", "temporal"),
+        ("ER visit figures of {val} and {distractor} by different "
+         "counting criteria", "qualified"),
     ],
     "surgery_count_monthly": [
         ("performs {val} surgical procedures each month", "none"),
-        ("monthly surgeries rose from {distractor} to {val}", "temporal"),
-        ("completes {val} surgeries per month, compared to {other_name}'s "
-         "{other_val}", "comparative"),
+        ("monthly surgery counts of {val} and {distractor} across "
+         "periods", "temporal"),
+        ("surgery figures of {other_val} and {val} from different "
+         "reports", "comparative"),
     ],
     "nurse_ratio": [
         ("maintains a nurse-to-patient ratio of {val}", "none"),
-        ("nurse ratio improved from {distractor} to {val}", "temporal"),
+        ("nurse ratio figures of {distractor} and {val} in different "
+         "assessments", "temporal"),
     ],
     "avg_stay_days": [
         ("reports an average patient stay of {val} days", "none"),
-        ("average stay shortened from {distractor} to {val} days",
-         "temporal"),
+        ("average stay readings of {val} and {distractor} days across "
+         "periods", "temporal"),
     ],
     "research_papers": [
         ("has published {val} peer-reviewed research papers", "none"),
-        ("research output grew from {distractor} to {val} papers",
-         "temporal"),
-        ("produced {val} papers, versus {other_name}'s {other_val}",
-         "comparative"),
+        ("research paper counts of {distractor} and {val} in different "
+         "years", "temporal"),
+        ("publication figures of {val} and {other_val} from separate "
+         "tallies", "comparative"),
     ],
     "specialty_description": [
         ("{val}", "none"),

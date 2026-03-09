@@ -376,32 +376,25 @@ class WorldTemplate(QuestionGeneratorMixin, ABC):
             fmt_val = self._format_value(attr, val)
             kwargs: dict[str, str] = {"val": fmt_val,
                                       "label": self.attr_label(attr)}
-            if st.distractor == "temporal" and isinstance(val, (int, float)):
-                old = val * rng.uniform(0.5, 0.9)
-                old = (int(round(old)) if isinstance(val, int)
-                       else round(old, 2))
-                kwargs["distractor"] = self._format_value(attr, old)
-            elif st.distractor == "comparative":
-                # Use a fabricated peer reference — never a real entity
-                # name+value, to avoid leaking detectable data.
-                if isinstance(val, (int, float)):
-                    peer_val = val * rng.uniform(0.6, 1.4)
-                    peer_val = (int(round(peer_val))
-                                if isinstance(val, int)
-                                else round(peer_val, 2))
-                    kwargs["other_name"] = "the industry average"
-                    kwargs["other_val"] = self._format_value(
-                        attr, peer_val)
-                else:
+            if st.distractor in ("temporal", "comparative", "qualified"):
+                if not isinstance(val, (int, float)):
                     sentences.append(
                         f"{self.attr_label(attr)}: {fmt_val}")
                     continue
-            elif (st.distractor == "qualified"
-                  and isinstance(val, (int, float))):
-                partial = val * rng.uniform(0.6, 0.9)
-                partial = (int(round(partial)) if isinstance(val, int)
-                           else round(partial, 2))
-                kwargs["distractor"] = self._format_value(attr, partial)
+                # Generate distractor that can be larger or smaller
+                # (randomized direction prevents "always pick the bigger
+                # number" attack).
+                mult = rng.choice([
+                    rng.uniform(0.5, 0.9),
+                    rng.uniform(1.1, 1.5),
+                ])
+                other = val * mult
+                other = (int(round(other)) if isinstance(val, int)
+                         else round(other, 2))
+                kwargs["distractor"] = self._format_value(attr, other)
+                # For comparative templates, also set other_name/other_val
+                kwargs["other_name"] = "a separate estimate"
+                kwargs["other_val"] = self._format_value(attr, other)
             try:
                 sentences.append(st.template.format(**kwargs))
             except KeyError:
@@ -605,9 +598,12 @@ class WorldTemplate(QuestionGeneratorMixin, ABC):
         events: list[dict] = []
         entities = list(world.entities)
         n_batches = max(1, len(entities) // entities_per_batch)
-        correction_batch = max(1, int(n_batches * 0.6))
+        # Randomize correction timing to prevent position-based gaming
+        corr_frac = rng.uniform(0.4, 0.7)
+        correction_batch = max(1, int(n_batches * corr_frac))
+        contra_frac = rng.uniform(0.7, 0.9)
         contradiction_batch = max(correction_batch + 1,
-                                  int(n_batches * 0.8))
+                                  int(n_batches * contra_frac))
 
         # Track introduced entities for question generation
         introduced: list[EntitySpec] = []
