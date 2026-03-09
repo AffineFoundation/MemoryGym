@@ -26,9 +26,10 @@ from .types import (  # noqa: F401
     Relationship, SentenceTemplate, World,
 )
 from .questions import QuestionGeneratorMixin, _possessive  # noqa: F401
+from .questions_advanced import AdvancedQuestionMixin
 
 
-class WorldTemplate(QuestionGeneratorMixin, ABC):
+class WorldTemplate(AdvancedQuestionMixin, QuestionGeneratorMixin, ABC):
     """Abstract world template — one implementation = one infinite domain.
 
     Evaluation flow:

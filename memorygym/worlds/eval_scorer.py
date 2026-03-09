@@ -118,6 +118,8 @@ def worldbench_scorer(judge_model: str | None = None) -> Any:
                 by_purpose[r["purpose"]].append(r["correct"])
 
         # Build flat value dict (Inspect AI requirement)
+        n_total = len(results)
+        n_correct = sum(1 for r in results if r["correct"])
         value: dict[str, Any] = {
             "composite": round(composite, 4),
             "breadth": round(breadth, 4),

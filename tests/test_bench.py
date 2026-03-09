@@ -190,6 +190,43 @@ class TestProtocol:
     def test_compute_composite_zero(self):
         assert compute_composite(0.0, 0.0, 0.0, 0.0) == 0.0
 
+    def test_eval_scorer_no_crash(self):
+        """eval_scorer.py must not crash with valid mocked state (Phase 28 regression)."""
+        import asyncio
+        from memorygym.worlds.eval_scorer import worldbench_scorer
+
+        class MockStore:
+            def __init__(self, data):
+                self._d = data
+            def get(self, key, default=None):
+                return self._d.get(key, default)
+
+        class MockState:
+            def __init__(self, store_data):
+                self.store = MockStore(store_data)
+
+        scorer_fn = worldbench_scorer(judge_model=None)
+        state = MockState({
+            "benchmark_answers": [
+                {"question": "What is X?", "answer": "42",
+                 "ground_truth": "42", "competency": "retrieval",
+                 "purpose": "retrieval", "task_id": 0},
+                {"question": "What is Y?", "answer": "wrong",
+                 "ground_truth": "100", "competency": "retrieval",
+                 "purpose": "retrieval", "task_id": 1},
+            ],
+            "writes_used": 5,
+            "n_entities": 30,
+            "stored_count": 10,
+            "write_budget": 15,
+        })
+        from inspect_ai.scorer import Target
+        result = asyncio.run(scorer_fn(state, Target("dummy")))
+        assert result.value["n_questions"] == 2
+        assert result.value["n_correct"] == 1
+        assert "composite" in result.value
+        assert "breadth" in result.value
+
     def test_official_seeds(self):
         assert OFFICIAL_SEEDS == list(range(10))
 

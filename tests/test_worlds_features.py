@@ -613,6 +613,42 @@ def test_relationship_questions():
             assert world.get_entity(name) is not None, f"Unknown entity: {name}"
 
 
+def test_relationship_gt_correct():
+    """Relationship question GT must match actual world data."""
+    tmpl = CompanyWorld()
+    world = tmpl.generate_world(seed=42, n_entities=60)
+    assert len(world.relationships) > 0
+
+    rng = Random(42)
+    corrections = tmpl.generate_corrections(world, Random(42 + 3333), 5)
+    stored = {e.name for e in world.entities}
+    qs = tmpl.gen_adaptive_questions(
+        world, rng, world.entities, stored, 40, corrections)
+    rel_qs = [q for q in qs if "relationship" in q.competency]
+
+    for q in rel_qs:
+        if q.competency == "relationship_lookup":
+            # GT should be target of a real relationship from source
+            source = q.required_entities[0]
+            outgoing = world.get_outgoing(source)
+            assert q.answer in [r.target for r in outgoing], (
+                f"lookup GT {q.answer} not in {source}'s outgoing targets")
+
+        elif q.competency == "relationship_count":
+            # GT should be a valid integer count
+            int(q.answer)  # must not raise
+
+        elif q.competency == "relationship_hop":
+            # GT should be a formatted attribute value of the target entity
+            target = q.required_entities[1]
+            entity = world.get_entity(target)
+            assert entity is not None
+
+        elif q.competency == "relationship_filter":
+            # GT should be a real entity name
+            assert world.get_entity(q.answer) is not None
+
+
 def test_contradictions():
     """Implicit contradictions mutate world state and generate questions."""
     tmpl = CompanyWorld()
@@ -673,6 +709,7 @@ if __name__ == "__main__":
         test_maybe_replace_comprehension,
         test_relationship_generation,
         test_relationship_questions,
+        test_relationship_gt_correct,
         test_contradictions,
     ]
     print("Running feature tests...")

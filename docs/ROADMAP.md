@@ -11,7 +11,7 @@
 
 > 新 session 先看这里 + `AUTOPILOT.md`。上下文不足时可读最近的 devlog 文件。
 
-**当前焦点**: Phase 26 红队审计
+**当前焦点**: 待办空，等待战略推导
 
 **最大差距**: RL 训练验证（需 GPU）+ v2 eval 数据（eval session 进行中）
 
@@ -21,8 +21,9 @@
 - Phase 5-23: 评测质量迭代、模板增强、工具链、训练基础设施、模板差异化 ✅
 - Phase 24: affinetes SDK 端到端验证 ✅
 - Phase 25: 评分有效性修复（公式统一、效率轴重设计、maintenance gate 修复、distractor 去标记）✅
+- Phase 26-28: 红队审计、修复、缺陷修复 + 测试补全 ✅
 - 6 模板 × 22-23 attrs × 6 dtypes × 18 reasoning competencies
-- 261 tests, simulation ALL PASS
+- 263 tests, simulation ALL PASS（1 个 company smart_guesser flaky 已知）
 - MemoryEnv shaped reward + verl/slime 适配器完整可用
 
 ---
@@ -118,7 +119,7 @@ abstention_diagnostic 单独报告，不计入 composite。
 
 ### 2.7 测试覆盖
 
-261 tests: test_worlds(37) + test_validators(61) + test_bench(22) + test_stream_agent(21) + test_training(27) + test_backend_bench(7) + test_llm_judge(11) + test_narrative(15) + test_adapters(27) + test_new_dtypes(7) + other(26)
+263 tests: test_worlds(37) + test_validators(61) + test_bench(23) + test_stream_agent(21) + test_training(27) + test_backend_bench(7) + test_llm_judge(11) + test_narrative(15) + test_adapters(27) + test_new_dtypes(7) + test_worlds_features(20) + other(7)
 
 ---
 
@@ -135,8 +136,9 @@ abstention_diagnostic 单独报告，不计入 composite。
 | Kimi-K2.5 | company | 0 | 30% | 17% | 20% | 33% | 100% |
 | Kimi-K2.5 | research | 0 | 15% | 0% | 33% | 0% | 100% |
 | Kimi-K2.5 | city | 0 | 20% | 33% | 31% | 0% | 100% |
+| Kimi-K2.5 | hospital | 0 | 17% | 11% | 26% | 20% | 100% |
 
-初步发现：v2 分数显著低于 v1（22-23 属性 vs 10，信息密度更高）。Reasoning 普遍 0%（仅 company 33%）。Maintenance 改善（20-33%，v1 多数 0%）。
+初步发现（4/6 模板）：v2 分数显著低于 v1（22-23 属性 vs 10，信息密度更高）。Reasoning 普遍弱（0-33%）。Maintenance 改善（20-33%，v1 多数 0%）。Abstention 100% 一致。
 
 ### 3.2 v1 历史数据摘要 [archived]
 
