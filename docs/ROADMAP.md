@@ -181,11 +181,17 @@ eval/              # v2 数据（Phase 16 后，22-23 属性模板）
 - 结果：MovieWorld 新模板（全部 simulation 不变量通过）
 - 结果：13 种 comprehension 题型（原 8 种 + 5 种关系推理）
 
-**4. RL 训练闭环** — 高（当前最大差距）
+**4. RL 训练闭环** — 高（阻塞于 GPU）
 - 依据：MemoryEnv embedding search 已完成，verl 集成已完成
 - 关键组件：~~embedding search~~ ✅ → ~~GRPO 对接~~ ✅ → ~~小模型基线~~ ✅ → ~~curriculum 配置~~ ✅ → GPU 端到端验证 → shaped reward
 - 小模型基线：Qwen3-14B=20%, Qwen3-32B=30%（breadth/maintenance 是主要瓶颈，reasoning=0%）
 - 成功标准：7B 模型 composite ≥ 45%, maintenance ≥ 30%
+
+**5. V2 系统升级** — 当前（Phase 30-35）
+- 依据：Phase 29 设计确认 3 个系统级缺陷（策略同质化、推理机械化、真实场景脱节）
+- 路线：反事实+多约束题型 → 模板事件流差异化 → 实体重要性 → 信息隐藏 → 长上下文模式
+- 设计文档：devlog/2026-03-09-v2-design.md
+- 前沿研究：devlog/2026-03-09-memory-benchmark-research.md
 
 ### 优先级变更记录
 
@@ -196,6 +202,7 @@ eval/              # v2 数据（Phase 16 后，22-23 属性模板）
 | 2026-03-08 | Phase 1-3 完成，RL 训练闭环提升为最高优先 | 评测系统稳定，训练是最大差距 |
 | 2026-03-09 | Phase 18 项目自审提升为当前任务 | Phase 3-17 快速迭代积累技术债务；ROADMAP §0/§2 权重与代码不同步；RL 阻塞于 GPU 无法推进 |
 | 2026-03-09 | Phase 21 shaped reward 设计 | RL 管线代码完成但 binary reward 不足；GPU 阻塞但 reward 设计可先行；REDSearcher/Agent-R1 证明 shaped reward 提升训练效率 |
+| 2026-03-09 | Phase 29 V2 系统级重设计 | 战略审计确认推理机械化（18 题型全为确定性运算）+ 模板策略同质化；前沿研究（10+ 系统对比）确认 MemoryGym 独特价值（唯一硬预算+抗博弈+RL）但推理轴需加强 |
 
 ---
 

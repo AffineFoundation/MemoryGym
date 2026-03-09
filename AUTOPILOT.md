@@ -1,6 +1,8 @@
-# AUTOPILOT
+# AUTOPILOT — 执行线程
 
-> 自治演进协议 + 任务队列。每次 `/loop` 读此文件。
+> 启动方式：`/loop 30m`
+>
+> 代码执行线程。负责写代码、跑测试、提交。不做战略推导（由 AUDIT.md 线程负责）。
 
 ## 演进闭环
 
@@ -43,31 +45,11 @@ eval 数据（ROADMAP.md §3）← 衡量差距
 
 **长时间任务**：eval 可能耗时较长，一次 loop 只执行一个 eval 任务即可，不必赶进度。
 
-## 战略推导
+## 待办空时
 
-待办空时执行。目标是找到**系统级的根本性问题**，而非代码细节。
+战略推导和系统审计由审计线程（`AUDIT.md`，`/loop 60m`）负责。执行线程不再做战略推导。
 
-```
-1. 站在用户/训练者/攻击者的角度审视系统：
-   - 这个 benchmark 真的能区分好模型和差模型吗？为什么？
-   - 如果我是训练者，读了全部代码，能教模型走什么捷径？
-   - 评分反映的是真实能力还是某种可学习的模式？
-   - 问题够难吗？还是存储了就能答对？
-   - 多个模板是否真的要求不同的记忆策略？还是一套通用策略就能通吃？
-   - 在这个 benchmark 上训练出来的能力，能迁移到真实 agent 任务吗？模板设计与现实场景的差距在哪？
-2. 用代码验证你的判断（读相关模块确认），不要只读文档就下结论
-3. 设计具体任务写入待办区，在 ROADMAP.md §4 记录推导依据
-4. 研究前沿工作获取启发，结果保存到 devlog/
-```
-
-**原则**：
-- 先问"系统设计对不对"，再问"实现有没有 bug"
-- 产出是具体的待办任务，不是"系统已成熟"的结论
-- 如果真没发现问题，把分析过程写入 devlog/ 作为证据
-
-## 提示词自优化
-
-每次更新文档时，从长期自我演进的全局角度审视文档本身足够友好合理，是否在拖慢演进——规则冗余则合并，约束过时则删除，流程低效则简化，也可以补充新的合理规则和记忆。文档服务于演进，不是演进服务于文档。如果一条规则从未触发过价值，它就是噪音。
+待办空时：检查是否有新任务被审计线程写入本文件。如果没有，等待。**不要**自行推导"系统已成熟"的结论——你无法客观审视自己写的代码。
 
 ## 卡住时逐级升级
 
@@ -84,9 +66,49 @@ eval 数据（ROADMAP.md §3）← 衡量差距
 
 ## 当前任务
 
-（待办空，执行战略推导）
+### Phase 30 — 反事实推理 + 多约束过滤题型
+
+**依据**：Phase 29 确认推理题机械化（18 种全为确定性运算）。新增 2 种需要真正推理的题型。详细设计见 `devlog/2026-03-09-v2-design.md`。
+
+#### Step 1 — 反事实题 `_gq_counterfactual()`
+- "如果修正没发生，Entity X 的 attr 值是多少？"
+- GT = correction.old_value（Correction 对象已有）
+- guesser baseline = 0%
+
+#### Step 2 — 多约束过滤题 `_gq_multi_constraint()`
+- "满足 revenue > $50M AND employees < 1000 AND sector = 'Technology' 的实体有几个？"
+- GT = len(filtered_entities)，2-3 个条件组合
+- guesser baseline ≈ 0%
+
+#### Step 3 — simulation 更新
+- perfect 策略存 old_value → counterfactual 100%
+- `--seeds 3 --validate` 通过
+
+#### Step 4 — 测试 + 验证
+
+## 待办
+
+### Phase 31 — 模板事件流差异化
+- 各模板 override generate_stream()
+- correction_rate 属性（hospital 高、city 低）
+- 新增 template_expert 策略
+- 验证：template_expert > generic_strategic
+
+### Phase 32 — 实体重要性分化 + 问题分布定制
+
+### Phase 33 — 信息隐藏 + 噪声注入
+
+### Phase 34 — 长上下文评测模式
+
+### Phase 35 — V2 评测数据收集
 
 ## 已完成
+
+### Phase 29 — 系统级重设计（设计 Phase）✅
+- 3 缺陷验证：策略同质化（部分确认）、推理机械化（确认）、真实场景脱节（部分确认）
+- 前沿研究：MemGPT/LoCoMo/MemoryAgentBench/LongMemEval/Mem-alpha/AMemGym 等 10+ 系统
+- 设计方案：反事实题(B1) + 多约束(B2) + 模板事件流(A1) + 实体重要性(A3) + 信息隐藏(C1)
+- 产出：devlog/2026-03-09-v2-design.md + devlog/2026-03-09-memory-benchmark-research.md
 
 ### Phase 28 — 关键缺陷修复 + 测试补全 ✅
 - eval_scorer runtime crash 修复（n_total/n_correct 未定义）
