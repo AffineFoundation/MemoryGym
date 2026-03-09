@@ -568,7 +568,7 @@ class QuestionGeneratorMixin:
         )
 
     def _gq_text_match(self, world, rng, available):
-        """Which entity's text attribute contains a specific keyword?"""
+        """Which entity's text attribute contains a specific phrase?"""
         text_attrs = [a for a in world.active_attrs
                       if any(isinstance(e.get(a), str) and len(e.get(a)) > 20
                              for e in available)]
@@ -579,37 +579,39 @@ class QuestionGeneratorMixin:
                  if isinstance(e.get(attr), str) and len(e.get(attr)) > 20]
         if not cands:
             return None
-        e = rng.choice(cands)
-        text = e.get(attr)
-        # Extract a distinctive word (>4 chars, not too common)
-        words = [w.strip(".,;:!?()\"'") for w in text.split()
-                 if len(w.strip(".,;:!?()\"'")) > 4]
-        if not words:
-            return None
-        keyword = rng.choice(words)
-        # Verify keyword is distinctive enough (not in all entities)
-        matches = [c for c in cands if keyword.lower() in c.get(attr).lower()]
-        if len(matches) != 1:
-            # Try to find a more unique keyword
-            for _ in range(10):
-                keyword = rng.choice(words)
-                matches = [c for c in cands
-                           if keyword.lower() in c.get(attr).lower()]
-                if len(matches) == 1:
-                    break
-            else:
-                return None
-        label = self.attr_label(attr)
-        ewp = self.entity_word_plural
-        q = rng.choice([
-            f"Which {self.entity_word}'s {label} mentions \"{keyword}\"?",
-            f"Among all {ewp}, whose {label} contains the word "
-            f"\"{keyword}\"?",
-        ])
-        return GeneratedQA(
-            q, e.name, "text_match", [e.name],
-            purpose="comprehension", source_attr=attr,
-        )
+
+        def _extract_phrases(text):
+            """Extract single words and bigrams as candidate phrases."""
+            clean = [w.strip(".,;:!?()\"'") for w in text.split()]
+            singles = [w for w in clean if len(w) > 4]
+            bigrams = [f"{clean[i]} {clean[i+1]}" for i in range(len(clean) - 1)
+                       if len(clean[i]) > 2 and len(clean[i+1]) > 2]
+            return bigrams + singles  # prefer bigrams (more unique)
+
+        # Try multiple entities to find a unique phrase
+        attempts = rng.sample(cands, min(8, len(cands)))
+        for candidate in attempts:
+            cand_text = candidate.get(attr)
+            phrases = _extract_phrases(cand_text)
+            if not phrases:
+                continue
+            for phrase in rng.sample(phrases, min(10, len(phrases))):
+                hits = [c for c in cands
+                        if phrase.lower() in c.get(attr).lower()]
+                if len(hits) == 1:
+                    label = self.attr_label(attr)
+                    ewp = self.entity_word_plural
+                    q = rng.choice([
+                        f"Which {self.entity_word}'s {label} mentions "
+                        f"\"{phrase}\"?",
+                        f"Among all {ewp}, whose {label} contains "
+                        f"\"{phrase}\"?",
+                    ])
+                    return GeneratedQA(
+                        q, candidate.name, "text_match", [candidate.name],
+                        purpose="comprehension", source_attr=attr,
+                    )
+        return None
 
     def _gq_enum_filter(self, world, rng, available):
         """Filter by enum attribute, then find extreme of a numeric attr."""

@@ -374,13 +374,13 @@ class CompanyWorld(WorldTemplate):
         return [f"{p} {s}" for p, s in selected]
 
     def _generate_list_float(self, adef, rng):
-        """Seasonal pattern: Q4 > Q1, with realistic quarterly variation."""
-        base = rng.uniform(adef.min_val * 0.3, adef.max_val * 0.6)
-        seasonal = [0.85, 0.90, 1.05, 1.20]  # Q1-Q4 multipliers
+        """Seasonal pattern: strong Q4 spike, Q1 dip — sawtooth shape."""
+        base = rng.uniform(adef.min_val * 0.3, adef.max_val * 0.5)
+        seasonal = [0.70, 0.85, 1.00, 1.45]  # Q1-Q4: strong seasonal swing
         values = []
         for i in range(adef.list_len):
             mult = seasonal[i % 4]
-            noise = rng.uniform(0.9, 1.1)
+            noise = rng.uniform(0.95, 1.05)
             val = max(adef.min_val, min(adef.max_val, base * mult * noise))
             values.append(round(val, 2))
         return values
