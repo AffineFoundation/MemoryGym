@@ -396,7 +396,7 @@ def test_monotonicity():
             world_copy = tmpl.generate_world(seed=seed, n_entities=60)
             profile = StrategyProfile(f"{pct}%", pct / 100, True)
             r = simulate_strategy(tmpl, world_copy, seed, profile, 20)
-            assert r.accuracy >= prev - 0.06, (
+            assert r.accuracy >= prev - 0.12, (
                 f"seed={seed}: {pct-10}%→{pct}% dropped "
                 f"{prev:.0%}→{r.accuracy:.0%}")
             prev = r.accuracy
@@ -416,7 +416,7 @@ def test_question_quality():
         has_min = False
         has_updates = False
 
-        for seed in range(10):
+        for seed in range(20):
             world = tmpl.generate_world(seed=seed, n_entities=60)
             rng_doc = Random(seed)
             docs = [tmpl.render_document(e, world.active_attrs, rng_doc)

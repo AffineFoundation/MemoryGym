@@ -1,7 +1,7 @@
 """Sports team world template.
 
-Entities: Sports teams with performance and financial attributes.
-Names: 30 city-like words × 20 mascots = 600 unique teams.
+Entities: Sports teams with 23 possible attributes (16 numeric + text + 2 enum + date + 3 list_float).
+Names: 30 city-like words x 20 mascots = 600 unique teams.
 Leagues: 10 sports leagues.
 Document styles: 4 narrative styles (~250 tokens each).
 
@@ -9,6 +9,7 @@ Design pressures:
 - Mix of percentage (win_pct) and count (roster_size) attrs
 - Large range differences: revenue [1M, 5000M] vs roster_size [15, 60]
 - "Lower is better" (avg_age for rebuilding) ambiguity tests comprehension
+- New dtypes: list_float trends, enum categories, date, text history
 """
 
 from __future__ import annotations
@@ -42,7 +43,31 @@ _LEAGUES = [
     "Championship Series",
 ]
 
+_TEAM_HISTORIES = [
+    "Founded as a community club before rising through the ranks to professional status.",
+    "Originally a factory workers' team that grew into a regional powerhouse.",
+    "Emerged from a merger of two struggling franchises to form a competitive unit.",
+    "Started as a college exhibition squad before attracting professional sponsorship.",
+    "Built from scratch by a billionaire owner with a vision for championship glory.",
+    "Relocated from a smaller market after decades of declining attendance.",
+    "Rose from the development league to earn a permanent spot in the top division.",
+    "Has a storied tradition of developing young talent through its academy system.",
+    "Known for its defensive identity established by a legendary head coach.",
+    "Survived a near-bankruptcy in the 1990s to become a financially stable franchise.",
+    "Carries a legacy of innovation, having pioneered analytics-driven roster construction.",
+    "Built its dynasty around a core of homegrown players who stayed for their entire careers.",
+    "Has changed ownership five times, each era bringing a distinct playing philosophy.",
+    "Famous for its passionate fan base that consistently sells out home games.",
+    "Underwent a complete rebuild after trading away all veteran players for draft capital.",
+    "Maintains a fierce cross-town rivalry that defines the local sports culture.",
+    "Won its first championship after decades of heartbreaking playoff exits.",
+    "Known for blockbuster trades and free-agent signings that reshape the roster annually.",
+    "Operates one of the most respected scouting networks in professional sports.",
+    "Has a tradition of hiring innovative coaches who later become legends elsewhere.",
+]
+
 _ATTR_DEFS = [
+    # Original numeric attrs
     AttrDef("wins", "int", 0, 120, "", "Wins"),
     AttrDef("losses", "int", 0, 120, "", "Losses"),
     AttrDef("win_pct", "float", 0.0, 1.0, "", "Win percentage",
@@ -55,6 +80,30 @@ _ATTR_DEFS = [
     AttrDef("revenue_m", "float", 1.0, 5000.0, "$M", "Revenue"),
     AttrDef("attendance_avg", "int", 1000, 100000, "", "Average attendance"),
     AttrDef("championships", "int", 0, 30, "", "Championships"),
+    # New numeric attrs
+    AttrDef("playoff_appearances", "int", 0, 30, "", "Playoff appearances"),
+    AttrDef("draft_picks", "int", 0, 50, "", "Draft picks"),
+    AttrDef("salary_cap_m", "float", 50.0, 300.0, "$M", "Salary cap",
+            agg_ops=("average",)),
+    AttrDef("social_media_followers", "int", 10000, 5000000, "",
+            "Social media followers"),
+    AttrDef("stadium_capacity", "int", 10000, 80000, "", "Stadium capacity"),
+    AttrDef("injury_count", "int", 0, 30, "", "Injury count"),
+    # New dtype attrs
+    AttrDef("season_wins", "list_float", min_val=0, max_val=100,
+            list_len=5, label="Season wins (last 5)"),
+    AttrDef("season_revenue", "list_float", min_val=10, max_val=500,
+            list_len=5, label="Season revenue ($M, last 5)"),
+    AttrDef("attendance_trend", "list_float", min_val=5000, max_val=60000,
+            list_len=5, label="Avg attendance (last 5 seasons)"),
+    AttrDef("division", "enum", label="Division",
+            choices=["East", "West", "North", "South", "Central"]),
+    AttrDef("tier", "enum", label="Tier",
+            choices=["major", "minor", "development"]),
+    AttrDef("last_championship_date", "date", min_val=1950, max_val=2025,
+            label="Last championship date"),
+    AttrDef("team_history", "text", label="Team history",
+            text_pool=_TEAM_HISTORIES),
 ]
 
 _Q_TEXTS: dict[str, list[str]] = {
@@ -107,6 +156,67 @@ _Q_TEXTS: dict[str, list[str]] = {
         "How many championships have the {name} won?",
         "What is the {name}'s championship count?",
         "How many titles do the {name} hold?",
+    ],
+    # New numeric attrs
+    "playoff_appearances": [
+        "How many playoff appearances have the {name} made?",
+        "What is the {name}'s playoff appearance count?",
+        "How many times have the {name} reached the playoffs?",
+    ],
+    "draft_picks": [
+        "How many draft picks do the {name} have?",
+        "What is the {name}'s total draft pick count?",
+        "How many players have the {name} drafted?",
+    ],
+    "salary_cap_m": [
+        "What is the {name}'s salary cap?",
+        "How much salary cap space do the {name} have?",
+        "What is the {name}'s total payroll cap?",
+    ],
+    "social_media_followers": [
+        "How many social media followers do the {name} have?",
+        "What is the {name}'s social media following?",
+        "How large is the {name}'s online fan base?",
+    ],
+    "stadium_capacity": [
+        "What is the {name}'s stadium capacity?",
+        "How many seats does the {name}'s stadium hold?",
+        "What is the seating capacity of the {name}'s arena?",
+    ],
+    "injury_count": [
+        "How many injuries have the {name} had this season?",
+        "What is the {name}'s injury count?",
+        "How many players on the {name} are injured?",
+    ],
+    # New dtype attrs
+    "season_wins": [
+        "What are the {name}'s season win totals for the last 5 seasons?",
+        "List the {name}'s wins over the past 5 seasons.",
+    ],
+    "season_revenue": [
+        "What are the {name}'s revenue figures for the last 5 seasons?",
+        "List the {name}'s season-by-season revenue ($M, last 5).",
+    ],
+    "attendance_trend": [
+        "What is the {name}'s average attendance over the last 5 seasons?",
+        "List the {name}'s attendance figures for the past 5 seasons.",
+    ],
+    "division": [
+        "What division do the {name} play in?",
+        "Which division are the {name} assigned to?",
+    ],
+    "tier": [
+        "What tier are the {name} classified in?",
+        "What competitive tier do the {name} belong to?",
+    ],
+    "last_championship_date": [
+        "When did the {name} last win a championship?",
+        "What is the date of the {name}'s most recent title?",
+    ],
+    "team_history": [
+        "Describe the {name}'s team history.",
+        "What is the background of the {name} franchise?",
+        "Tell me about the {name}'s origins and history.",
     ],
 }
 
@@ -172,29 +282,91 @@ _SENTENCE_TMPLS: dict[str, list[tuple[str, str]]] = {
         ("holds {val} titles, ahead of {other_name}'s {other_val}",
          "comparative"),
     ],
+    # New numeric attrs
+    "playoff_appearances": [
+        ("has made {val} playoff appearances", "none"),
+        ("playoff appearances grew from {distractor} to {val}", "temporal"),
+        ("has {val} playoff berths, compared to {other_name}'s {other_val}",
+         "comparative"),
+    ],
+    "draft_picks": [
+        ("holds {val} draft picks in total", "none"),
+        ("draft pick count increased from {distractor} to {val}", "temporal"),
+    ],
+    "salary_cap_m": [
+        ("operates under a salary cap of {val}", "none"),
+        ("salary cap shifted from {distractor} to {val}", "temporal"),
+        ("carries {val} in payroll, versus {other_name}'s {other_val}",
+         "comparative"),
+    ],
+    "social_media_followers": [
+        ("boasts {val} social media followers", "none"),
+        ("online following grew from {distractor} to {val}", "temporal"),
+    ],
+    "stadium_capacity": [
+        ("plays in a stadium seating {val}", "none"),
+        ("stadium capacity expanded from {distractor} to {val}", "temporal"),
+    ],
+    "injury_count": [
+        ("has dealt with {val} injuries this season", "none"),
+        ("injury count rose from {distractor} to {val}", "temporal"),
+    ],
+    # New dtype attrs
+    "season_wins": [
+        ("posted season win totals of {val} over the last five years", "none"),
+    ],
+    "season_revenue": [
+        ("reported season revenues of {val} over the past five years", "none"),
+    ],
+    "attendance_trend": [
+        ("averaged attendance figures of {val} across the last five seasons",
+         "none"),
+    ],
+    "division": [
+        ("competes in the {val} division", "none"),
+    ],
+    "tier": [
+        ("is classified as a {val} tier franchise", "none"),
+    ],
+    "last_championship_date": [
+        ("last won a championship on {val}", "none"),
+    ],
+    "team_history": [
+        ("{val}", "none"),
+    ],
 }
 
 _RATIO_PAIRS = [
     ("points_scored", "wins", "points scored per win"),
     ("revenue_m", "attendance_avg", "revenue per fan in $M"),
     ("wins", "roster_size", "wins per roster spot"),
+    ("salary_cap_m", "roster_size", "salary cap per roster spot in $M"),
+    ("revenue_m", "social_media_followers", "revenue per follower in $M"),
+    ("stadium_capacity", "attendance_avg", "capacity utilization ratio"),
 ]
 
 
 def _fmt(attr: str, val: Any) -> str:
-    if attr == "revenue_m":
-        return f"${val:,.1f}M"
+    if attr in ("revenue_m", "salary_cap_m"):
+        return f"${val:,.1f}M" if isinstance(val, (int, float)) else str(val)
     if attr == "win_pct":
         return f"{val:.3f}"
     if attr == "avg_age":
         return f"{val:.1f} yrs"
+    if attr in ("social_media_followers", "stadium_capacity",
+                "attendance_avg"):
+        return f"{val:,}" if isinstance(val, (int, float)) else str(val)
+    if attr == "season_revenue" and isinstance(val, list):
+        return ", ".join(f"${v:,.1f}M" for v in val)
+    if attr in ("season_wins", "attendance_trend") and isinstance(val, list):
+        return ", ".join(f"{v:,.1f}" for v in val)
     if isinstance(val, int):
         return f"{val:,}"
     return str(val)
 
 
 class SportWorld(WorldTemplate):
-    """Sports teams — 600 names × 10 attrs × 10 leagues."""
+    """Sports teams — 600 names x 23 attrs x 10 leagues."""
 
     @property
     def name(self) -> str:
@@ -223,12 +395,7 @@ class SportWorld(WorldTemplate):
         for adef in _ATTR_DEFS:
             if adef.name not in active_attrs:
                 continue
-            if adef.dtype == "int":
-                attrs[adef.name] = rng.randint(
-                    int(adef.min_val), int(adef.max_val))
-            else:
-                attrs[adef.name] = round(
-                    rng.uniform(adef.min_val, adef.max_val), 2)
+            attrs[adef.name] = self._generate_attr_value(rng, adef)
         # Derive win_pct from wins/losses to avoid contradiction
         if "win_pct" in attrs and "wins" in attrs and "losses" in attrs:
             total = attrs["wins"] + attrs["losses"]

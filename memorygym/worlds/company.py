@@ -1,6 +1,6 @@
 """Company financials world template.
 
-Entities: Companies with 10 possible numeric attributes.
+Entities: Companies with 23 possible attributes (19 numeric + text + enum + date + list_float).
 Names: 30 prefixes × 20 suffixes = 600 unique companies.
 Sectors: 12 industry categories.
 Document styles: 4 narrative styles (~250 tokens each).
@@ -37,6 +37,31 @@ _SECTORS = [
     "Mining", "Agriculture",
 ]
 
+_BUSINESS_SUMMARIES = [
+    "specializes in cloud infrastructure and enterprise SaaS platforms",
+    "develops AI-powered automation tools for manufacturing workflows",
+    "provides cybersecurity solutions for financial institutions",
+    "builds next-generation semiconductor fabrication equipment",
+    "operates a global logistics network for e-commerce fulfillment",
+    "manufactures precision medical devices for minimally invasive surgery",
+    "offers renewable energy storage and grid management systems",
+    "creates advanced materials for aerospace and defense applications",
+    "delivers data analytics and business intelligence platforms",
+    "develops autonomous vehicle navigation and sensor fusion technology",
+    "provides telemedicine platforms connecting patients with specialists",
+    "builds quantum computing hardware and development tools",
+    "manufactures industrial robotics for warehouse automation",
+    "offers blockchain-based supply chain verification services",
+    "develops gene therapy delivery mechanisms for rare diseases",
+    "provides satellite communications for maritime and aviation",
+    "builds edge computing infrastructure for IoT deployments",
+    "manufactures high-efficiency solar panels and inverters",
+    "creates natural language processing tools for enterprise search",
+    "develops precision agriculture technology using drone imagery",
+]
+
+_RISK_LEVELS = ["low", "moderate", "high", "critical"]
+
 _ATTR_DEFS = [
     AttrDef("revenue_m", "float", 10, 50000, "$M", "Revenue"),
     AttrDef("profit_margin_pct", "float", -15, 40, "%", "Profit margin",
@@ -51,6 +76,31 @@ _ATTR_DEFS = [
     AttrDef("patent_count", "int", 0, 20000, "", "Patents"),
     AttrDef("offices", "int", 1, 300, "", "Offices"),
     AttrDef("founded_year", "int", 1950, 2023, "", "Founded"),
+    # New numeric attrs
+    AttrDef("gross_profit_m", "float", 5, 30000, "$M", "Gross profit"),
+    AttrDef("operating_income_m", "float", -5000, 20000, "$M",
+            "Operating income"),
+    AttrDef("capex_m", "float", 1, 15000, "$M", "Capital expenditure"),
+    AttrDef("dividend_yield_pct", "float", 0, 12, "%", "Dividend yield",
+            agg_ops=("average",)),
+    AttrDef("pe_ratio", "float", 5, 120, "", "P/E ratio",
+            agg_ops=("average",)),
+    AttrDef("inventory_turnover", "float", 1, 50, "", "Inventory turnover",
+            agg_ops=("average",)),
+    AttrDef("current_ratio", "float", 0.3, 5.0, "", "Current ratio",
+            agg_ops=("average",)),
+    AttrDef("ceo_tenure_years", "int", 1, 30, "", "CEO tenure (years)"),
+    AttrDef("esg_score", "float", 0, 100, "", "ESG score",
+            agg_ops=("average",)),
+    # New dtype attrs
+    AttrDef("business_summary", "text", label="Business summary",
+            text_pool=_BUSINESS_SUMMARIES),
+    AttrDef("risk_level", "enum", label="Risk level",
+            choices=_RISK_LEVELS),
+    AttrDef("ipo_date", "date", min_val=1980, max_val=2024,
+            label="IPO date"),
+    AttrDef("quarterly_revenue", "list_float", min_val=5, max_val=15000,
+            label="Quarterly revenue ($M)", list_len=4),
 ]
 
 _Q_TEXTS: dict[str, list[str]] = {
@@ -104,6 +154,59 @@ _Q_TEXTS: dict[str, list[str]] = {
         "When was {name} founded?",
         "In what year was {name} established?",
         "What year did {name} start operations?",
+    ],
+    "gross_profit_m": [
+        "What is {name}'s gross profit?",
+        "How much gross profit does {name} report?",
+    ],
+    "operating_income_m": [
+        "What is {name}'s operating income?",
+        "How much operating income does {name} generate?",
+    ],
+    "capex_m": [
+        "What is {name}'s capital expenditure?",
+        "How much does {name} spend on capex?",
+    ],
+    "dividend_yield_pct": [
+        "What is {name}'s dividend yield?",
+        "What dividend yield does {name} offer?",
+    ],
+    "pe_ratio": [
+        "What is {name}'s P/E ratio?",
+        "What price-to-earnings ratio does {name} have?",
+    ],
+    "inventory_turnover": [
+        "What is {name}'s inventory turnover?",
+        "How many times does {name} turn over its inventory?",
+    ],
+    "current_ratio": [
+        "What is {name}'s current ratio?",
+        "What liquidity ratio does {name} maintain?",
+    ],
+    "ceo_tenure_years": [
+        "How many years has {name}'s CEO been in the role?",
+        "What is the CEO tenure at {name}?",
+    ],
+    "esg_score": [
+        "What is {name}'s ESG score?",
+        "How does {name} rate on ESG metrics?",
+    ],
+    "business_summary": [
+        "What does {name} do?",
+        "Describe {name}'s core business.",
+        "What is {name}'s business focus?",
+    ],
+    "risk_level": [
+        "What is {name}'s risk level?",
+        "What risk rating does {name} carry?",
+    ],
+    "ipo_date": [
+        "When did {name} go public?",
+        "What is {name}'s IPO date?",
+    ],
+    "quarterly_revenue": [
+        "What are {name}'s quarterly revenue figures?",
+        "List {name}'s revenue for the last 4 quarters.",
     ],
 }
 
@@ -174,23 +277,75 @@ _SENTENCE_TMPLS: dict[str, list[tuple[str, str]]] = {
          "{distractor} predecessor", "temporal"),
         ("founded in {val}, predating {other_name}", "comparative"),
     ],
+    "gross_profit_m": [
+        ("reported gross profit of {val}", "none"),
+        ("grew gross profit from {distractor} to {val}", "temporal"),
+    ],
+    "operating_income_m": [
+        ("generated operating income of {val}", "none"),
+        ("saw operating income shift from {distractor} to {val}", "temporal"),
+    ],
+    "capex_m": [
+        ("invested {val} in capital expenditure", "none"),
+        ("increased capex from {distractor} to {val}", "temporal"),
+    ],
+    "dividend_yield_pct": [
+        ("offers a dividend yield of {val}", "none"),
+        ("adjusted its dividend yield from {distractor} to {val}", "temporal"),
+    ],
+    "pe_ratio": [
+        ("trades at a P/E ratio of {val}", "none"),
+        ("P/E ratio changed from {distractor} to {val}", "temporal"),
+    ],
+    "inventory_turnover": [
+        ("achieves an inventory turnover of {val}", "none"),
+    ],
+    "current_ratio": [
+        ("maintains a current ratio of {val}", "none"),
+    ],
+    "ceo_tenure_years": [
+        ("has had its current CEO for {val} years", "none"),
+    ],
+    "esg_score": [
+        ("earned an ESG score of {val}", "none"),
+        ("improved its ESG score from {distractor} to {val}", "temporal"),
+    ],
+    "business_summary": [
+        ("{val}", "none"),
+    ],
+    "risk_level": [
+        ("is classified at {val} risk level", "none"),
+    ],
+    "ipo_date": [
+        ("went public on {val}", "none"),
+    ],
+    "quarterly_revenue": [
+        ("reported quarterly revenues of {val}", "none"),
+    ],
 }
 
 _RATIO_PAIRS = [
     ("revenue_m", "employees", "revenue per employee in $M"),
     ("market_cap_m", "revenue_m", "market cap to revenue ratio"),
     ("patent_count", "employees", "patents per thousand employees"),
+    ("gross_profit_m", "revenue_m", "gross margin ratio"),
+    ("operating_income_m", "revenue_m", "operating margin ratio"),
+    ("capex_m", "revenue_m", "capex to revenue ratio"),
 ]
 
 
 def _fmt(attr: str, val: Any) -> str:
     """Format an attribute value for human-readable display."""
-    if attr in ("revenue_m", "market_cap_m"):
-        return f"${val:,.1f}M"
-    if attr in ("profit_margin_pct", "debt_ratio_pct", "rd_spend_pct"):
-        return f"{val:.2f}%"
+    if attr in ("revenue_m", "market_cap_m", "gross_profit_m",
+                "operating_income_m", "capex_m"):
+        return f"${val:,.1f}M" if isinstance(val, (int, float)) else str(val)
+    if attr in ("profit_margin_pct", "debt_ratio_pct", "rd_spend_pct",
+                "dividend_yield_pct"):
+        return f"{val:.2f}%" if isinstance(val, (int, float)) else str(val)
     if attr in ("employees", "customer_count", "patent_count"):
-        return f"{val:,}"
+        return f"{val:,}" if isinstance(val, (int, float)) else str(val)
+    if attr == "quarterly_revenue" and isinstance(val, list):
+        return ", ".join(f"${v:,.1f}M" for v in val)
     return str(val)
 
 
@@ -224,12 +379,7 @@ class CompanyWorld(WorldTemplate):
         for adef in _ATTR_DEFS:
             if adef.name not in active_attrs:
                 continue
-            if adef.dtype == "int":
-                attrs[adef.name] = rng.randint(
-                    int(adef.min_val), int(adef.max_val))
-            else:
-                attrs[adef.name] = round(
-                    rng.uniform(adef.min_val, adef.max_val), 2)
+            attrs[adef.name] = self._generate_attr_value(rng, adef)
         return EntitySpec(name=name, category=category, attrs=attrs)
 
     def _format_value(self, attr: str, val: Any) -> str:

@@ -66,34 +66,84 @@ eval 数据（ROADMAP.md §3）← 衡量差距
 
 ## 当前任务
 
-### Phase 14 — 公开发布准备
-1. 写 README.md（项目简介、安装、quickstart、评测命令、排行榜）
-2. 验证 `pip install -e .` 完整可用（依赖链完整性）
-3. 用 scripts/leaderboard.py 生成 LEADERBOARD.md
-4. CLAUDE.md 与代码实际状态一致性检查（评分权重、模板数、架构模块）
-5. 实现 `memorygym/env.py` — affinetes OpenEnvResponse 兼容接口
-    - 参考 `/home/claudeuser/work/liveweb-arena/env.py` 的 Actor 模式
-    - Actor 类实现 `reset()`, `step()`, `state()`, `stop()`, `evaluate()` 方法
-    - 所有方法返回 `OpenEnvResponse(observation, reward, done, truncated, episode_id, info)`
-    - `evaluate()` 编排完整评测流程（生成世界 → agent 运行 → 评分），返回结果 dict
-    - eval 结果 JSON 格式：顶层 `{task_name, score, success, time_taken, extra}`
-    - `extra.conversation` 必须包含完整对话历史（当前 trajectory 只有 tool_calls，需增加完整 messages）
-    - `extra.answer_details` 保持现有格式
-    - 依赖：`pip install affinetes` 并加入 pyproject.toml optional dependencies
-    - stream_agent.py 需修改：返回完整 conversation history（不仅仅是 trajectory）
-6. 实现 `scripts/affinetes_build.py` — 构建 MemoryGym Docker 镜像
-    - 参考 `/home/claudeuser/work/liveweb-arena/scripts/affinetes_build.py`
-    - 调用 `af.build_image_from_env()` 构建镜像
-    - 支持 `--tag`, `--push`, `--registry`, `--no-cache` 参数
-7. 实现 `scripts/affinetes_example.py` — affinetes 容器化评测示例
-    - 参考 `/home/claudeuser/work/liveweb-arena/scripts/affinetes_example.py`
-    - `af.load_env()` 加载容器 → `env.evaluate()` 运行评测 → 保存结果到 `eval/`
-    - 支持 `--model`, `--seed`, `--template`, `--tier`, `--timeout` 参数
+### Phase 17 — 增强模板系统性验证
+
+**依据**：Phase 16 大幅改造了 6 个模板的结构（新 dtype、属性数翻倍、新问题类型），需要系统性验证每个模板的正确性和评测质量。
+
+1. **每模板单元测试**：为每个模板编写专项测试，覆盖：
+    - 新 dtype 属性的生成、渲染、格式化是否正确
+    - text 属性的修正/矛盾机制是否正常（关键词替换）
+    - enum 属性的修正是否确实换了选项
+    - list_float 属性的序列生成、修正（改最近值）、趋势计算
+    - date 属性的生成范围、偏移修正、比较逻辑
+    - 层级结构（city）：parent 赋值正确、hierarchy_aggregate 计算准确
+    - 多实体关联（movie）：同导演/演员跨电影、反向查询准确
+2. **新问题类型验证**：每种新问题类型至少测试：
+    - GT 计算正确性（temporal_trend 斜率、temporal_extreme argmax、hierarchy_aggregate 求和、text_match 关键词命中、enum_filter 过滤+聚合）
+    - 问题文本格式合理（无占位符泄漏、无空值）
+    - 问题在 stored/missed 场景下均可生成（adaptive replacement 兼容）
+3. **Simulation 全量验证**：每个模板 × 8 策略 × 10 seeds 跑 `--validate`：
+    - perfect=100%（含新问题类型全对）
+    - guesser=0%（新 dtype 无法猜对）
+    - smart_guesser<5%（text/enum/list_float 无统计规律可猜）
+    - abstainer<15%
+    - strategic>naive+10%
+    ```bash
+    python -m memorygym.bench --seeds 10 --validate --template company
+    python -m memorygym.bench --seeds 10 --validate --template research
+    python -m memorygym.bench --seeds 10 --validate --template city
+    python -m memorygym.bench --seeds 10 --validate --template hospital
+    python -m memorygym.bench --seeds 10 --validate --template sport
+    python -m memorygym.bench --seeds 10 --validate --template movie
+    ```
+4. **跨模板一致性检查**：
+    - 6 个模板的 composite 分布应在合理范围（strategic 55-70%）
+    - 新问题类型不应导致某个模板比其他模板显著简单或困难
+    - 如有异常，调整该模板的属性难度或问题分布
+5. **真实 eval 冒烟测试**：每模板至少用 1 个模型跑 1 seed，确认 agent 能正常处理新属性类型
+    ```bash
+    python -m memorygym.bench --model moonshotai/Kimi-K2.5-TEE --seed 0 --template company
+    python -m memorygym.bench --model moonshotai/Kimi-K2.5-TEE --seed 0 --template research
+    python -m memorygym.bench --model moonshotai/Kimi-K2.5-TEE --seed 0 --template city
+    python -m memorygym.bench --model moonshotai/Kimi-K2.5-TEE --seed 0 --template hospital
+    python -m memorygym.bench --model moonshotai/Kimi-K2.5-TEE --seed 0 --template sport
+    python -m memorygym.bench --model moonshotai/Kimi-K2.5-TEE --seed 0 --template movie
+    ```
+6. **结果汇总**：更新 ROADMAP.md §3 增强后基线数据，记录各模板新旧分数对比
 
 ### 阻塞任务（等待外部资源）
 - GPU 端到端训练验证（需 4+ GPU）
 
 ## 已完成
+
+### Phase 16 — 模板结构分化 ✅
+1. ~~types.py AttrDef 扩展~~ ✅ → 6 种 dtype (int/float/text/enum/list_float/date), EntitySpec 加 parent/children
+2. ~~base.py 框架适配~~ ✅ → _generate_attr_value(), _perturb_value(), _apply_eval_salt() 支持全 dtype
+3. ~~questions.py 新问题类型~~ ✅ → 6 种新 competency (temporal_trend/extreme, hierarchy_aggregate/lookup, text_match, enum_filter)
+4. ~~eval_scorer + protocol.py 注册~~ ✅ → 20 种 reasoning competency
+5. ~~simulation.py 适配~~ ✅ → smart_guesser 处理新 dtype, priority tolerance 放宽
+6. ~~company 模板增强~~ ✅ → 10→23 attrs (含 text/enum/date/list_float)
+7. ~~research 模板增强~~ ✅ → 10→22 attrs + cites 关系
+8. ~~city 模板增强~~ ✅ → 10→23 attrs (含层级结构相关 enum)
+9. ~~hospital 模板增强~~ ✅ → 10→23 attrs (含 3 个 text + 2 个 enum)
+10. ~~sport 模板增强~~ ✅ → 10→22 attrs (含 3 个 list_float 时间序列)
+11. ~~movie 模板增强~~ ✅ → 10→23 attrs (含 director/actor/summary text + studio/rating enum)
+12. ~~测试通过~~ ✅ → 249 passed, simulation ALL PASS (3 seeds × 6 templates × 8 strategies)
+
+### Phase 15 — Eval 结果完整性 + 评分复用 ✅
+1. ~~per_axis/composite 加入 eval JSON~~ ✅
+2. ~~compute_axis_scores() 共享函数~~ ✅ → protocol.py
+3. ~~trajectory 加 content 字段~~ ✅ → ingest/correction/question 均含事件内容
+4. ~~测试~~ ✅ → 249 passed
+
+### Phase 14 — 公开发布准备 ✅
+1. ~~README.md~~ ✅
+2. ~~pip install -e . 验证~~ ✅
+3. ~~LEADERBOARD.md~~ ✅ → scripts/leaderboard.py 生成，9 个模型排行
+4. ~~CLAUDE.md 一致性~~ ✅ → 评分权重统一为 breadth=0.30, reasoning=0.25
+5. ~~env.py~~ ✅ → Actor(evaluate/reset/step/state/stop)，含 per-axis 评分 + conversation
+6. ~~affinetes_build.py~~ ✅
+7. ~~affinetes_example.py~~ ✅
 
 ### Phase 13 — 评测数据整理 ✅
 1. ~~movie 模板 eval~~ ✅ → Kimi-K2.5 movie seed=0: 55%（首个 movie 结果）

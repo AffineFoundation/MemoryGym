@@ -1,12 +1,12 @@
 """City/municipality world template.
 
-Entities: Cities with demographic, geographic, and quality-of-life attributes.
-Names: 30 nature adjectives × 20 geographic nouns = 600 unique cities.
+Entities: Cities with 23 possible attributes (18 numeric + text + enum + date + list_float).
+Names: 30 nature adjectives x 20 geographic nouns = 600 unique cities.
 Regions: 8 geographic regions.
 Document styles: 4 narrative styles (~250 tokens each).
 
 Design pressures on base class:
-- Negative values (avg_temp_c can be < 0) → tests conditional threshold formatting
+- Negative values (avg_temp_c can be < 0) -> tests conditional threshold formatting
 - Wide scale differences (population 2M vs transit_score 100)
 - "Lower is better" attrs (crime_rate) alongside "higher is better" (income)
 """
@@ -38,12 +38,40 @@ _REGIONS = [
     "Riverlands", "Woodlands", "Drylands", "Islands",
 ]
 
+_CITY_DESCRIPTIONS = [
+    "a thriving metropolitan hub known for its vibrant arts scene and world-class dining establishments",
+    "a coastal gem with pristine beaches and a bustling port that drives regional maritime commerce",
+    "a historic center of learning home to prestigious universities and cutting-edge research institutes",
+    "a rapidly modernizing urban area investing heavily in smart city infrastructure and green energy",
+    "a mountainside retreat celebrated for its clean air, outdoor recreation, and alpine architecture",
+    "a major transportation crossroads connecting regional trade routes with modern rail and highway networks",
+    "a cultural melting pot where diverse communities have shaped a unique culinary and artistic identity",
+    "a former industrial powerhouse now reinventing itself as a technology and innovation corridor",
+    "a garden city renowned for its extensive parks system and commitment to environmental sustainability",
+    "a riverfront settlement with a storied past in river trade and a growing modern services economy",
+    "a fast-growing satellite city absorbing overflow from nearby megacities with affordable housing options",
+    "a compact walkable city that prioritizes cycling infrastructure and public transit over car traffic",
+    "a desert oasis that has transformed arid land into a flourishing agricultural and tourism destination",
+    "a northern outpost with extreme seasonal variation that attracts adventure tourists year-round",
+    "a lakeside community known for freshwater fisheries, waterfront festivals, and boat manufacturing",
+    "a planned city built from scratch with modernist architecture and efficient grid-based street layout",
+    "a tropical port city with a thriving export economy centered on fruits, spices, and textiles",
+    "a hilltop fortress town preserving medieval heritage while embracing renewable energy initiatives",
+    "a sprawling suburban city with expansive shopping districts and family-oriented residential communities",
+    "a tech-forward smart city piloting autonomous transit, digital governance, and open data platforms",
+]
+
+_CLIMATE_ZONES = ["tropical", "arid", "temperate", "continental", "polar"]
+
+_CITY_TYPES = ["capital", "port", "industrial", "cultural", "tech_hub",
+               "resort"]
+
 _ATTR_DEFS = [
     AttrDef("population", "int", 1000, 2000000, "", "Population"),
-    AttrDef("area_km2", "float", 5.0, 1500.0, "km²", "Area"),
+    AttrDef("area_km2", "float", 5.0, 1500.0, "km\u00b2", "Area"),
     AttrDef("median_income", "int", 20000, 150000, "$", "Median income"),
     AttrDef("elevation_m", "int", 0, 3000, "m", "Elevation"),
-    AttrDef("avg_temp_c", "float", -10.0, 35.0, "°C", "Average temperature",
+    AttrDef("avg_temp_c", "float", -10.0, 35.0, "\u00b0C", "Average temperature",
             agg_ops=("average",)),
     AttrDef("hospital_count", "int", 1, 50, "", "Hospitals"),
     AttrDef("school_count", "int", 2, 200, "", "Schools"),
@@ -53,6 +81,30 @@ _ATTR_DEFS = [
             agg_ops=("average",)),
     AttrDef("transit_score", "int", 0, 100, "/100", "Transit score",
             agg_ops=("average",)),
+    # New numeric attrs
+    AttrDef("gdp_per_capita", "float", 1000, 80000, "$", "GDP per capita"),
+    AttrDef("air_quality_index", "int", 10, 300, "", "Air quality index"),
+    AttrDef("unemployment_pct", "float", 1.0, 25.0, "%", "Unemployment rate",
+            agg_ops=("average",)),
+    AttrDef("tourism_visitors", "int", 10000, 5000000, "", "Tourism visitors"),
+    AttrDef("housing_price_index", "float", 50, 500, "", "Housing price index"),
+    AttrDef("internet_speed_mbps", "float", 5, 1000, "Mbps",
+            "Internet speed"),
+    AttrDef("literacy_rate_pct", "float", 40, 100, "%", "Literacy rate",
+            agg_ops=("average",)),
+    AttrDef("life_expectancy", "float", 40, 90, "", "Life expectancy",
+            agg_ops=("average",)),
+    # New dtype attrs
+    AttrDef("climate_zone", "enum", label="Climate zone",
+            choices=_CLIMATE_ZONES),
+    AttrDef("city_type", "enum", label="City type",
+            choices=_CITY_TYPES),
+    AttrDef("founding_date", "date", min_val=500, max_val=2000,
+            label="Founding date"),
+    AttrDef("city_description", "text", label="City description",
+            text_pool=_CITY_DESCRIPTIONS),
+    AttrDef("population_trend", "list_float", min_val=50000, max_val=5000000,
+            label="Population (last 5 years)", list_len=5),
 ]
 
 _Q_TEXTS: dict[str, list[str]] = {
@@ -63,7 +115,7 @@ _Q_TEXTS: dict[str, list[str]] = {
     ],
     "area_km2": [
         "What is the area of {name} in square kilometers?",
-        "How large is {name} in km²?",
+        "How large is {name} in km\u00b2?",
         "What is {name}'s total area?",
     ],
     "median_income": [
@@ -105,6 +157,67 @@ _Q_TEXTS: dict[str, list[str]] = {
         "What is {name}'s transit score?",
         "How does {name} rate for public transit?",
         "What transit score has {name} achieved?",
+    ],
+    "gdp_per_capita": [
+        "What is {name}'s GDP per capita?",
+        "How much GDP per person does {name} produce?",
+        "What is the per-capita GDP of {name}?",
+    ],
+    "unemployment_pct": [
+        "What is {name}'s unemployment rate?",
+        "How high is unemployment in {name}?",
+        "What percentage of {name}'s workforce is unemployed?",
+    ],
+    "air_quality_index": [
+        "What is {name}'s air quality index?",
+        "How does {name} score on air quality?",
+        "What AQI does {name} report?",
+    ],
+    "tourism_visitors": [
+        "How many tourists visit {name} annually?",
+        "What is {name}'s annual tourism visitor count?",
+        "How many tourism visitors does {name} receive?",
+    ],
+    "housing_price_index": [
+        "What is {name}'s housing price index?",
+        "How does {name} rate on the housing price index?",
+        "What housing price index does {name} have?",
+    ],
+    "internet_speed_mbps": [
+        "What is the average internet speed in {name}?",
+        "How fast is {name}'s internet connection?",
+        "What internet speed does {name} offer in Mbps?",
+    ],
+    "life_expectancy": [
+        "What is the life expectancy in {name}?",
+        "How long do residents of {name} live on average?",
+        "What is {name}'s average life expectancy?",
+    ],
+    "literacy_rate_pct": [
+        "What is {name}'s literacy rate?",
+        "What percentage of {name}'s population is literate?",
+        "How high is the literacy rate in {name}?",
+    ],
+    "climate_zone": [
+        "What climate zone is {name} in?",
+        "What type of climate does {name} have?",
+    ],
+    "city_type": [
+        "What type of city is {name}?",
+        "How is {name} classified by city type?",
+    ],
+    "founding_date": [
+        "When was {name} founded?",
+        "What is {name}'s founding date?",
+    ],
+    "city_description": [
+        "How would you describe {name}?",
+        "What is {name} known for?",
+        "Give a description of {name}.",
+    ],
+    "population_trend": [
+        "What has {name}'s population been over the last 5 years?",
+        "List {name}'s population trend for the past 5 years.",
     ],
 }
 
@@ -173,12 +286,72 @@ _SENTENCE_TMPLS: dict[str, list[tuple[str, str]]] = {
         ("scores {val} for transit, outranking {other_name} at "
          "{other_val}", "comparative"),
     ],
+    "gdp_per_capita": [
+        ("produces a GDP per capita of {val}", "none"),
+        ("GDP per capita rose from {distractor} to {val}", "temporal"),
+        ("generates {val} per capita, compared to {other_name}'s "
+         "{other_val}", "comparative"),
+    ],
+    "unemployment_pct": [
+        ("has an unemployment rate of {val}", "none"),
+        ("unemployment shifted from {distractor} to {val}", "temporal"),
+        ("reports {val} unemployment, versus {other_name}'s {other_val}",
+         "comparative"),
+    ],
+    "air_quality_index": [
+        ("records an air quality index of {val}", "none"),
+        ("air quality index changed from {distractor} to {val}", "temporal"),
+        ("has an AQI of {val}, compared to {other_name}'s {other_val}",
+         "comparative"),
+    ],
+    "tourism_visitors": [
+        ("attracts {val} tourists annually", "none"),
+        ("tourism grew from {distractor} to {val} visitors", "temporal"),
+        ("welcomes {val} visitors, outpacing {other_name}'s {other_val}",
+         "comparative"),
+    ],
+    "housing_price_index": [
+        ("has a housing price index of {val}", "none"),
+        ("housing price index climbed from {distractor} to {val}",
+         "temporal"),
+    ],
+    "internet_speed_mbps": [
+        ("offers average internet speeds of {val}", "none"),
+        ("internet speed improved from {distractor} to {val}", "temporal"),
+    ],
+    "life_expectancy": [
+        ("has a life expectancy of {val} years", "none"),
+        ("life expectancy increased from {distractor} to {val}", "temporal"),
+        ("residents live an average of {val} years, versus {other_name}'s "
+         "{other_val}", "comparative"),
+    ],
+    "literacy_rate_pct": [
+        ("achieves a literacy rate of {val}", "none"),
+        ("literacy rate rose from {distractor} to {val}", "temporal"),
+    ],
+    "climate_zone": [
+        ("is situated in a {val} climate zone", "none"),
+    ],
+    "city_type": [
+        ("is classified as a {val} city", "none"),
+    ],
+    "founding_date": [
+        ("was founded on {val}", "none"),
+    ],
+    "city_description": [
+        ("{val}", "none"),
+    ],
+    "population_trend": [
+        ("recorded population figures of {val} over the last 5 years", "none"),
+    ],
 }
 
 _RATIO_PAIRS = [
-    ("population", "area_km2", "population density per km²"),
+    ("population", "area_km2", "population density per km\u00b2"),
     ("hospital_count", "population", "hospitals per capita"),
     ("school_count", "population", "schools per capita"),
+    ("gdp_per_capita", "median_income", "GDP-to-income ratio"),
+    ("tourism_visitors", "population", "tourists per resident"),
 ]
 
 
@@ -186,26 +359,36 @@ def _fmt(attr: str, val: Any) -> str:
     if attr == "population":
         return f"{val:,}"
     if attr == "area_km2":
-        return f"{val:,.2f} km²"
-    if attr == "median_income":
-        return f"${val:,}"
+        return f"{val:,.2f} km\u00b2"
+    if attr in ("median_income", "gdp_per_capita"):
+        return f"${val:,.2f}" if isinstance(val, float) else f"${val:,}"
     if attr == "elevation_m":
         return f"{val:,} m"
     if attr == "avg_temp_c":
-        return f"{val:.2f}°C"
+        return f"{val:.2f}\u00b0C"
     if attr == "crime_rate":
         return f"{val:.2f}/1K"
-    if attr == "green_space_pct":
+    if attr in ("green_space_pct", "unemployment_pct", "literacy_rate_pct"):
         return f"{val:.2f}%"
     if attr == "transit_score":
         return f"{val}/100"
+    if attr in ("tourism_visitors", "air_quality_index"):
+        return f"{val:,}"
+    if attr == "housing_price_index":
+        return f"{val:.1f}"
+    if attr == "internet_speed_mbps":
+        return f"{val:.1f} Mbps"
+    if attr == "life_expectancy":
+        return f"{val:.1f} years"
+    if attr == "population_trend" and isinstance(val, list):
+        return ", ".join(f"{v:,.0f}" for v in val)
     if isinstance(val, int):
         return f"{val:,}"
     return str(val)
 
 
 class CityWorld(WorldTemplate):
-    """City/municipality — 600 names × 10 attrs × 8 regions."""
+    """City/municipality -- 600 names x 23 attrs x 8 regions."""
 
     @property
     def name(self) -> str:
@@ -238,12 +421,7 @@ class CityWorld(WorldTemplate):
         for adef in _ATTR_DEFS:
             if adef.name not in active_attrs:
                 continue
-            if adef.dtype == "int":
-                attrs[adef.name] = rng.randint(
-                    int(adef.min_val), int(adef.max_val))
-            else:
-                attrs[adef.name] = round(
-                    rng.uniform(adef.min_val, adef.max_val), 2)
+            attrs[adef.name] = self._generate_attr_value(rng, adef)
         return EntitySpec(name=name, category=category, attrs=attrs)
 
     def _format_value(self, attr: str, val: Any) -> str:
@@ -277,13 +455,13 @@ class CityWorld(WorldTemplate):
                         ) -> str:
         style = rng.choice(["census", "travel", "report", "brief"])
         header = {
-            "census": (f"MUNICIPAL DATA RECORD — {entity.name}\n"
+            "census": (f"MUNICIPAL DATA RECORD -- {entity.name}\n"
                        f"Region: {entity.category}\n"),
-            "travel": (f"CITY GUIDE ENTRY — {entity.name}\n"
+            "travel": (f"CITY GUIDE ENTRY -- {entity.name}\n"
                        f"Located in: {entity.category}\n"),
-            "report": (f"CITY DATA REPORT — {entity.name}\n"
+            "report": (f"CITY DATA REPORT -- {entity.name}\n"
                        f"Administrative region: {entity.category}\n"),
-            "brief": (f"URBAN ANALYTICS BRIEF — {entity.name}\n"
+            "brief": (f"URBAN ANALYTICS BRIEF -- {entity.name}\n"
                       f"Geographic zone: {entity.category}\n"),
         }[style]
         return header + self._render_body(

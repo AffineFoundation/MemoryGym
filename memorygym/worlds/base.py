@@ -149,6 +149,46 @@ class WorldTemplate(QuestionGeneratorMixin, ABC):
         return (f"{rel.source} has a {rel.relation.replace('_', ' ')} "
                 f"relationship with {rel.target}.")
 
+    @staticmethod
+    def _generate_attr_value(rng: Random, adef: AttrDef) -> Any:
+        """Generate a random value for an attribute definition.
+
+        Handles all dtypes: int, float, text, enum, list_float, date.
+        Templates can override generate_entity() for custom logic,
+        or call this helper for standard dtype handling.
+        """
+        if adef.dtype == "int":
+            return rng.randint(int(adef.min_val), int(adef.max_val))
+        elif adef.dtype == "float":
+            return round(rng.uniform(adef.min_val, adef.max_val), 2)
+        elif adef.dtype == "enum":
+            if not adef.choices:
+                raise ValueError(f"enum attr '{adef.name}' has no choices")
+            return rng.choice(adef.choices)
+        elif adef.dtype == "text":
+            if not adef.text_pool:
+                return f"Sample text for {adef.name}"
+            n_sentences = rng.randint(2, min(5, len(adef.text_pool)))
+            parts = rng.sample(adef.text_pool, n_sentences)
+            return " ".join(parts)
+        elif adef.dtype == "list_float":
+            base = rng.uniform(adef.min_val, adef.max_val)
+            values = []
+            for _ in range(adef.list_len):
+                change = rng.uniform(-0.2, 0.3) * base
+                val = max(adef.min_val, min(adef.max_val,
+                                            base + change))
+                values.append(round(val, 2))
+                base = val
+            return values
+        elif adef.dtype == "date":
+            year = rng.randint(int(adef.min_val), int(adef.max_val))
+            month = rng.randint(1, 12)
+            day = rng.randint(1, 28)  # safe for all months
+            return f"{year:04d}-{month:02d}-{day:02d}"
+        else:
+            raise ValueError(f"Unknown dtype '{adef.dtype}' for '{adef.name}'")
+
     # ── Concrete: world generation ──
 
     def generate_world(self, seed: int, n_entities: int,
@@ -213,10 +253,11 @@ class WorldTemplate(QuestionGeneratorMixin, ABC):
                          attr_defs: list[AttrDef],
                          active_attrs: list[str],
                          salt: int) -> None:
-        """Perturb numeric attribute values deterministically by salt.
+        """Perturb attribute values deterministically by salt.
 
-        Maintains relative ordering and value ranges, but shifts values
-        enough that pre-computed answers for salt=0 become wrong.
+        Handles all dtypes: numeric values are shifted by 5-15% of range,
+        list_float elements are perturbed similarly, enum/text are rotated,
+        and dates are shifted by random days.
         """
         salt_rng = Random(salt)
         for entity in entities:
@@ -226,19 +267,63 @@ class WorldTemplate(QuestionGeneratorMixin, ABC):
                 val = entity.get(adef.name)
                 if val is None:
                     continue
-                # Perturb by 5-15% of the range
-                range_size = adef.max_val - adef.min_val
-                delta = salt_rng.uniform(0.05, 0.15) * range_size
-                direction = salt_rng.choice([-1, 1])
-                new_val = val + direction * delta
-                new_val = max(adef.min_val, min(adef.max_val, new_val))
-                if adef.dtype == "int":
-                    new_val = int(round(new_val))
-                    if new_val == val:
-                        new_val = val + (1 if val < adef.max_val else -1)
-                else:
-                    new_val = round(new_val, 2)
-                entity.attrs[adef.name] = new_val
+
+                if adef.dtype in ("int", "float"):
+                    # Perturb by 5-15% of the range
+                    range_size = adef.max_val - adef.min_val
+                    delta = salt_rng.uniform(0.05, 0.15) * range_size
+                    direction = salt_rng.choice([-1, 1])
+                    new_val = val + direction * delta
+                    new_val = max(adef.min_val, min(adef.max_val, new_val))
+                    if adef.dtype == "int":
+                        new_val = int(round(new_val))
+                        if new_val == val:
+                            new_val = val + (1 if val < adef.max_val
+                                             else -1)
+                    else:
+                        new_val = round(new_val, 2)
+                    entity.attrs[adef.name] = new_val
+
+                elif adef.dtype == "list_float":
+                    if not isinstance(val, list):
+                        continue
+                    range_size = adef.max_val - adef.min_val
+                    new_list = []
+                    for v in val:
+                        delta = salt_rng.uniform(0.05, 0.15) * range_size
+                        direction = salt_rng.choice([-1, 1])
+                        nv = v + direction * delta
+                        nv = max(adef.min_val, min(adef.max_val, nv))
+                        new_list.append(round(nv, 2))
+                    entity.attrs[adef.name] = new_list
+
+                elif adef.dtype == "enum":
+                    if not adef.choices or len(adef.choices) < 2:
+                        continue
+                    # Rotate to a different choice
+                    shift = salt_rng.randint(1, len(adef.choices) - 1)
+                    idx = adef.choices.index(val) if val in adef.choices else 0
+                    entity.attrs[adef.name] = adef.choices[
+                        (idx + shift) % len(adef.choices)]
+
+                elif adef.dtype == "text":
+                    if not adef.text_pool or len(adef.text_pool) < 2:
+                        continue
+                    # Re-sample from pool with salt rng
+                    n_parts = salt_rng.randint(
+                        2, min(5, len(adef.text_pool)))
+                    entity.attrs[adef.name] = " ".join(
+                        salt_rng.sample(adef.text_pool, n_parts))
+
+                elif adef.dtype == "date":
+                    # Shift date by a random offset within valid range
+                    # Parse YYYY-MM-DD, regenerate with salt rng
+                    year = salt_rng.randint(
+                        int(adef.min_val), int(adef.max_val))
+                    month = salt_rng.randint(1, 12)
+                    day = salt_rng.randint(1, 28)
+                    entity.attrs[adef.name] = (
+                        f"{year:04d}-{month:02d}-{day:02d}")
 
     def attr_label(self, attr_name: str) -> str:
         """Human-readable attribute label."""
@@ -338,6 +423,56 @@ class WorldTemplate(QuestionGeneratorMixin, ABC):
                 entity, active_attrs, rng, other_entities)
         return self._compact_document(entity, active_attrs)
 
+    @staticmethod
+    def _perturb_value(rng: Random, adef: AttrDef, old_val: Any) -> Any:
+        """Generate a new value different from old_val for corrections."""
+        if adef.dtype == "int":
+            magnitude = max(1, int(abs(old_val) * rng.uniform(0.1, 0.5)))
+            new_val = old_val + rng.choice([-1, 1]) * magnitude
+            new_val = max(int(adef.min_val), min(int(adef.max_val), new_val))
+            if new_val == old_val:
+                new_val = old_val + (1 if old_val < adef.max_val else -1)
+            return new_val
+        elif adef.dtype == "float":
+            delta = old_val * rng.uniform(0.1, 0.5) * rng.choice([-1, 1])
+            new_val = round(old_val + delta, 2)
+            new_val = max(adef.min_val, min(adef.max_val, new_val))
+            if new_val == old_val:
+                new_val = round(old_val + 0.1, 2)
+            return new_val
+        elif adef.dtype == "enum":
+            others = [c for c in adef.choices if c != old_val]
+            return rng.choice(others) if others else old_val
+        elif adef.dtype == "date":
+            # Shift date by 30-365 days
+            from datetime import date as dt_date, timedelta
+            d = dt_date.fromisoformat(old_val)
+            shift = rng.randint(30, 365) * rng.choice([-1, 1])
+            new_d = d + timedelta(days=shift)
+            year_min = int(adef.min_val)
+            year_max = int(adef.max_val)
+            if new_d.year < year_min:
+                new_d = new_d.replace(year=year_min)
+            elif new_d.year > year_max:
+                new_d = new_d.replace(year=year_max)
+            return new_d.isoformat()
+        elif adef.dtype == "list_float":
+            # Modify the last element
+            new_val = list(old_val)
+            if new_val:
+                idx = len(new_val) - 1
+                delta = new_val[idx] * rng.uniform(0.1, 0.5)
+                new_val[idx] = round(
+                    new_val[idx] + delta * rng.choice([-1, 1]), 2)
+                new_val[idx] = max(adef.min_val, min(adef.max_val,
+                                                     new_val[idx]))
+            return new_val
+        elif adef.dtype == "text":
+            # Append a correction phrase
+            return old_val + " [Updated]"
+        else:
+            return old_val
+
     # ── Concrete: corrections ──
 
     def generate_corrections(
@@ -357,25 +492,22 @@ class WorldTemplate(QuestionGeneratorMixin, ABC):
         targets = rng.sample(candidates, min(n, len(candidates)))
 
         for entity in targets:
+            # Only correct numeric/enum attrs (text/list/date are
+            # too complex for simple correction notices)
             viable = [a for a in world.active_attrs
                       if entity.get(a) is not None]
-            attr = rng.choice(viable)
+            correctable = []
+            for a in viable:
+                ad = next((d for d in world.attr_defs if d.name == a), None)
+                if ad and ad.dtype in ("int", "float", "enum"):
+                    correctable.append(a)
+            if not correctable:
+                correctable = viable  # fallback
+            attr = rng.choice(correctable)
             old_val = entity.get(attr)
             adef = next(a for a in world.attr_defs if a.name == attr)
 
-            # Perturb value by 10-50%
-            if adef.dtype == "int":
-                magnitude = max(1, int(abs(old_val) * rng.uniform(0.1, 0.5)))
-                new_val = old_val + rng.choice([-1, 1]) * magnitude
-                new_val = max(int(adef.min_val), min(int(adef.max_val), new_val))
-                if new_val == old_val:
-                    new_val = old_val + (1 if old_val < adef.max_val else -1)
-            else:
-                delta = old_val * rng.uniform(0.1, 0.5) * rng.choice([-1, 1])
-                new_val = round(old_val + delta, 2)
-                new_val = max(adef.min_val, min(adef.max_val, new_val))
-                if new_val == old_val:
-                    new_val = round(old_val + 0.1, 2)
+            new_val = self._perturb_value(rng, adef, old_val)
 
             notice = self.render_correction(entity, attr, old_val, new_val)
             entity.attrs[attr] = new_val  # MUTATE world state
@@ -416,25 +548,19 @@ class WorldTemplate(QuestionGeneratorMixin, ABC):
         for entity in targets:
             viable = [a for a in world.active_attrs
                       if entity.get(a) is not None]
-            attr = rng.choice(viable)
+            # Prefer numeric/enum for contradictions
+            correctable = []
+            for a in viable:
+                ad = next((d for d in world.attr_defs if d.name == a), None)
+                if ad and ad.dtype in ("int", "float", "enum"):
+                    correctable.append(a)
+            if not correctable:
+                correctable = viable
+            attr = rng.choice(correctable)
             old_val = entity.get(attr)
             adef = next(a for a in world.attr_defs if a.name == attr)
 
-            # Perturb value (same logic as corrections)
-            if adef.dtype == "int":
-                magnitude = max(1, int(abs(old_val) * rng.uniform(0.1, 0.5)))
-                new_val = old_val + rng.choice([-1, 1]) * magnitude
-                new_val = max(int(adef.min_val),
-                              min(int(adef.max_val), new_val))
-                if new_val == old_val:
-                    new_val = old_val + (1 if old_val < adef.max_val else -1)
-            else:
-                delta = old_val * rng.uniform(0.1, 0.5) * rng.choice([-1, 1])
-                new_val = round(old_val + delta, 2)
-                new_val = max(adef.min_val, min(adef.max_val, new_val))
-                if new_val == old_val:
-                    new_val = round(old_val + 0.1, 2)
-
+            new_val = self._perturb_value(rng, adef, old_val)
             entity.attrs[attr] = new_val  # MUTATE world state
             # Render as a normal document (the entity with updated attrs)
             doc = self.render_document(entity, world.active_attrs, rng)

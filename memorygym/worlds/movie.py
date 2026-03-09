@@ -1,7 +1,7 @@
 """Movie industry world template.
 
-Entities: Movies with 10 possible numeric attributes.
-Names: 30 adjectives × 20 nouns = 600 unique movie titles.
+Entities: Movies with 23 possible attributes (16 numeric + text + enum + date + list_float).
+Names: 30 adjectives x 20 nouns = 600 unique movie titles.
 Genres: 10 genre categories.
 Document styles: 4 narrative styles (~250 tokens each).
 """
@@ -35,7 +35,56 @@ _GENRES = [
     "Horror", "Romance", "Animation", "Documentary", "Adventure",
 ]
 
+_DIRECTORS = [
+    "Sofia Marchetti", "Raj Patel", "Lena Johansson", "Carlos Mendoza",
+    "Yuki Tanaka", "Amara Okafor", "Ethan Blackwell", "Priya Sharma",
+    "Viktor Kozlov", "Mei-Ling Chen", "Dante Rossi", "Fatima Al-Hassan",
+    "Oscar Lindqvist", "Hana Nakamura", "Tomasz Kowalski",
+    "Adaeze Nwosu", "Mikhail Petrov", "Elena Vasquez",
+    "Joon-ho Park", "Isabelle Fontaine",
+]
+
+_LEAD_ACTORS = [
+    "Marcus Rivera", "Zara Okonkwo", "Liam Thornton", "Aisha Kapoor",
+    "Nikolai Volkov", "Camille Dubois", "Hiroshi Watanabe", "Elena Ruiz",
+    "Sebastian Cross", "Naomi Taniguchi", "Rafael Santos", "Ingrid Larsen",
+    "Kwame Asante", "Mila Horvat", "James Whitfield",
+    "Yara Mansour", "Henrik Nystrom", "Lucia Bianchi",
+    "Dae-jung Kim", "Freya Andersen",
+]
+
+_PLOT_SUMMARIES = [
+    "A disgraced detective uncovers a conspiracy that threatens to topple the government from within",
+    "Two estranged siblings reunite to save their family farm from a ruthless real estate developer",
+    "An astronaut stranded on a distant moon must survive using only salvaged alien technology",
+    "A young chef enters an underground cooking tournament with life-or-death stakes",
+    "After a mysterious signal blankets the Earth, a linguist races to decode its hidden meaning",
+    "A retired spy is pulled back into the field when their former protege goes rogue",
+    "In a world where memories can be traded, a dealer discovers a memory that could change everything",
+    "A group of strangers trapped in a skyscraper must work together to escape a deadly game",
+    "A journalist infiltrates a secretive cult and realizes the truth is stranger than fiction",
+    "An aging rock star embarks on a final tour while confronting the ghosts of their past",
+    "A small-town teacher stumbles upon an ancient artifact that grants impossible wishes",
+    "Two rival hackers are forced to collaborate when a rogue AI threatens global infrastructure",
+    "A deep-sea expedition discovers a civilization that should not exist beneath the ocean floor",
+    "After inheriting a crumbling mansion, a woman uncovers her grandmother's wartime secrets",
+    "A bounty hunter in a lawless frontier town faces a moral crisis over their latest target",
+    "An Olympic hopeful must overcome personal tragedy and a corrupt system to reach the podium",
+    "A time-loop traps a paramedic in the worst day of their career, forcing them to save everyone",
+    "In a dystopian megacity, a courier discovers their deliveries fuel an underground revolution",
+    "A documentary crew filming endangered wildlife accidentally captures evidence of a crime syndicate",
+    "A widowed father and his daughter bond over restoring a vintage airplane for a cross-country race",
+]
+
+_STUDIOS = [
+    "Paramount", "Warner", "Disney", "Universal", "Sony",
+    "Netflix", "A24", "Lionsgate",
+]
+
+_CONTENT_RATINGS = ["G", "PG", "PG-13", "R", "NC-17"]
+
 _ATTR_DEFS = [
+    # Original numeric attrs
     AttrDef("budget_m", "float", 1, 350, "$M", "Budget"),
     AttrDef("box_office_m", "float", 0.5, 2500, "$M", "Box office"),
     AttrDef("rating", "float", 1.0, 10.0, "/10", "Rating",
@@ -49,6 +98,28 @@ _ATTR_DEFS = [
     AttrDef("opening_weekend_m", "float", 0.1, 400, "$M", "Opening weekend"),
     AttrDef("awards_count", "int", 0, 30, "", "Awards"),
     AttrDef("release_year", "int", 1990, 2025, "", "Release year"),
+    # New numeric attrs
+    AttrDef("sequel_number", "int", 0, 10, "", "Sequel number"),
+    AttrDef("streaming_views_m", "float", 0.1, 500, "M", "Streaming views",
+            agg_ops=("average",)),
+    AttrDef("merchandise_revenue_m", "float", 0, 200, "$M",
+            "Merchandise revenue"),
+    AttrDef("trailer_views_m", "float", 0.1, 200, "M", "Trailer views"),
+    AttrDef("cast_size", "int", 5, 100, "", "Cast size"),
+    AttrDef("production_days", "int", 20, 365, "", "Production days"),
+    # New dtype attrs
+    AttrDef("director", "text", label="Director", text_pool=_DIRECTORS),
+    AttrDef("lead_actor", "text", label="Lead actor",
+            text_pool=_LEAD_ACTORS),
+    AttrDef("plot_summary", "text", label="Plot summary",
+            text_pool=_PLOT_SUMMARIES),
+    AttrDef("studio", "enum", label="Studio", choices=_STUDIOS),
+    AttrDef("content_rating", "enum", label="Content rating",
+            choices=_CONTENT_RATINGS),
+    AttrDef("release_date", "date", min_val=2000, max_val=2025,
+            label="Release date"),
+    AttrDef("weekly_box_office", "list_float", min_val=0.5, max_val=200,
+            label="Weekly box office ($M, first 4 weeks)", list_len=4),
 ]
 
 _Q_TEXTS: dict[str, list[str]] = {
@@ -101,6 +172,70 @@ _Q_TEXTS: dict[str, list[str]] = {
         "When was {name} released?",
         "In what year did {name} come out?",
         "What year was {name} released?",
+    ],
+    "sequel_number": [
+        "What sequel number is {name}?",
+        "Which installment in the franchise is {name}?",
+        "What is {name}'s sequel number?",
+    ],
+    "streaming_views_m": [
+        "How many streaming views has {name} received?",
+        "What are {name}'s total streaming views?",
+        "How many times has {name} been streamed?",
+    ],
+    "merchandise_revenue_m": [
+        "How much merchandise revenue has {name} generated?",
+        "What are {name}'s merchandise sales?",
+        "What is {name}'s total merchandise revenue?",
+    ],
+    "trailer_views_m": [
+        "How many views did {name}'s trailer get?",
+        "What is {name}'s trailer view count?",
+        "How many times was {name}'s trailer watched?",
+    ],
+    "cast_size": [
+        "How many cast members does {name} have?",
+        "What is {name}'s cast size?",
+        "How large is the cast of {name}?",
+    ],
+    "production_days": [
+        "How many days was {name} in production?",
+        "What was {name}'s production duration in days?",
+        "How long did it take to film {name}?",
+    ],
+    "director": [
+        "Who directed {name}?",
+        "Who is {name}'s director?",
+        "Which director helmed {name}?",
+    ],
+    "lead_actor": [
+        "Who is the lead actor in {name}?",
+        "Who stars in {name}?",
+        "Who plays the lead role in {name}?",
+    ],
+    "plot_summary": [
+        "What is {name} about?",
+        "Describe the plot of {name}.",
+        "What is the storyline of {name}?",
+    ],
+    "studio": [
+        "Which studio produced {name}?",
+        "What studio released {name}?",
+        "Who distributed {name}?",
+    ],
+    "content_rating": [
+        "What is {name}'s content rating?",
+        "What rating did {name} receive from the MPAA?",
+        "What age rating does {name} carry?",
+    ],
+    "release_date": [
+        "What is {name}'s exact release date?",
+        "When was {name} officially released?",
+        "On what date did {name} premiere?",
+    ],
+    "weekly_box_office": [
+        "What are {name}'s weekly box office figures for the first 4 weeks?",
+        "List {name}'s box office earnings for each of its first 4 weeks.",
     ],
 }
 
@@ -175,32 +310,98 @@ _SENTENCE_TMPLS: dict[str, list[tuple[str, str]]] = {
         ("came out in {val}, the same year as {other_name}",
          "comparative"),
     ],
+    "sequel_number": [
+        ("is installment number {val} in its franchise", "none"),
+        ("was promoted from part {distractor} to part {val} after a "
+         "reboot", "temporal"),
+    ],
+    "streaming_views_m": [
+        ("has accumulated {val} streaming views", "none"),
+        ("grew from {distractor} to {val} streaming views since launch",
+         "temporal"),
+        ("reached {val} streams, surpassing {other_name}'s {other_val}",
+         "comparative"),
+    ],
+    "merchandise_revenue_m": [
+        ("generated {val} in merchandise revenue", "none"),
+        ("boosted merchandise sales from {distractor} to {val}",
+         "temporal"),
+    ],
+    "trailer_views_m": [
+        ("had its trailer viewed {val} times", "none"),
+        ("saw trailer views jump from {distractor} to {val} after "
+         "the Super Bowl spot", "temporal"),
+    ],
+    "cast_size": [
+        ("features a cast of {val} actors", "none"),
+        ("expanded its cast from {distractor} to {val} during reshoots",
+         "temporal"),
+    ],
+    "production_days": [
+        ("was filmed over {val} days", "none"),
+        ("extended production from {distractor} to {val} days due to "
+         "weather delays", "temporal"),
+    ],
+    "director": [
+        ("was directed by {val}", "none"),
+    ],
+    "lead_actor": [
+        ("stars {val} in the lead role", "none"),
+    ],
+    "plot_summary": [
+        ("{val}", "none"),
+    ],
+    "studio": [
+        ("was produced by {val} studio", "none"),
+    ],
+    "content_rating": [
+        ("carries a {val} content rating", "none"),
+    ],
+    "release_date": [
+        ("premiered on {val}", "none"),
+    ],
+    "weekly_box_office": [
+        ("earned {val} across its first four weeks", "none"),
+    ],
 }
 
 _RATIO_PAIRS = [
     ("box_office_m", "budget_m", "box office to budget ratio"),
     ("opening_weekend_m", "screens", "opening weekend per screen in $M"),
     ("awards_count", "runtime_min", "awards per minute of runtime"),
+    ("merchandise_revenue_m", "box_office_m",
+     "merchandise to box office ratio"),
+    ("streaming_views_m", "trailer_views_m",
+     "streaming views to trailer views ratio"),
+    ("box_office_m", "production_days",
+     "box office per production day in $M"),
 ]
 
 
 def _fmt(attr: str, val: Any) -> str:
     """Format an attribute value for human-readable display."""
-    if attr in ("budget_m", "box_office_m", "opening_weekend_m"):
-        return f"${val:,.1f}M"
+    if attr in ("budget_m", "box_office_m", "opening_weekend_m",
+                "merchandise_revenue_m"):
+        return f"${val:,.1f}M" if isinstance(val, (int, float)) else str(val)
     if attr == "rating":
         return f"{val:.2f}/10"
     if attr in ("audience_score", "critic_score"):
         return f"{val}%"
     if attr == "runtime_min":
         return f"{val} min"
-    if attr in ("screens", "awards_count"):
-        return f"{val:,}"
+    if attr in ("screens", "awards_count", "cast_size", "production_days",
+                "sequel_number"):
+        return f"{val:,}" if isinstance(val, (int, float)) else str(val)
+    if attr in ("streaming_views_m", "trailer_views_m"):
+        return (f"{val:,.1f}M views"
+                if isinstance(val, (int, float)) else str(val))
+    if attr == "weekly_box_office" and isinstance(val, list):
+        return ", ".join(f"${v:,.1f}M" for v in val)
     return str(val)
 
 
 class MovieWorld(WorldTemplate):
-    """Movie industry — 600 titles × 10 attrs × 10 genres."""
+    """Movie industry — 600 titles x 23 attrs x 10 genres."""
 
     @property
     def name(self) -> str:
@@ -229,12 +430,7 @@ class MovieWorld(WorldTemplate):
         for adef in _ATTR_DEFS:
             if adef.name not in active_attrs:
                 continue
-            if adef.dtype == "int":
-                attrs[adef.name] = rng.randint(
-                    int(adef.min_val), int(adef.max_val))
-            else:
-                attrs[adef.name] = round(
-                    rng.uniform(adef.min_val, adef.max_val), 2)
+            attrs[adef.name] = self._generate_attr_value(rng, adef)
 
         # Constraint: opening weekend cannot exceed total box office
         if ("opening_weekend_m" in attrs and "box_office_m" in attrs

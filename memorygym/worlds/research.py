@@ -1,6 +1,6 @@
 """Research lab world template.
 
-Entities: Researchers with 10 possible numeric attributes.
+Entities: Researchers with 21 possible attributes (15 numeric + text + enum + date + 2 list_float).
 Names: 25 first × 25 last = 625 unique researchers.
 Venues: 10 academic conferences.
 Document styles: 4 narrative styles (~250 tokens each).
@@ -34,6 +34,54 @@ _VENUES = [
     "ACL", "EMNLP", "KDD", "SIGIR", "WWW",
 ]
 
+_RESEARCH_FOCUS = [
+    "Develops scalable transformer architectures for low-resource language understanding",
+    "Investigates causal inference methods for observational healthcare datasets",
+    "Designs privacy-preserving federated learning protocols for mobile devices",
+    "Explores reinforcement learning strategies for autonomous warehouse robotics",
+    "Builds graph neural networks for molecular property prediction in drug design",
+    "Studies adversarial robustness of vision models under distribution shift",
+    "Develops energy-efficient neural architecture search for edge deployment",
+    "Researches multimodal fusion techniques for video understanding tasks",
+    "Investigates few-shot learning approaches for rare event detection systems",
+    "Designs differentiable rendering pipelines for 3D scene reconstruction",
+    "Explores continual learning methods that mitigate catastrophic forgetting",
+    "Develops interpretable machine learning models for clinical decision support",
+    "Studies self-supervised pretraining strategies for speech recognition systems",
+    "Builds distributed optimization algorithms for large-scale recommendation engines",
+    "Researches zero-shot cross-lingual transfer using multilingual embeddings",
+    "Investigates neural network pruning techniques for real-time inference",
+    "Develops probabilistic programming frameworks for Bayesian deep learning",
+    "Studies attention mechanisms for long-document summarization and retrieval",
+    "Explores sim-to-real transfer methods for dexterous robotic manipulation",
+    "Designs knowledge distillation pipelines for compact on-device models",
+]
+
+_METHODOLOGY_NOTES = [
+    "Primarily uses randomized controlled trials with Bayesian analysis",
+    "Combines large-scale simulation with real-world field experiments",
+    "Employs mixed-methods research integrating surveys and interviews",
+    "Relies on longitudinal cohort studies spanning multiple years",
+    "Uses computational modeling validated against empirical benchmarks",
+    "Applies meta-analysis techniques across multiple published datasets",
+    "Conducts ablation studies with systematic hyperparameter sweeps",
+    "Develops formal mathematical proofs supplemented by simulations",
+    "Uses ethnographic fieldwork combined with quantitative analysis",
+    "Applies causal discovery algorithms to observational data",
+    "Employs transfer learning with domain-specific fine-tuning",
+    "Relies on A/B testing frameworks for online evaluation",
+    "Uses grounded theory methodology for qualitative research",
+    "Applies information-theoretic analysis to model behavior",
+    "Conducts prospective studies with pre-registered hypotheses",
+    "Uses agent-based modeling for complex systems analysis",
+    "Employs cross-validation with stratified sampling techniques",
+    "Applies topological data analysis to high-dimensional datasets",
+    "Uses participatory design methods with stakeholder feedback loops",
+    "Conducts systematic literature reviews with PRISMA guidelines",
+]
+
+_CAREER_STAGES = ["junior", "mid-career", "senior", "emeritus"]
+
 _ATTR_DEFS = [
     AttrDef("citations", "int", 10, 50000, "", "Citations"),
     AttrDef("h_index", "int", 1, 100, "", "H-index", agg_ops=("average",)),
@@ -46,6 +94,25 @@ _ATTR_DEFS = [
     AttrDef("collaborators", "int", 2, 200, "", "Collaborators"),
     AttrDef("years_active", "int", 1, 40, "", "Years active"),
     AttrDef("awards", "int", 0, 25, "", "Awards received"),
+    # New numeric attrs
+    AttrDef("grant_count", "int", 0, 50, "", "Grants awarded"),
+    AttrDef("phd_supervised", "int", 0, 40, "", "PhDs supervised"),
+    AttrDef("conference_talks", "int", 0, 100, "", "Conference talks"),
+    AttrDef("industry_projects", "int", 0, 30, "", "Industry projects"),
+    AttrDef("review_count", "int", 0, 200, "", "Reviews completed"),
+    # New dtype attrs
+    AttrDef("publication_years", "list_float", min_val=0, max_val=50,
+            list_len=5, label="Publications (last 5 years)"),
+    AttrDef("citation_trend", "list_float", min_val=0, max_val=5000,
+            list_len=5, label="Citations (last 5 years)"),
+    AttrDef("research_focus", "text", label="Research focus",
+            text_pool=_RESEARCH_FOCUS),
+    AttrDef("methodology_note", "text", label="Methodology note",
+            text_pool=_METHODOLOGY_NOTES),
+    AttrDef("career_stage", "enum", label="Career stage",
+            choices=_CAREER_STAGES),
+    AttrDef("tenure_start_date", "date", min_val=1980, max_val=2024,
+            label="Tenure start date"),
 ]
 
 _Q_TEXTS: dict[str, list[str]] = {
@@ -94,6 +161,51 @@ _Q_TEXTS: dict[str, list[str]] = {
     "awards": [
         "How many awards has {name} received?",
         "What is {name}'s award count?",
+    ],
+    "grant_count": [
+        "How many grants has {name} been awarded?",
+        "What is {name}'s total grant count?",
+    ],
+    "phd_supervised": [
+        "How many PhD students has {name} supervised to completion?",
+        "What is {name}'s total count of supervised PhDs?",
+    ],
+    "conference_talks": [
+        "How many conference talks has {name} given?",
+        "What is {name}'s conference presentation count?",
+    ],
+    "industry_projects": [
+        "How many industry projects has {name} participated in?",
+        "What is {name}'s industry collaboration count?",
+    ],
+    "review_count": [
+        "How many paper reviews has {name} completed?",
+        "What is {name}'s peer review count?",
+    ],
+    "publication_years": [
+        "What are {name}'s publication counts for the last 5 years?",
+        "List {name}'s yearly publication output over the past 5 years.",
+    ],
+    "citation_trend": [
+        "What are {name}'s citation counts for the last 5 years?",
+        "List {name}'s yearly citations over the past 5 years.",
+    ],
+    "research_focus": [
+        "What is {name}'s research focus?",
+        "Describe {name}'s primary research area.",
+        "What does {name} work on?",
+    ],
+    "methodology_note": [
+        "What research methodology does {name} use?",
+        "Describe {name}'s methodological approach.",
+    ],
+    "career_stage": [
+        "What is {name}'s career stage?",
+        "At what career level is {name}?",
+    ],
+    "tenure_start_date": [
+        "When did {name} start their tenure?",
+        "What is {name}'s tenure start date?",
     ],
 }
 
@@ -163,12 +275,61 @@ _SENTENCE_TMPLS: dict[str, list[tuple[str, str]]] = {
         ("earned {val} awards, surpassing {other_name}'s {other_val}",
          "comparative"),
     ],
+    "grant_count": [
+        ("has been awarded {val} research grants", "none"),
+        ("grant count rose from {distractor} to {val}", "temporal"),
+        ("secured {val} grants, compared to {other_name}'s {other_val}",
+         "comparative"),
+    ],
+    "phd_supervised": [
+        ("has supervised {val} PhD students to completion", "none"),
+        ("PhD supervision count grew from {distractor} to {val}",
+         "temporal"),
+        ("graduated {val} doctoral students, versus {other_name}'s "
+         "{other_val}", "comparative"),
+    ],
+    "conference_talks": [
+        ("has delivered {val} talks at international conferences", "none"),
+        ("conference presentations grew from {distractor} to {val}",
+         "temporal"),
+    ],
+    "industry_projects": [
+        ("has participated in {val} industry-funded projects", "none"),
+        ("industry project count rose from {distractor} to {val}",
+         "temporal"),
+    ],
+    "review_count": [
+        ("has completed {val} peer reviews for journals and conferences",
+         "none"),
+        ("review workload grew from {distractor} to {val} this year",
+         "temporal"),
+    ],
+    "publication_years": [
+        ("reported yearly publication counts of {val}", "none"),
+    ],
+    "citation_trend": [
+        ("recorded yearly citation counts of {val}", "none"),
+    ],
+    "research_focus": [
+        ("{val}", "none"),
+    ],
+    "methodology_note": [
+        ("{val}", "none"),
+    ],
+    "career_stage": [
+        ("is at the {val} career stage", "none"),
+    ],
+    "tenure_start_date": [
+        ("began tenure on {val}", "none"),
+    ],
 }
 
 _RATIO_PAIRS = [
     ("citations", "papers", "citations per paper"),
     ("funding_k", "students", "funding per student in $K"),
     ("papers", "years_active", "papers per year"),
+    ("grant_count", "years_active", "grants per year active"),
+    ("conference_talks", "papers", "talks per paper"),
 ]
 
 
@@ -177,13 +338,15 @@ def _fmt(attr: str, val: Any) -> str:
         return f"${val:,.1f}K"
     if attr == "review_score":
         return f"{val:.2f}/10"
+    if attr in ("publication_years", "citation_trend") and isinstance(val, list):
+        return ", ".join(f"{v:,.1f}" for v in val)
     if isinstance(val, int):
         return f"{val:,}"
     return str(val)
 
 
 class ResearchWorld(WorldTemplate):
-    """Research domain — 625 names × 10 attrs × 10 venues."""
+    """Research domain — 625 names × 21 attrs × 10 venues."""
 
     @property
     def name(self) -> str:
@@ -212,14 +375,9 @@ class ResearchWorld(WorldTemplate):
         for adef in _ATTR_DEFS:
             if adef.name not in active_attrs:
                 continue
-            if adef.dtype == "int":
-                attrs[adef.name] = rng.randint(
-                    int(adef.min_val), int(adef.max_val))
-            else:
-                attrs[adef.name] = round(
-                    rng.uniform(adef.min_val, adef.max_val), 2)
+            attrs[adef.name] = self._generate_attr_value(rng, adef)
         # Constrain citations to be consistent with h_index
-        # h_index=h means h papers with ≥h citations each → min citations ≈ h²
+        # h_index=h means h papers with >=h citations each -> min citations ~ h^2
         if "h_index" in attrs and "citations" in attrs:
             h = attrs["h_index"]
             min_cites = h * h
@@ -243,6 +401,7 @@ class ResearchWorld(WorldTemplate):
         return [
             ("collaborates_with", "collaborates with", True),
             ("advised_by", "is advised by", False),
+            ("cites", "cites work of", False),
         ]
 
     def render_relationship(self, rel):
@@ -252,6 +411,9 @@ class ResearchWorld(WorldTemplate):
         if rel.relation == "advised_by":
             return (f"{rel.source} completed doctoral work under the "
                     f"supervision of {rel.target}.")
+        if rel.relation == "cites":
+            return (f"{rel.source} frequently cites the work of "
+                    f"{rel.target} in recent publications.")
         return super().render_relationship(rel)
 
     def render_document(self, entity: EntitySpec,

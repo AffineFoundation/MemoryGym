@@ -289,6 +289,9 @@ def test_validator_handles_formatted_values():
                 # Skip near-zero values where rounding exceeds 2% tolerance
                 if isinstance(val, (int, float)) and abs(val) < 1:
                     continue
+                # Skip non-scalar types (list, etc.) — validated elsewhere
+                if isinstance(val, list):
+                    continue
                 formatted = tmpl._format_value(attr, val)
                 gt_str = str(val)
                 total += 1

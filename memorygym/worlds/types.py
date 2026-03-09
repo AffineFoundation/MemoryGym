@@ -11,15 +11,29 @@ from typing import Any
 
 @dataclass
 class AttrDef:
-    """Attribute schema definition."""
+    """Attribute schema definition.
+
+    Supported dtypes:
+    - "int", "float": numeric (uses min_val/max_val)
+    - "text": free-form text (uses text_pool for generation)
+    - "enum": categorical (uses choices)
+    - "list_float": numeric sequence (uses min_val/max_val, list_len)
+    - "date": date string "YYYY-MM-DD" (uses min_val/max_val as year range)
+    """
 
     name: str
-    dtype: str       # "int" or "float"
-    min_val: float
-    max_val: float
+    dtype: str       # "int", "float", "text", "enum", "list_float", "date"
+    min_val: float = 0.0
+    max_val: float = 100.0
     unit: str = ""   # "$M", "%", etc.
     label: str = ""  # human-readable; defaults to name
     agg_ops: tuple[str, ...] = ("total", "average")  # valid aggregation ops
+    # For "enum" dtype:
+    choices: list[str] = field(default_factory=list)
+    # For "list_float" dtype:
+    list_len: int = 5
+    # For "text" dtype: pool of sentence fragments to compose from
+    text_pool: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -29,6 +43,8 @@ class EntitySpec:
     name: str
     category: str
     attrs: dict[str, Any] = field(default_factory=dict)
+    parent: str | None = None  # hierarchical parent entity name
+    children: list[str] = field(default_factory=list)
 
     def get(self, attr: str, default=None):
         return self.attrs.get(attr, default)

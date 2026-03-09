@@ -35,6 +35,9 @@ _REASONING_COMPETENCIES = frozenset({
     "comparison", "multi_hop", "outlier", "delta",
     "relationship_lookup", "relationship_hop",
     "relationship_chain", "relationship_count", "relationship_filter",
+    "temporal_trend", "temporal_extreme",
+    "hierarchy_aggregate", "hierarchy_lookup",
+    "text_match", "enum_filter",
 })
 
 

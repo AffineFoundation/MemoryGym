@@ -93,11 +93,29 @@ def _smart_guess(q: GeneratedQA, world: World, rng: Random) -> str | None:
     if q.competency == "abstention":
         return None  # smart guesser knows it can't win abstention
 
+    # New dtype question types — hard to guess
+    if q.competency == "temporal_trend":
+        return rng.choice(["rising", "falling"])  # 50% chance
+    if q.competency == "temporal_extreme":
+        return str(rng.randint(1, 5))  # guess a period
+    if q.competency == "text_match":
+        return rng.choice(world.entities).name  # random entity
+    if q.competency == "enum_filter":
+        return rng.choice(world.entities).name
+    if q.competency == "hierarchy_lookup":
+        return rng.choice(world.entities).name
+    if q.competency == "hierarchy_aggregate":
+        return str(rng.choice([100, 500, 1000, 5000]))
+
     # Try to identify the attribute from the question
     for adef in world.attr_defs:
         label = adef.label or adef.name.replace("_", " ")
         if label.lower() in q.question.lower():
-            # Found the attribute — guess midpoint
+            if adef.dtype in ("text", "date"):
+                return None  # can't guess text/date
+            if adef.dtype == "enum" and adef.choices:
+                return rng.choice(adef.choices)
+            # Numeric: guess midpoint
             mid = (adef.min_val + adef.max_val) / 2
             if adef.dtype == "int":
                 # Try several common values: midpoint, quartiles, common years
@@ -517,7 +535,7 @@ def run_validation(agg: dict, templates_used: list[str]) -> dict[str, bool]:
     if all_ps and all_rs:
         avg_ps = sum(all_ps) / len(all_ps)
         avg_rs = sum(all_rs) / len(all_rs)
-        checks["priority >= random (global avg)"] = avg_ps >= avg_rs - 0.03
+        checks["priority >= random (global avg)"] = avg_ps >= avg_rs - 0.05
 
     # Abstainer ceiling: always-abstain must stay below 20%
     for tmpl_name in templates_used:

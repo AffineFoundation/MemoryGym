@@ -52,14 +52,6 @@ company, research, city, hospital, sport, movie（共 6 个）
 
 ## 当前任务
 
-### 批次 2 — mem0 后端对比
-
-用 Kimi-K2.5 跑 company 模板的 mem0 后端，与现有 chromadb 结果对比：
-
-```bash
-python -m memorygym.bench --model moonshotai/Kimi-K2.5-TEE --seed 0 --template company --backend mem0
-```
-
 ### 批次 3 — standard tier 验证
 
 至少 1 个模型跑 standard tier（60 entities, 20 questions, budget=30）：
@@ -184,3 +176,7 @@ python -m memorygym.bench --model moonshotai/Kimi-K2.5-TEE --seed 0 --template r
 | Kimi-K2.5 | movie | 0 | **55%** | 56% | 25% | 60% | 100% |
 | Kimi-K2.5 | sport | 0 | **30%** | 40% | 0% | 0% | 100% |
 | Kimi-K2.5 | sport | 1 | **40%** | 12% | 33% | 50% | 100% |
+
+### 批次 2 — mem0 后端对比 ⛔ 阻塞
+
+mem0 需要 OPENAI_API_KEY（默认嵌入模型），当前环境无此 key。跳过。

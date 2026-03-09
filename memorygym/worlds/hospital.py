@@ -1,7 +1,7 @@
 """Hospital/healthcare world template.
 
-Entities: Hospitals with operational and quality metrics.
-Names: 30 adjectives × 20 nouns = 600 unique hospitals.
+Entities: Hospitals with 23 possible attributes (16 numeric + text + enum + date + list_float).
+Names: 30 adjectives x 20 nouns = 600 unique hospitals.
 Specialties: 10 medical specialties.
 Document styles: 4 narrative styles (~250 tokens each).
 
@@ -43,7 +43,81 @@ _SPECIALTIES = [
     "Obstetrics", "Psychiatry",
 ]
 
+_SPECIALTY_DESCRIPTIONS = [
+    "Comprehensive cardiac care center with catheterization labs and electrophysiology suites for advanced heart rhythm disorders",
+    "Full-service oncology program offering chemotherapy infusion therapy and radiation treatment across twelve specialized clinics",
+    "Neuroscience institute featuring a dedicated stroke unit with rapid intervention protocols and telemetry monitoring systems",
+    "Orthopedic center of excellence performing joint replacement surgeries using robotic-assisted navigation technology platforms",
+    "Pediatric specialty hospital providing neonatal intensive care with level three certification and family support services",
+    "Emergency trauma center operating a helicopter transport program serving a three-hundred-mile radius catchment area network",
+    "Surgical innovation hub with hybrid operating rooms combining advanced imaging and minimally invasive procedure capabilities",
+    "Internal medicine department managing complex chronic disease cases through integrated multidisciplinary team-based care models",
+    "Obstetrics and gynecology center with high-risk pregnancy management and maternal-fetal medicine subspecialty consultation",
+    "Psychiatric facility offering inpatient behavioral health treatment with cognitive behavioral therapy and crisis stabilization",
+    "Transplant program performing kidney liver and heart procedures with dedicated immunology follow-up and organ procurement",
+    "Rehabilitation medicine center providing physical occupational and speech therapy with advanced gait analysis technology",
+    "Pulmonology department with dedicated respiratory therapy unit offering ventilator management and sleep disorder diagnostics",
+    "Gastroenterology center equipped with advanced endoscopy suites performing diagnostic and therapeutic procedures daily",
+    "Dermatology clinic specializing in Mohs surgery for skin cancer treatment with same-day pathology analysis capabilities",
+    "Urology department featuring robotic surgery platform for minimally invasive prostate and kidney cancer interventions",
+    "Endocrinology center managing diabetes thyroid and metabolic disorders through personalized treatment planning protocols",
+    "Rheumatology program providing biologic infusion therapy and clinical trial access for autoimmune disease management",
+    "Infectious disease division with negative pressure isolation units and antimicrobial stewardship oversight responsibilities",
+    "Pain management center offering interventional procedures including nerve blocks spinal cord stimulation and biofeedback",
+]
+
+_PROCEDURE_NOTES = [
+    "Performed laparoscopic cholecystectomy with intraoperative cholangiography and uncomplicated recovery",
+    "Completed total knee arthroplasty using computer-navigated alignment and cemented fixation",
+    "Executed coronary artery bypass grafting with four vessels using left internal mammary artery",
+    "Conducted robotic-assisted radical prostatectomy with nerve-sparing bilateral approach",
+    "Performed endoscopic retrograde cholangiopancreatography with sphincterotomy and stent placement",
+    "Completed craniotomy for meningioma resection with intraoperative MRI navigation guidance",
+    "Executed thoracoscopic lobectomy for early-stage non-small cell lung carcinoma treatment",
+    "Performed carotid endarterectomy with patch angioplasty under regional cervical block anesthesia",
+    "Conducted percutaneous coronary intervention with drug-eluting stent deployment in LAD artery",
+    "Completed total hip replacement using anterior approach with cementless acetabular component",
+    "Performed laparoscopic Roux-en-Y gastric bypass for morbid obesity with BMI over forty",
+    "Executed spinal fusion L4-L5 with pedicle screw fixation and interbody cage placement",
+    "Conducted sentinel lymph node biopsy with wide local excision for breast cancer staging",
+    "Performed transurethral resection of bladder tumor with blue light cystoscopy guidance",
+    "Completed arthroscopic rotator cuff repair with suture anchor fixation and biceps tenodesis",
+    "Executed endovascular aneurysm repair with bifurcated stent graft deployment under fluoroscopy",
+    "Performed appendectomy via single-incision laparoscopic approach with same-day discharge protocol",
+    "Conducted cochlear implant surgery with electrode array insertion and intraoperative telemetry",
+    "Completed thyroidectomy with intraoperative nerve monitoring and parathyroid autotransplantation",
+    "Performed transsphenoidal pituitary adenoma resection using endoscopic endonasal corridor access",
+]
+
+_NOTABLE_ACHIEVEMENTS = [
+    "Earned Magnet Recognition for nursing excellence from the American Nurses Credentialing Center",
+    "Achieved Leapfrog Group A safety grade for twelve consecutive reporting periods",
+    "Received Joint Commission Gold Seal for advanced heart failure program certification",
+    "Named top-fifty hospital nationally by US News and World Report ranking system",
+    "Established first accredited comprehensive stroke center in the tri-state region",
+    "Published landmark clinical trial results in the New England Journal of Medicine",
+    "Achieved zero central-line-associated bloodstream infections for eighteen consecutive months",
+    "Launched pioneering telehealth program connecting fifty rural clinics to specialists",
+    "Received HIMSS Stage Seven designation for electronic medical record adoption maturity",
+    "Completed successful separation of conjoined twins with international surgical collaboration",
+    "Established organ transplant program performing over two hundred procedures annually",
+    "Won Malcolm Baldrige National Quality Award for healthcare performance excellence",
+    "Opened new proton therapy center serving cancer patients from across the region",
+    "Achieved baby-friendly hospital designation from WHO and UNICEF joint initiative",
+    "Developed proprietary sepsis detection algorithm reducing mortality by thirty-five percent",
+    "Created residency program producing over five hundred board-certified physicians to date",
+    "Implemented hospital-at-home program reducing readmissions by forty percent year over year",
+    "Established genomic medicine center offering whole-genome sequencing for precision diagnostics",
+    "Received CDC Prevention Epicenters designation for healthcare-associated infection research",
+    "Built dedicated veterans care wing with integrated PTSD treatment and rehabilitation",
+]
+
+_ACCREDITATION_LEVELS = ["basic", "advanced", "excellence", "research"]
+
+_HOSPITAL_TYPES = ["general", "children", "teaching", "specialty", "psychiatric"]
+
 _ATTR_DEFS = [
+    # Original numeric attrs
     AttrDef("beds", "int", 10, 2000, "", "Beds"),
     AttrDef("staff_count", "int", 50, 15000, "", "Staff"),
     AttrDef("annual_patients", "int", 1000, 500000, "", "Annual patients"),
@@ -57,6 +131,31 @@ _ATTR_DEFS = [
     AttrDef("operating_rooms", "int", 1, 80, "", "Operating rooms"),
     AttrDef("budget_m", "float", 5.0, 5000.0, "$M", "Annual budget"),
     AttrDef("accreditation_year", "int", 1990, 2025, "", "Accreditation year"),
+    # New numeric attrs
+    AttrDef("icu_beds", "int", 0, 200, "", "ICU beds"),
+    AttrDef("er_visits_daily", "int", 10, 500, "", "Daily ER visits"),
+    AttrDef("surgery_count_monthly", "int", 50, 2000, "",
+            "Monthly surgeries"),
+    AttrDef("nurse_ratio", "float", 1.0, 8.0, "", "Nurse-to-patient ratio",
+            agg_ops=("average",)),
+    AttrDef("avg_stay_days", "float", 1.0, 15.0, "", "Average stay (days)",
+            agg_ops=("average",)),
+    AttrDef("research_papers", "int", 0, 500, "", "Research papers"),
+    # New dtype attrs
+    AttrDef("specialty_description", "text", label="Specialty description",
+            text_pool=_SPECIALTY_DESCRIPTIONS),
+    AttrDef("recent_procedure_note", "text", label="Recent procedure note",
+            text_pool=_PROCEDURE_NOTES),
+    AttrDef("notable_achievement", "text", label="Notable achievement",
+            text_pool=_NOTABLE_ACHIEVEMENTS),
+    AttrDef("accreditation_level", "enum", label="Accreditation level",
+            choices=_ACCREDITATION_LEVELS),
+    AttrDef("hospital_type", "enum", label="Hospital type",
+            choices=_HOSPITAL_TYPES),
+    AttrDef("last_inspection_date", "date", min_val=2015, max_val=2025,
+            label="Last inspection date"),
+    AttrDef("patient_trend", "list_float", min_val=1000, max_val=100000,
+            label="Annual patients (last 5 years)", list_len=5),
 ]
 
 _Q_TEXTS: dict[str, list[str]] = {
@@ -109,6 +208,59 @@ _Q_TEXTS: dict[str, list[str]] = {
         "When was {name} last accredited?",
         "In what year did {name} receive accreditation?",
         "What year was {name}'s accreditation awarded?",
+    ],
+    "icu_beds": [
+        "How many ICU beds does {name} have?",
+        "What is {name}'s ICU bed capacity?",
+    ],
+    "er_visits_daily": [
+        "How many ER visits does {name} handle daily?",
+        "What is {name}'s daily emergency room volume?",
+    ],
+    "surgery_count_monthly": [
+        "How many surgeries does {name} perform monthly?",
+        "What is {name}'s monthly surgical volume?",
+    ],
+    "nurse_ratio": [
+        "What is {name}'s nurse-to-patient ratio?",
+        "How many nurses per patient does {name} maintain?",
+    ],
+    "avg_stay_days": [
+        "What is the average length of stay at {name}?",
+        "How many days do patients typically stay at {name}?",
+    ],
+    "research_papers": [
+        "How many research papers has {name} published?",
+        "What is {name}'s research publication count?",
+    ],
+    "specialty_description": [
+        "What is {name}'s specialty description?",
+        "Describe {name}'s clinical specialty.",
+        "What does {name} specialize in?",
+    ],
+    "recent_procedure_note": [
+        "What is {name}'s most recent procedure note?",
+        "Describe a recent procedure performed at {name}.",
+    ],
+    "notable_achievement": [
+        "What notable achievement has {name} earned?",
+        "What is {name} recognized for?",
+    ],
+    "accreditation_level": [
+        "What is {name}'s accreditation level?",
+        "What accreditation tier does {name} hold?",
+    ],
+    "hospital_type": [
+        "What type of hospital is {name}?",
+        "What is {name}'s hospital classification?",
+    ],
+    "last_inspection_date": [
+        "When was {name} last inspected?",
+        "What is {name}'s most recent inspection date?",
+    ],
+    "patient_trend": [
+        "What is {name}'s annual patient trend over the last 5 years?",
+        "List {name}'s patient volume for the past 5 years.",
     ],
 }
 
@@ -173,16 +325,77 @@ _SENTENCE_TMPLS: dict[str, list[tuple[str, str]]] = {
         ("was accredited in {val}, updating from {distractor}", "temporal"),
         ("accredited in {val}, alongside {other_name}", "comparative"),
     ],
+    "icu_beds": [
+        ("maintains {val} intensive care unit beds", "none"),
+        ("ICU capacity grew from {distractor} to {val} beds", "temporal"),
+        ("has {val} ICU beds, compared to {other_name}'s {other_val}",
+         "comparative"),
+    ],
+    "er_visits_daily": [
+        ("handles {val} emergency room visits per day", "none"),
+        ("daily ER visits increased from {distractor} to {val}", "temporal"),
+        ("sees {val} ER patients daily, of which {distractor} require "
+         "admission", "qualified"),
+    ],
+    "surgery_count_monthly": [
+        ("performs {val} surgical procedures each month", "none"),
+        ("monthly surgeries rose from {distractor} to {val}", "temporal"),
+        ("completes {val} surgeries per month, compared to {other_name}'s "
+         "{other_val}", "comparative"),
+    ],
+    "nurse_ratio": [
+        ("maintains a nurse-to-patient ratio of {val}", "none"),
+        ("nurse ratio improved from {distractor} to {val}", "temporal"),
+    ],
+    "avg_stay_days": [
+        ("reports an average patient stay of {val} days", "none"),
+        ("average stay shortened from {distractor} to {val} days",
+         "temporal"),
+    ],
+    "research_papers": [
+        ("has published {val} peer-reviewed research papers", "none"),
+        ("research output grew from {distractor} to {val} papers",
+         "temporal"),
+        ("produced {val} papers, versus {other_name}'s {other_val}",
+         "comparative"),
+    ],
+    "specialty_description": [
+        ("{val}", "none"),
+    ],
+    "recent_procedure_note": [
+        ("{val}", "none"),
+    ],
+    "notable_achievement": [
+        ("{val}", "none"),
+    ],
+    "accreditation_level": [
+        ("holds {val} accreditation level", "none"),
+    ],
+    "hospital_type": [
+        ("is classified as a {val} hospital", "none"),
+    ],
+    "last_inspection_date": [
+        ("was last inspected on {val}", "none"),
+    ],
+    "patient_trend": [
+        ("recorded annual patient volumes of {val} over the last five years",
+         "none"),
+    ],
 }
 
 _RATIO_PAIRS = [
     ("annual_patients", "beds", "patients per bed"),
     ("staff_count", "beds", "staff per bed"),
     ("budget_m", "annual_patients", "budget per patient in $M"),
+    ("surgery_count_monthly", "operating_rooms",
+     "monthly surgeries per operating room"),
+    ("er_visits_daily", "icu_beds", "daily ER visits per ICU bed"),
+    ("research_papers", "staff_count", "research papers per staff member"),
 ]
 
 
 def _fmt(attr: str, val: Any) -> str:
+    """Format an attribute value for human-readable display."""
     if attr == "budget_m":
         return f"${val:,.1f}M"
     if attr in ("readmission_pct", "mortality_rate"):
@@ -191,15 +404,21 @@ def _fmt(attr: str, val: Any) -> str:
         return f"{val:.2f}/10"
     if attr == "wait_time_min":
         return f"{val} min"
-    if attr == "accreditation_year":
+    if attr in ("accreditation_year",):
         return str(val)
+    if attr == "nurse_ratio":
+        return f"{val:.2f}" if isinstance(val, float) else str(val)
+    if attr == "avg_stay_days":
+        return f"{val:.2f} days" if isinstance(val, (int, float)) else str(val)
+    if attr == "patient_trend" and isinstance(val, list):
+        return ", ".join(f"{v:,.0f}" for v in val)
     if isinstance(val, int):
         return f"{val:,}"
     return str(val)
 
 
 class HospitalWorld(WorldTemplate):
-    """Hospital operations — 600 names × 10 attrs × 10 specialties."""
+    """Hospital operations — 600 names × 23 attrs × 10 specialties."""
 
     @property
     def name(self) -> str:
@@ -228,12 +447,7 @@ class HospitalWorld(WorldTemplate):
         for adef in _ATTR_DEFS:
             if adef.name not in active_attrs:
                 continue
-            if adef.dtype == "int":
-                attrs[adef.name] = rng.randint(
-                    int(adef.min_val), int(adef.max_val))
-            else:
-                attrs[adef.name] = round(
-                    rng.uniform(adef.min_val, adef.max_val), 2)
+            attrs[adef.name] = self._generate_attr_value(rng, adef)
         return EntitySpec(name=name, category=category, attrs=attrs)
 
     def _format_value(self, attr: str, val: Any) -> str:

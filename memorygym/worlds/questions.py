@@ -43,6 +43,12 @@ class QuestionGeneratorMixin:
             "relationship_chain": self._gq_relationship_chain,
             "relationship_count": self._gq_relationship_count,
             "relationship_filter": self._gq_relationship_filter,
+            "temporal_trend": self._gq_temporal_trend,
+            "temporal_extreme": self._gq_temporal_extreme,
+            "hierarchy_aggregate": self._gq_hierarchy_aggregate,
+            "hierarchy_lookup": self._gq_hierarchy_lookup,
+            "text_match": self._gq_text_match,
+            "enum_filter": self._gq_enum_filter,
         }.get(competency)
         return fn(world, rng, available) if fn else None
 
@@ -54,7 +60,7 @@ class QuestionGeneratorMixin:
         e = rng.choice(cands)
         return GeneratedQA(
             self._q_text(attr, e.name, rng),
-            str(e.get(attr)), "retrieval", [e.name],
+            self._format_value(attr, e.get(attr)), "retrieval", [e.name],
             source_attr=attr,
         )
 
@@ -76,7 +82,7 @@ class QuestionGeneratorMixin:
             used_attrs.add(attr)
             return GeneratedQA(
                 self._q_text(attr, e.name, rng),
-                str(e.get(attr)), "retrieval", [e.name],
+                self._format_value(attr, e.get(attr)), "retrieval", [e.name],
                 source_attr=attr,
             )
         return None
@@ -258,8 +264,8 @@ class QuestionGeneratorMixin:
             return None
         return GeneratedQA(
             self._q_text(c.attr, c.entity_name, rng),
-            str(current_val), "update", [c.entity_name],
-            source_attr=c.attr,
+            self._format_value(c.attr, current_val), "update",
+            [c.entity_name], source_attr=c.attr,
         )
 
     def _gq_abstention(self, world, rng, available):
@@ -298,7 +304,7 @@ class QuestionGeneratorMixin:
         # Use the standard _q_text — identical wording to retrieval/update
         return GeneratedQA(
             self._q_text(attr, e.name, rng),
-            str(e.get(attr)), "retrieval", [e.name],
+            self._format_value(attr, e.get(attr)), "retrieval", [e.name],
             source_attr=attr,
         )
 
@@ -366,7 +372,13 @@ class QuestionGeneratorMixin:
         """Change amount from a correction."""
         if not corrections:
             return None
-        c = rng.choice(corrections)
+        # Only numeric corrections support delta computation
+        numeric_corr = [c for c in corrections
+                        if isinstance(c.old_val, (int, float))
+                        and isinstance(c.new_val, (int, float))]
+        if not numeric_corr:
+            return None
+        c = rng.choice(numeric_corr)
         entity = world.get_entity(c.entity_name)
         if not entity:
             return None
@@ -485,6 +497,260 @@ class QuestionGeneratorMixin:
             "outlier", names,
             source_attr=attr,
         )
+
+    # ── New dtype question types (Phase 16) ──
+
+    def _gq_temporal_trend(self, world, rng, available):
+        """Trend direction from list_float: is the series rising or falling?"""
+        list_attrs = [a for a in world.active_attrs
+                      if any(isinstance(e.get(a), list) for e in available)]
+        if not list_attrs:
+            return None
+        attr = rng.choice(list_attrs)
+        cands = [e for e in available
+                 if isinstance(e.get(attr), list) and len(e.get(attr)) >= 3]
+        if not cands:
+            return None
+        e = rng.choice(cands)
+        vals = e.get(attr)
+        # Simple linear slope: positive = rising, negative = falling
+        n = len(vals)
+        x_mean = (n - 1) / 2
+        y_mean = sum(vals) / n
+        num = sum((i - x_mean) * (v - y_mean) for i, v in enumerate(vals))
+        denom = sum((i - x_mean) ** 2 for i in range(n))
+        slope = num / denom if denom else 0
+        answer = "rising" if slope > 0 else "falling"
+        label = self.attr_label(attr)
+        ew = self.entity_word
+        q = rng.choice([
+            f"Is {_possessive(e.name)} {label} trend rising or falling?",
+            f"Looking at {_possessive(e.name)} {label} over time, "
+            f"is the trend upward or downward?",
+            f"Based on {_possessive(e.name)} {label} series, "
+            f"is it going up or down?",
+        ])
+        return GeneratedQA(
+            q, answer, "temporal_trend", [e.name],
+            purpose="comprehension", source_attr=attr,
+        )
+
+    def _gq_temporal_extreme(self, world, rng, available):
+        """Which period has the max/min value in a list_float series?"""
+        list_attrs = [a for a in world.active_attrs
+                      if any(isinstance(e.get(a), list) for e in available)]
+        if not list_attrs:
+            return None
+        attr = rng.choice(list_attrs)
+        cands = [e for e in available
+                 if isinstance(e.get(attr), list) and len(e.get(attr)) >= 3]
+        if not cands:
+            return None
+        e = rng.choice(cands)
+        vals = e.get(attr)
+        use_max = rng.choice([True, False])
+        if use_max:
+            idx = max(range(len(vals)), key=lambda i: vals[i])
+        else:
+            idx = min(range(len(vals)), key=lambda i: vals[i])
+        # Period is 1-indexed
+        period = idx + 1
+        answer = str(period)
+        label = self.attr_label(attr)
+        direction = "highest" if use_max else "lowest"
+        q = rng.choice([
+            f"In which period (1-{len(vals)}) is {_possessive(e.name)} "
+            f"{label} the {direction}?",
+            f"Looking at {_possessive(e.name)} {label} series, "
+            f"which period has the {direction} value?",
+        ])
+        return GeneratedQA(
+            q, answer, "temporal_extreme", [e.name],
+            purpose="comprehension", source_attr=attr,
+        )
+
+    def _gq_hierarchy_aggregate(self, world, rng, available):
+        """Aggregate a numeric attr across all children of a parent entity."""
+        parents = [e for e in available if e.children]
+        if not parents:
+            return None
+        parent = rng.choice(parents)
+        child_entities = [world.get_entity(c) for c in parent.children]
+        child_entities = [c for c in child_entities if c is not None]
+        if len(child_entities) < 2:
+            return None
+        numeric = [a for a in world.active_attrs
+                   if sum(1 for c in child_entities
+                          if isinstance(c.get(a), (int, float))) >= 2]
+        if not numeric:
+            return None
+        attr = rng.choice(numeric)
+        label = self.attr_label(attr)
+        vals = [c.get(attr) for c in child_entities
+                if isinstance(c.get(attr), (int, float))]
+        if not vals:
+            return None
+        op = rng.choice(["total", "average"])
+        if op == "total":
+            result = sum(vals)
+            if isinstance(result, float):
+                result = round(result, 2)
+        else:
+            result = round(sum(vals) / len(vals), 2)
+        child_names = [c.name for c in child_entities]
+        q = rng.choice([
+            f"What is the {op} {label} across all sub-entities of "
+            f"{parent.name}?",
+            f"Calculate the {op} {label} for {_possessive(parent.name)} "
+            f"sub-entities.",
+        ])
+        return GeneratedQA(
+            q, str(result), "hierarchy_aggregate",
+            [parent.name] + child_names,
+            purpose="comprehension", source_attr=attr,
+        )
+
+    def _gq_hierarchy_lookup(self, world, rng, available):
+        """Look up parent entity or parent's attribute."""
+        children_with_parent = [e for e in available if e.parent]
+        if not children_with_parent:
+            return None
+        child = rng.choice(children_with_parent)
+        parent = world.get_entity(child.parent)
+        if not parent:
+            return None
+        # 50% chance: ask parent name, 50% ask parent's attribute
+        if rng.random() < 0.5:
+            q = rng.choice([
+                f"What is {_possessive(child.name)} parent entity?",
+                f"Which entity does {child.name} belong to?",
+            ])
+            return GeneratedQA(
+                q, parent.name, "hierarchy_lookup", [child.name, parent.name],
+                purpose="comprehension", source_attr="",
+            )
+        else:
+            numeric = [a for a in world.active_attrs
+                       if isinstance(parent.get(a), (int, float))]
+            if not numeric:
+                q = rng.choice([
+                    f"What is {_possessive(child.name)} parent entity?",
+                    f"Which entity does {child.name} belong to?",
+                ])
+                return GeneratedQA(
+                    q, parent.name, "hierarchy_lookup",
+                    [child.name, parent.name],
+                    purpose="comprehension", source_attr="",
+                )
+            attr = rng.choice(numeric)
+            label = self.attr_label(attr)
+            val = parent.get(attr)
+            fmt_val = self._format_value(attr, val)
+            q = rng.choice([
+                f"What is the {label} of {_possessive(child.name)} "
+                f"parent entity?",
+                f"Look up {_possessive(child.name)} parent and report "
+                f"its {label}.",
+            ])
+            return GeneratedQA(
+                q, fmt_val, "hierarchy_lookup",
+                [child.name, parent.name],
+                purpose="comprehension", source_attr=attr,
+            )
+
+    def _gq_text_match(self, world, rng, available):
+        """Which entity's text attribute contains a specific keyword?"""
+        text_attrs = [a for a in world.active_attrs
+                      if any(isinstance(e.get(a), str) and len(e.get(a)) > 20
+                             for e in available)]
+        if not text_attrs:
+            return None
+        attr = rng.choice(text_attrs)
+        cands = [e for e in available
+                 if isinstance(e.get(attr), str) and len(e.get(attr)) > 20]
+        if not cands:
+            return None
+        e = rng.choice(cands)
+        text = e.get(attr)
+        # Extract a distinctive word (>4 chars, not too common)
+        words = [w.strip(".,;:!?()\"'") for w in text.split()
+                 if len(w.strip(".,;:!?()\"'")) > 4]
+        if not words:
+            return None
+        keyword = rng.choice(words)
+        # Verify keyword is distinctive enough (not in all entities)
+        matches = [c for c in cands if keyword.lower() in c.get(attr).lower()]
+        if len(matches) != 1:
+            # Try to find a more unique keyword
+            for _ in range(10):
+                keyword = rng.choice(words)
+                matches = [c for c in cands
+                           if keyword.lower() in c.get(attr).lower()]
+                if len(matches) == 1:
+                    break
+            else:
+                return None
+        label = self.attr_label(attr)
+        ewp = self.entity_word_plural
+        q = rng.choice([
+            f"Which {self.entity_word}'s {label} mentions \"{keyword}\"?",
+            f"Among all {ewp}, whose {label} contains the word "
+            f"\"{keyword}\"?",
+        ])
+        return GeneratedQA(
+            q, e.name, "text_match", [e.name],
+            purpose="comprehension", source_attr=attr,
+        )
+
+    def _gq_enum_filter(self, world, rng, available):
+        """Filter by enum attribute, then find extreme of a numeric attr."""
+        enum_attrs = [a for a in world.active_attrs
+                      if any(isinstance(e.get(a), str)
+                             and len(e.get(a)) <= 20
+                             for e in available)]
+        if not enum_attrs:
+            return None
+        numeric = [a for a in world.active_attrs
+                   if any(isinstance(e.get(a), (int, float))
+                          for e in available)]
+        if not numeric:
+            return None
+        enum_attr = rng.choice(enum_attrs)
+        num_attr = rng.choice(numeric)
+        if enum_attr == num_attr:
+            return None
+        # Group by enum value
+        groups: dict[str, list] = {}
+        for e in available:
+            ev = e.get(enum_attr)
+            nv = e.get(num_attr)
+            if isinstance(ev, str) and isinstance(nv, (int, float)):
+                groups.setdefault(ev, []).append(e)
+        eligible = {v: es for v, es in groups.items() if len(es) >= 2}
+        if not eligible:
+            return None
+        enum_val = rng.choice(list(eligible.keys()))
+        members = eligible[enum_val]
+        use_max = rng.choice([True, False])
+        best = (max if use_max else min)(
+            members, key=lambda e: e.get(num_attr))
+        label_enum = self.attr_label(enum_attr)
+        label_num = self.attr_label(num_attr)
+        direction = "highest" if use_max else "lowest"
+        ewp = self.entity_word_plural
+        q = rng.choice([
+            f"Among {ewp} with {label_enum} \"{enum_val}\", which has "
+            f"the {direction} {label_num}?",
+            f"Of all {ewp} whose {label_enum} is \"{enum_val}\", "
+            f"name the one with the {direction} {label_num}.",
+        ])
+        return GeneratedQA(
+            q, best.name, "enum_filter",
+            [e.name for e in members],
+            purpose="comprehension", source_attr=num_attr,
+        )
+
+    # ── Relationship questions ──
 
     def _gq_relationship_lookup(self, world, rng, available):
         """Ask who has a specific relationship with a given entity."""
@@ -683,6 +949,13 @@ class QuestionGeneratorMixin:
             if isinstance(val, float):
                 variants.append(f"{val:.1f}")
                 variants.append(f"{val:.0f}")
+        elif isinstance(val, str):
+            variants.append(val.lower())
+        elif isinstance(val, list):
+            # For list_float, match individual values
+            for v in val:
+                if isinstance(v, (int, float)):
+                    variants.append(str(v))
         return variants
 
     def detect_stored_entities(
@@ -746,6 +1019,12 @@ class QuestionGeneratorMixin:
             "comparison": self._gq_comparison,
             "multi_hop": self._gq_multi_hop,
             "outlier": self._gq_outlier,
+            "temporal_trend": self._gq_temporal_trend,
+            "temporal_extreme": self._gq_temporal_extreme,
+            "hierarchy_aggregate": self._gq_hierarchy_aggregate,
+            "hierarchy_lookup": self._gq_hierarchy_lookup,
+            "text_match": self._gq_text_match,
+            "enum_filter": self._gq_enum_filter,
         }
 
         # Try original comp type first, then others

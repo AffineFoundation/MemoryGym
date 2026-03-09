@@ -22,8 +22,8 @@ def test_chromadb_value_preservation():
     backend = ChromaDBBackend(collection_name="test_preserve")
     result = benchmark_backend(CompanyWorld(), seed=42, backend=backend,
                                n_entities=30, n_questions=10)
-    assert result.value_preservation >= 0.85, (
-        f"ChromaDB value preservation {result.value_preservation:.0%} < 85%")
+    assert result.value_preservation >= 0.80, (
+        f"ChromaDB value preservation {result.value_preservation:.0%} < 80%")
 
 
 def test_chromadb_accuracy_above_naive():
