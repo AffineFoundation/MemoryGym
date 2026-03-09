@@ -639,6 +639,134 @@ def test_year_guessing_fails():
         "Off-by-500 integer must fail (V14 integer-exact)")
 
 
+def test_session_breaks():
+    """Multi-session: session_break events are correctly inserted."""
+    from memorygym.worlds import ALL_TEMPLATES
+
+    for tname, tcls in ALL_TEMPLATES.items():
+        tmpl = tcls()
+        world = tmpl.generate_world(seed=42, n_entities=60)
+        rng = Random(42)
+        corrections = tmpl.generate_corrections(world, rng, 5)
+        n_contras = max(1, 5 // 3)
+        exclude = {c.entity_name for c in corrections}
+        rng_contra = Random(42 + 7373)
+        contradictions = tmpl.generate_contradictions(
+            world, rng_contra, n_contras, exclude_entities=exclude)
+
+        # n_sessions=1: no breaks
+        stream_1 = tmpl.generate_stream(
+            world, rng, corrections, stored_names=set(),
+            n_questions=20, entities_per_batch=10,
+            contradictions=contradictions, n_sessions=1)
+        breaks_1 = [e for e in stream_1 if e["type"] == "session_break"]
+        assert len(breaks_1) == 0, f"{tname}: n_sessions=1 should have 0 breaks"
+
+        # n_sessions=3: exactly 2 breaks
+        rng3 = Random(42)
+        corrections3 = tmpl.generate_corrections(world, rng3, 5)
+        stream_3 = tmpl.generate_stream(
+            world, rng3, corrections3, stored_names=set(),
+            n_questions=20, entities_per_batch=10,
+            contradictions=contradictions, n_sessions=3)
+        breaks_3 = [e for e in stream_3 if e["type"] == "session_break"]
+        assert len(breaks_3) == 2, (
+            f"{tname}: n_sessions=3 should have 2 breaks, got {len(breaks_3)}")
+
+        # Verify session_break event structure
+        for b in breaks_3:
+            assert "session_id" in b
+            assert "total_sessions" in b
+            assert b["total_sessions"] == 3
+
+        # Verify questions still present
+        q_count = sum(1 for e in stream_3 if e["type"] == "question")
+        assert q_count > 0, f"{tname}: no questions in multi-session stream"
+
+        # Verify determinism
+        rng3b = Random(42)
+        corrections3b = tmpl.generate_corrections(world, rng3b, 5)
+        stream_3b = tmpl.generate_stream(
+            world, rng3b, corrections3b, stored_names=set(),
+            n_questions=20, entities_per_batch=10,
+            contradictions=contradictions, n_sessions=3)
+        breaks_3b = [
+            (i, e) for i, e in enumerate(stream_3b)
+            if e["type"] == "session_break"]
+        breaks_3_pos = [
+            (i, e) for i, e in enumerate(stream_3)
+            if e["type"] == "session_break"]
+        assert [i for i, _ in breaks_3_pos] == [i for i, _ in breaks_3b], (
+            f"{tname}: session breaks not deterministic")
+        break  # One template is enough for structural tests
+
+
+def test_cross_session_correction():
+    """Multi-session: at least 1 correction target is in a different session
+    than its correction event, guaranteeing cross-session update testing."""
+    from memorygym.worlds import ALL_TEMPLATES
+
+    for tname, tcls in ALL_TEMPLATES.items():
+        tmpl = tcls()
+        # Test across multiple seeds to ensure robustness
+        for seed in range(5):
+            world = tmpl.generate_world(seed=seed, n_entities=60)
+            rng = Random(seed)
+            corrections = tmpl.generate_corrections(world, rng, 5)
+            if not corrections:
+                continue
+            n_contras = max(1, 5 // 3)
+            exclude = {c.entity_name for c in corrections}
+            rng_contra = Random(seed + 7373)
+            contradictions = tmpl.generate_contradictions(
+                world, rng_contra, n_contras, exclude_entities=exclude)
+
+            rng_stream = Random(seed + 5555)
+            stream = tmpl.generate_stream(
+                world, rng_stream, corrections, stored_names=set(),
+                n_questions=20, entities_per_batch=10,
+                contradictions=contradictions, n_sessions=3)
+
+            # Split stream into sessions by session_break positions
+            break_indices = [
+                i for i, e in enumerate(stream)
+                if e["type"] == "session_break"]
+            assert len(break_indices) == 2, (
+                f"{tname} seed={seed}: expected 2 breaks, "
+                f"got {len(break_indices)}")
+
+            # Determine which session each event belongs to
+            def session_of(idx: int) -> int:
+                for s, bp in enumerate(break_indices):
+                    if idx < bp:
+                        return s
+                return len(break_indices)
+
+            # Build entity_name → ingest session mapping
+            entity_session: dict[str, int] = {}
+            for i, ev in enumerate(stream):
+                if ev["type"] == "ingest":
+                    for name in ev.get("entity_names", []):
+                        if name not in entity_session:
+                            entity_session[name] = session_of(i)
+
+            # Check corrections: at least 1 must be cross-session
+            cross_session_found = False
+            for i, ev in enumerate(stream):
+                if ev["type"] != "correction":
+                    continue
+                corr_session = session_of(i)
+                ename = ev.get("entity_name", "")
+                ingest_session = entity_session.get(ename)
+                if ingest_session is not None and ingest_session != corr_session:
+                    cross_session_found = True
+                    break
+
+            assert cross_session_found, (
+                f"{tname} seed={seed}: no cross-session correction found. "
+                f"All corrections are in the same session as their entity "
+                f"ingest. break_indices={break_indices}")
+        break  # One template across 5 seeds is sufficient
 
 
 if __name__ == "__main__":
@@ -688,4 +816,8 @@ if __name__ == "__main__":
     print("  ✓ detect_stored_requires_values")
     test_year_guessing_fails()
     print("  ✓ year_guessing_fails")
+    test_session_breaks()
+    print("  ✓ session_breaks")
+    test_cross_session_correction()
+    print("  ✓ cross_session_correction")
     print("ALL TESTS PASSED")

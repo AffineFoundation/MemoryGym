@@ -542,6 +542,27 @@ def run_stream_agent(
                 print(f"  {'─' * 50}")
             prev_phase = event_type
 
+        if event_type == "session_break":
+            session_id = event.get("session_id", 2)
+            total_sess = event.get("total_sessions", 2)
+            if not quiet:
+                print(f"\n  {'═' * 50}")
+                print(f"  SESSION BREAK — Starting session "
+                      f"{session_id}/{total_sess}")
+                print(f"  Context cleared. Memory backend preserved.")
+                print(f"  {_budget_bar(budget.writes_used, write_budget)}")
+                print(f"  {'═' * 50}\n")
+            # Clear conversation context, keep memory backend
+            messages = [{"role": "system", "content": system_prompt}]
+            trajectory.append({
+                "event_idx": event_idx,
+                "type": "session_break",
+                "session_id": session_id,
+                "total_sessions": total_sess,
+            })
+            prev_phase = None
+            continue
+
         if event_type == "ingest":
             entity_names = event.get("entity_names", [])
             n_ents = len(entity_names)

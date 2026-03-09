@@ -262,11 +262,20 @@ class TestCLIOutput:
     def test_tier_lite_config(self):
         from memorygym.bench import parse_args, _resolve_config
         args = parse_args(["--tier", "lite"])
-        entities, questions, corrections, budget = _resolve_config(args)
+        entities, questions, corrections, budget, sessions = _resolve_config(args)
         assert (entities, questions, corrections, budget) == (30, 10, 3, 15)
+        assert sessions == 1
 
     def test_tier_hard_config(self):
         from memorygym.bench import parse_args, _resolve_config
         args = parse_args(["--tier", "hard"])
-        entities, questions, corrections, budget = _resolve_config(args)
+        entities, questions, corrections, budget, sessions = _resolve_config(args)
         assert (entities, questions, corrections, budget) == (120, 40, 10, 30)
+        assert sessions == 1
+
+    def test_tier_multi_config(self):
+        from memorygym.bench import parse_args, _resolve_config
+        args = parse_args(["--tier", "multi"])
+        entities, questions, corrections, budget, sessions = _resolve_config(args)
+        assert (entities, questions, corrections, budget) == (60, 20, 5, 30)
+        assert sessions == 3

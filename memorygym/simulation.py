@@ -372,6 +372,7 @@ def simulate_one_stream(
     n_questions: int = 20,
     n_corrections: int = 5,
     eval_salt: int = 0,
+    n_sessions: int = 1,
 ) -> dict:
     """Run one strategy using interleaved stream. Returns result dict."""
     world = tmpl.generate_world(seed=seed, n_entities=n_entities,
@@ -440,6 +441,7 @@ def simulate_one_stream(
         world, rng_stream, corrections, stored_names,
         n_questions=n_questions, entities_per_batch=10,
         contradictions=contradictions,
+        n_sessions=n_sessions,
     )
 
     # Extract questions from stream and evaluate

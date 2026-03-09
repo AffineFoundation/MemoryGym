@@ -257,6 +257,20 @@ def worldbench_solver(
             msg_start = len(state.messages)
             event_type = event["type"]
 
+            if event_type == "session_break":
+                # Clear conversation context, keep memory backend
+                del state.messages[initial_len:]
+                session_id = event.get("session_id", 2)
+                total_sess = event.get("total_sessions", 2)
+                state.messages.append(ChatMessageUser(
+                    content=f"[Session {session_id}/{total_sess} begins. "
+                            f"Your conversation context has been reset. "
+                            f"Your memory backend is preserved — use "
+                            f"memory_search to recall stored data.]"))
+                state.messages.append(ChatMessageAssistant(
+                    content="Understood. Starting new session."))
+                continue
+
             if event_type == "ingest":
                 n_ents = len(event.get("entity_names", []))
                 remaining = mem_budget.remaining() if mem_budget else 0

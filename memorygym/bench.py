@@ -99,10 +99,10 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     return p.parse_args(argv)
 
 
-def _resolve_config(args: argparse.Namespace) -> tuple[int, int, int, int]:
-    """Resolve entities/questions/corrections/budget from tier or args.
+def _resolve_config(args: argparse.Namespace) -> tuple[int, int, int, int, int]:
+    """Resolve entities/questions/corrections/budget/sessions from tier or args.
 
-    Returns (entities, questions, corrections, write_budget).
+    Returns (entities, questions, corrections, write_budget, n_sessions).
     """
     tier_name = args.tier or ("standard" if args.official else None)
     if tier_name:
@@ -111,19 +111,21 @@ def _resolve_config(args: argparse.Namespace) -> tuple[int, int, int, int]:
         questions = args.questions or tier["questions"]
         corrections = args.corrections or tier["corrections"]
         write_budget = tier["write_budget"]
+        n_sessions = tier.get("n_sessions", 1)
     else:
         entities = args.entities or 60
         questions = args.questions or 20
         corrections = args.corrections or 5
         write_budget = 30
-    return entities, questions, corrections, write_budget
+        n_sessions = 1
+    return entities, questions, corrections, write_budget, n_sessions
 
 
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
 
     # Resolve tier/manual config
-    n_entities, n_questions, n_corrections, write_budget = _resolve_config(args)
+    n_entities, n_questions, n_corrections, write_budget, n_sessions = _resolve_config(args)
 
     # Official mode overrides
     if args.official:
@@ -161,9 +163,10 @@ def main(argv: list[str] | None = None) -> int:
              else f"Strategies: {', '.join(strategy_names)}")
     print(f"Seeds: {n_seeds}  Templates: {', '.join(template_names)}  "
           f"{label}")
+    session_label = f"  Sessions: {n_sessions}" if n_sessions > 1 else ""
     print(f"Tier: {tier_label}  Entities: {n_entities}  "
           f"Questions: {n_questions}  Corrections: {n_corrections}  "
-          f"Budget: {write_budget}"
+          f"Budget: {write_budget}{session_label}"
           + ("  [STREAM]" if args.stream or is_model_eval else ""))
 
     t0 = time.time()
@@ -209,6 +212,7 @@ def main(argv: list[str] | None = None) -> int:
                     n_questions=n_questions,
                     entities_per_batch=10,
                     contradictions=contradictions,
+                    n_sessions=n_sessions,
                 )
                 n_ingest = sum(1 for e in stream if e["type"] == "ingest")
                 n_correct = sum(1 for e in stream if e["type"] == "correction")
@@ -357,15 +361,18 @@ def main(argv: list[str] | None = None) -> int:
             else:
                 # Simulation mode (system self-testing)
                 for profile in strategies:
-                    sim_fn = (simulate_one_stream if args.stream
-                              else simulate_one)
+                    sim_fn = (simulate_one_stream if (args.stream
+                              or n_sessions > 1) else simulate_one)
+                    kwargs = {
+                        "n_entities": n_entities,
+                        "n_questions": n_questions,
+                        "n_corrections": n_corrections,
+                        "eval_salt": args.eval_salt,
+                    }
+                    if sim_fn is simulate_one_stream:
+                        kwargs["n_sessions"] = n_sessions
                     result = sim_fn(
-                        tmpl, seed, profile,
-                        n_entities=n_entities,
-                        n_questions=n_questions,
-                        n_corrections=n_corrections,
-                        eval_salt=args.eval_salt,
-                    )
+                        tmpl, seed, profile, **kwargs)
                     agg[profile["name"]].append(result)
 
                     if args.verbose:

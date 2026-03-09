@@ -66,9 +66,45 @@ eval 数据（ROADMAP.md §3）← 衡量差距
 
 ## 当前任务
 
-（待办空，等待审计线程写入新任务）
+### Phase 43 — 跨 session 修正测试补全 + multi tier eval 准备
+
+**依据**：审计 A12 发现 Phase 42 有一个测试 gap——跨 session 修正约束已实现（events.py:403-440）但未被测试覆盖。
+
+#### Step 1 — 补全跨 session 修正测试
+
+在 tests/test_worlds.py 中新增测试，验证：
+- 当 n_sessions=3 且有 corrections 时，至少 1 个 correction 的 target entity 和 correction 事件分布在不同 session
+- 具体：遍历 session_break 分割后的各段，找到 correction 事件和对应 entity 的 ingest 事件，验证它们不全在同一 session
+
+使用真实的 world（有 corrections），不要用空 stored_names。
+
+#### Step 2 — 提交 Phase 42 + 43
+
+Phase 42 代码变更在 working tree 中未提交。连同 Phase 43 测试一起提交。
+
+#### 验证标准
+- 新测试显式验证跨 session 修正约束
+- `python -m pytest tests/ -q` 全量通过
+- `python -m memorygym.bench --seeds 3 --validate` 包含 multi tier 验证
 
 ## 已完成
+
+### Phase 42 — 多会话评测实现 ✅
+- events.py: `_insert_session_breaks()` + `generate_stream(n_sessions=)` 参数
+- protocol.py: "multi" tier (60e/20q/5c/budget=30/3 sessions)
+- simulation.py: `simulate_one_stream(n_sessions=)` 参数透传
+- stream_agent.py: session_break 清空对话历史，保留 memory backend
+- eval_task.py: session_break 清空消息，插入 session 通知
+- training.py: MemoryEnv tier 自动读取 n_sessions，`_format_event` 支持 session_break
+- bench.py: `_resolve_config` 返回 n_sessions，multi tier 自动用 stream 模式
+- 267 tests pass, stream validation ALL PASS, multi tier validation ALL PASS
+
+### Phase 41 — 多会话评测设计（设计 Phase）✅
+- 产出 `devlog/multi-session-design.md`
+- 推荐方案 A：stream 中插入 session_break 事件（最小侵入，~180 行变更）
+- 现有 4 轴评分足够（多会话让同轴更难），多会话作为新 tier "multi"
+- 9 种 simulation 策略无需扩展（session_break 对存储策略透明）
+- 兼容 MemoryEnv + 确定性约束
 
 ### Phase 40 — base.py 拆分 + movie.py 补全 ✅
 - base.py: 1096→728 行，提取 EventGeneratorMixin 到 events.py (388 行)

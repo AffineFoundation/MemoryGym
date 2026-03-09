@@ -31,6 +31,14 @@ TIERS: dict[str, dict[str, int]] = {
         "write_budget": 30,
         "eval_salt": 1,
     },
+    "multi": {
+        "entities": 60,
+        "questions": 20,
+        "corrections": 5,
+        "write_budget": 30,
+        "eval_salt": 1,
+        "n_sessions": 3,
+    },
 }
 
 OFFICIAL_SEEDS = list(range(10))

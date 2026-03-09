@@ -200,6 +200,7 @@ class EventGeneratorMixin:
         n_questions: int,
         entities_per_batch: int | None = None,
         contradictions: list[Contradiction] | None = None,
+        n_sessions: int = 1,
     ) -> list[dict]:
         """Generate an interleaved evaluation stream.
 
@@ -351,7 +352,114 @@ class EventGeneratorMixin:
                 "source_attr": q.source_attr,
             })
 
+        if n_sessions > 1:
+            events = self._insert_session_breaks(
+                events, n_sessions, rng, corrections)
+
         return events
+
+    @staticmethod
+    def _insert_session_breaks(
+        events: list[dict],
+        n_sessions: int,
+        rng: Random,
+        corrections: list[Correction],
+    ) -> list[dict]:
+        """Insert session_break events to split the stream into sessions.
+
+        Constraints:
+        - Exactly n_sessions-1 breaks are inserted.
+        - Breaks are placed between events (never inside a batch).
+        - At least 1 correction target must be introduced in a different
+          session than its correction event (guarantees cross-session update).
+        - Breaks are placed at roughly even intervals (~1/n_sessions).
+        """
+        if n_sessions <= 1 or not events:
+            return events
+
+        n_breaks = n_sessions - 1
+
+        # Find valid break positions: between events, after at least 1 ingest
+        # and before the last event.
+        # Prefer positions after ingest events for clean session boundaries.
+        valid_positions: list[int] = []
+        for i in range(1, len(events)):
+            valid_positions.append(i)
+
+        if len(valid_positions) < n_breaks:
+            return events  # too few events to split
+
+        # Target roughly even splits
+        chunk = len(events) / n_sessions
+        target_positions: list[int] = []
+        for b in range(1, n_sessions):
+            target = int(b * chunk)
+            # Find nearest valid position
+            best = min(valid_positions,
+                       key=lambda p: abs(p - target))
+            if best not in target_positions:
+                target_positions.append(best)
+
+        # Ensure cross-session correction: if all corrections are in the
+        # same session as their entity ingest, try to move a break.
+        if corrections:
+            # Find where correction events are and where their target
+            # entities were introduced (ingest events).
+            correction_indices: list[int] = []
+            entity_ingest_idx: dict[str, int] = {}
+            for i, ev in enumerate(events):
+                if ev["type"] == "correction":
+                    correction_indices.append(i)
+                elif ev["type"] == "ingest":
+                    for name in ev.get("entity_names", []):
+                        if name not in entity_ingest_idx:
+                            entity_ingest_idx[name] = i
+
+            # Check if any break separates a correction from its entity
+            def has_cross_session_update(breaks: list[int]) -> bool:
+                for ci in correction_indices:
+                    ename = events[ci].get("entity_name", "")
+                    ei = entity_ingest_idx.get(ename)
+                    if ei is None:
+                        continue
+                    for bp in breaks:
+                        if ei < bp <= ci or ci < bp <= ei:
+                            return True
+                return False
+
+            if not has_cross_session_update(target_positions):
+                # Try to place a break between entity ingest and correction
+                for ci in correction_indices:
+                    ename = events[ci].get("entity_name", "")
+                    ei = entity_ingest_idx.get(ename)
+                    if ei is not None and ei < ci:
+                        mid = (ei + ci) // 2 + 1
+                        mid = max(1, min(mid, len(events) - 1))
+                        if mid not in target_positions:
+                            target_positions[0] = mid
+                            break
+
+        target_positions.sort()
+        # Deduplicate and limit to n_breaks
+        seen: set[int] = set()
+        unique: list[int] = []
+        for p in target_positions:
+            if p not in seen:
+                seen.add(p)
+                unique.append(p)
+        target_positions = unique[:n_breaks]
+
+        # Insert session breaks (from end to preserve indices)
+        result = list(events)
+        for session_num, pos in enumerate(reversed(target_positions), 1):
+            actual_session = n_sessions - session_num + 1
+            result.insert(pos, {
+                "type": "session_break",
+                "session_id": actual_session,
+                "total_sessions": n_sessions,
+            })
+
+        return result
 
     def _generate_one_question(
         self, world: World, rng: Random,

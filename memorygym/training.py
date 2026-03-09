@@ -327,11 +327,13 @@ class MemoryEnv:
             self.n_questions = n_questions or tc["questions"]
             self.n_corrections = n_corrections or tc["corrections"]
             self.write_budget = write_budget or tc["write_budget"]
+            self.n_sessions = tc.get("n_sessions", 1)
         else:
             self.n_entities = n_entities or 60
             self.n_questions = n_questions or 20
             self.n_corrections = n_corrections or 5
             self.write_budget = write_budget or 30
+            self.n_sessions = 1
 
         self._tmpl: WorldTemplate | None = None
         self._stream: list[dict] = []
@@ -389,6 +391,16 @@ class MemoryEnv:
                 f"**Question:**\n{event.get('question', '')}\n\n"
                 "Search your memory and call submit_answer."
             )
+        elif etype == "session_break":
+            session_id = event.get("session_id", 2)
+            total_sess = event.get("total_sessions", 2)
+            return (
+                f"=== Event {idx}/{total} [SESSION BREAK] ===\n\n"
+                f"Session {session_id}/{total_sess} begins. "
+                f"Your conversation context has been reset. "
+                f"Your memory backend is preserved — use "
+                f"memory_search to recall stored data."
+            )
         return f"=== Event {idx}/{total} [DONE] ==="
 
     def reset(self, seed: int | None = None) -> str:
@@ -414,6 +426,7 @@ class MemoryEnv:
             n_questions=self.n_questions,
             entities_per_batch=10,
             contradictions=contradictions,
+            n_sessions=self.n_sessions,
         )
         self._event_idx = 0
         self._mem_counter = 0
