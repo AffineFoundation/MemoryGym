@@ -66,50 +66,63 @@ eval 数据（ROADMAP.md §3）← 衡量差距
 
 ## 当前任务
 
-### Phase 17 — 增强模板系统性验证
+待办空，执行战略推导。
 
-**依据**：Phase 16 大幅改造了 6 个模板的结构（新 dtype、属性数翻倍、新问题类型），需要系统性验证每个模板的正确性和评测质量。
+### 阻塞任务（等待外部资源）
+- GPU 端到端训练验证（需 4+ GPU）
+- Phase 16 增强后真实 eval 冒烟测试（已加入 EVAL_QUEUE.md 批次 P17）
 
-1. **每模板单元测试**：为每个模板编写专项测试，覆盖：
-    - 新 dtype 属性的生成、渲染、格式化是否正确
-    - text 属性的修正/矛盾机制是否正常（关键词替换）
-    - enum 属性的修正是否确实换了选项
-    - list_float 属性的序列生成、修正（改最近值）、趋势计算
-    - date 属性的生成范围、偏移修正、比较逻辑
-    - 层级结构（city）：parent 赋值正确、hierarchy_aggregate 计算准确
-    - 多实体关联（movie）：同导演/演员跨电影、反向查询准确
-2. **新问题类型验证**：每种新问题类型至少测试：
-    - GT 计算正确性（temporal_trend 斜率、temporal_extreme argmax、hierarchy_aggregate 求和、text_match 关键词命中、enum_filter 过滤+聚合）
-    - 问题文本格式合理（无占位符泄漏、无空值）
-    - 问题在 stored/missed 场景下均可生成（adaptive replacement 兼容）
-3. **Simulation 全量验证**：每个模板 × 8 策略 × 10 seeds 跑 `--validate`：
-    - perfect=100%（含新问题类型全对）
-    - guesser=0%（新 dtype 无法猜对）
-    - smart_guesser<5%（text/enum/list_float 无统计规律可猜）
-    - abstainer<15%
-    - strategic>naive+10%
-    ```bash
-    python -m memorygym.bench --seeds 10 --validate --template company
-    python -m memorygym.bench --seeds 10 --validate --template research
-    python -m memorygym.bench --seeds 10 --validate --template city
-    python -m memorygym.bench --seeds 10 --validate --template hospital
-    python -m memorygym.bench --seeds 10 --validate --template sport
-    python -m memorygym.bench --seeds 10 --validate --template movie
-    ```
-4. **跨模板一致性检查**：
-    - 6 个模板的 composite 分布应在合理范围（strategic 55-70%）
-    - 新问题类型不应导致某个模板比其他模板显著简单或困难
-    - 如有异常，调整该模板的属性难度或问题分布
-5. **真实 eval 冒烟测试**：每模板至少用 1 个模型跑 1 seed，确认 agent 能正常处理新属性类型
-    ```bash
-    python -m memorygym.bench --model moonshotai/Kimi-K2.5-TEE --seed 0 --template company
-    python -m memorygym.bench --model moonshotai/Kimi-K2.5-TEE --seed 0 --template research
-    python -m memorygym.bench --model moonshotai/Kimi-K2.5-TEE --seed 0 --template city
-    python -m memorygym.bench --model moonshotai/Kimi-K2.5-TEE --seed 0 --template hospital
-    python -m memorygym.bench --model moonshotai/Kimi-K2.5-TEE --seed 0 --template sport
-    python -m memorygym.bench --model moonshotai/Kimi-K2.5-TEE --seed 0 --template movie
-    ```
-6. **结果汇总**：更新 ROADMAP.md §3 增强后基线数据，记录各模板新旧分数对比
+## 待办
+
+### Phase 18 — 项目全面自审（代码 + 文档 + 架构）
+
+**依据**：经过 Phase 3-16 的快速迭代开发，项目中可能积累了冗余代码、过时文档、废弃模块。在继续新功能开发前，需要一次全面清理。
+
+**代码审查**：
+1. **死代码清理**：
+    - 搜索所有未被引用的函数、类、常量（用 grep 交叉验证 import/调用）
+    - 检查 `memorygym/` 下是否有废弃模块（如 v3 时代的 `domains/`, `generation/` 残留）
+    - 检查 tests/ 中是否有测试已删除功能的用例
+    - 检查 `# TODO`, `# FIXME`, `# HACK` 注释是否已过时
+2. **冗余逻辑检查**：
+    - bench.py 和 env.py 是否有重复的评分计算逻辑（Phase 15 已部分解决，需确认）
+    - stream_agent.py 和 eval_task.py 的 system prompt 是否同步
+    - simulation.py 的策略逻辑与 bench.py 的 re-export 是否还必要
+3. **依赖清理**：
+    - pyproject.toml 中的依赖是否都在用（是否有装了但没用的包）
+    - optional dependencies 分组是否合理
+4. **架构一致性**：
+    - `memorygym/worlds/__init__.py` 的 ALL_TEMPLATES 是否与实际模板一致
+    - `memorygym/protocol.py` 的 TIERS/权重是否与 CLAUDE.md 一致
+    - eval_scorer.py 的 _REASONING_COMPETENCIES 是否覆盖了 Phase 16 新增的所有 competency
+
+**文档审查**：
+5. **ROADMAP.md 全面检查**：
+    - §0 当前状态是否反映 Phase 16 后的实际状态（属性数、dtype 种类、问题类型数）
+    - §2 架构描述是否与代码一致（模块列表、评分公式、流程图）
+    - §3 评测数据是否有过时条目（旧版代码产出的数据、已废弃格式）
+    - §4 优先级是否需要更新（Phase 16 完成后优先级可能变化）
+    - §5 技术决策是否记录了 Phase 16 的关键设计决策
+    - §6 验证记录是否包含最新的 simulation 结果
+    - §7 参考文献是否需要补充（最近的 agent memory 相关工作）
+6. **CLAUDE.md 同步检查**：
+    - 评分权重是否与 protocol.py 一致
+    - 模板数量和属性描述是否反映 Phase 16 增强
+    - 架构模块列表是否完整
+    - 死胡同列表是否需要补充新发现
+    - 常用命令是否还准确
+7. **devlog/ 整理**：
+    - 是否有重复或过时的 devlog
+    - 关键决策是否都有 devlog 记录
+8. **README.md 检查**：
+    - 安装指南是否与最新 pyproject.toml 一致
+    - quickstart 示例是否能实际运行
+    - 排行榜数据是否过时
+
+**输出**：
+- 产出审查报告 `devlog/project-audit.md`
+- 直接修复发现的问题（删除死代码、更新过时文档）
+- 无法立即修复的问题记录为后续待办
 
 ### 阻塞任务（等待外部资源）
 - GPU 端到端训练验证（需 4+ GPU）

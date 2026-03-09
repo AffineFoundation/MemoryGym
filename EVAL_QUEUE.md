@@ -155,6 +155,19 @@ python -m memorygym.bench --model MiniMaxAI/MiniMax-M2.5-TEE --seed 0 --template
 python -m memorygym.bench --model zai-org/GLM-5-TEE --seed 0 --template company --tier standard
 ```
 
+### 批次 P17 — Phase 16 增强后冒烟测试（优先）
+
+验证增强后的模板（22-23 attrs with text/enum/date/list_float）agent 能正常处理：
+
+```bash
+python -m memorygym.bench --model moonshotai/Kimi-K2.5-TEE --seed 0 --template company
+python -m memorygym.bench --model moonshotai/Kimi-K2.5-TEE --seed 0 --template sport
+python -m memorygym.bench --model moonshotai/Kimi-K2.5-TEE --seed 0 --template city
+python -m memorygym.bench --model moonshotai/Kimi-K2.5-TEE --seed 0 --template hospital
+python -m memorygym.bench --model moonshotai/Kimi-K2.5-TEE --seed 0 --template research
+python -m memorygym.bench --model moonshotai/Kimi-K2.5-TEE --seed 0 --template movie
+```
+
 ### 批次 13 — hard tier 全模型
 
 验证 hard tier 下模型能力衰减曲线：
