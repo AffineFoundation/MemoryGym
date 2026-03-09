@@ -99,6 +99,7 @@ def compute_composite(
 REASONING_COMPETENCIES = [
     "synthesis", "aggregation", "cross_category", "conditional", "ratio",
     "comparison", "multi_hop", "outlier", "delta",
+    "counterfactual", "multi_constraint",
     "relationship_lookup", "relationship_hop", "relationship_chain",
     "relationship_count", "relationship_filter",
     "temporal_trend", "temporal_extreme",

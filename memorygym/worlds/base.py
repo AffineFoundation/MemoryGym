@@ -878,7 +878,11 @@ class WorldTemplate(AdvancedQuestionMixin, QuestionGeneratorMixin, ABC):
                       "conditional", "ratio", "comparison",
                       "multi_hop", "outlier",
                       "temporal_trend", "temporal_extreme",
-                      "text_match", "enum_filter"]
+                      "text_match", "enum_filter",
+                      "multi_constraint"]
+        # Add correction-dependent types only if corrections exist
+        if has_corrections:
+            comp_types.append("counterfactual")
         # Add relationship types only if world has relationships
         if world.relationships:
             comp_types.extend([
@@ -887,6 +891,11 @@ class WorldTemplate(AdvancedQuestionMixin, QuestionGeneratorMixin, ABC):
                 "relationship_filter",
             ])
         rng.shuffle(comp_types)
+
+        # Counterfactual needs corrections, not available — wrap it
+        def _counterfactual_wrapper(world, rng, available):
+            return self._gq_counterfactual(world, rng, corrections)
+
         comp_fn_map = {
             "synthesis": self._gq_synthesis,
             "aggregation": self._gq_aggregation,
@@ -896,6 +905,7 @@ class WorldTemplate(AdvancedQuestionMixin, QuestionGeneratorMixin, ABC):
             "comparison": self._gq_comparison,
             "multi_hop": self._gq_multi_hop,
             "outlier": self._gq_outlier,
+            "counterfactual": _counterfactual_wrapper,
             "relationship_lookup": self._gq_relationship_lookup,
             "relationship_hop": self._gq_relationship_hop,
             "relationship_chain": self._gq_relationship_chain,
@@ -905,6 +915,7 @@ class WorldTemplate(AdvancedQuestionMixin, QuestionGeneratorMixin, ABC):
             "temporal_extreme": self._gq_temporal_extreme,
             "text_match": self._gq_text_match,
             "enum_filter": self._gq_enum_filter,
+            "multi_constraint": self._gq_multi_constraint,
         }
         for i in range(n_comprehension):
             q = None

@@ -275,6 +275,9 @@ def test_recall_coverage_update_indistinguishable():
         world, rng, world.entities, stored, 20, corrections)
 
     for q in qs:
+        # Counterfactual questions legitimately mention "correction"
+        if q.competency == "counterfactual":
+            continue
         assert "update" not in q.question.lower()
         assert "correction" not in q.question.lower()
         assert "stored" not in q.question.lower()

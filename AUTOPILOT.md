@@ -66,29 +66,8 @@ eval 数据（ROADMAP.md §3）← 衡量差距
 
 ## 当前任务
 
-### Phase 30 — 反事实推理 + 多约束过滤题型
-
-**依据**：Phase 29 确认推理题机械化（18 种全为确定性运算）。新增 2 种需要真正推理的题型。详细设计见 `devlog/2026-03-09-v2-design.md`。
-
-#### Step 1 — 反事实题 `_gq_counterfactual()`
-- "如果修正没发生，Entity X 的 attr 值是多少？"
-- GT = correction.old_value（Correction 对象已有）
-- guesser baseline = 0%
-
-#### Step 2 — 多约束过滤题 `_gq_multi_constraint()`
-- "满足 revenue > $50M AND employees < 1000 AND sector = 'Technology' 的实体有几个？"
-- GT = len(filtered_entities)，2-3 个条件组合
-- guesser baseline ≈ 0%
-
-#### Step 3 — simulation 更新
-- perfect 策略存 old_value → counterfactual 100%
-- `--seeds 3 --validate` 通过
-
-#### Step 4 — 测试 + 验证
-
-## 待办
-
 ### Phase 31 — 模板事件流差异化
+（从待办提升）
 - 各模板 override generate_stream()
 - correction_rate 属性（hospital 高、city 低）
 - 新增 template_expert 策略
@@ -103,6 +82,12 @@ eval 数据（ROADMAP.md §3）← 衡量差距
 ### Phase 35 — V2 评测数据收集
 
 ## 已完成
+
+### Phase 30 — 反事实推理 + 多约束过滤题型 ✅
+- counterfactual: GT=correction.old_val, 需要 agent 记住修正前值
+- multi_constraint: 2-3 条件组合过滤计数, required_entities≥3 防空集
+- simulation: counterfactual 需 applies_updates + stored; smart_guesser 返回 None
+- 265 tests, simulation 10 seeds ALL PASS
 
 ### Phase 29 — 系统级重设计（设计 Phase）✅
 - 3 缺陷验证：策略同质化（部分确认）、推理机械化（确认）、真实场景脱节（部分确认）

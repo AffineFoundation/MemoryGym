@@ -158,3 +158,40 @@ def test_new_question_types_no_placeholder_leak():
                 assert "{" not in q.question, f"{tmpl.name}/{comp}: {q.question}"
                 assert q.answer
                 break
+
+
+def test_counterfactual_gt_is_old_value():
+    """Counterfactual GT must be the pre-correction value."""
+    tmpl = CompanyWorld()
+    world = tmpl.generate_world(seed=42, n_entities=60)
+    corrections = tmpl.generate_corrections(world, Random(42 + 3333), 5)
+    # Find a numeric correction to test
+    numeric_corr = [c for c in corrections
+                    if isinstance(c.old_val, (int, float))]
+    assert numeric_corr, "Need numeric corrections"
+    rng = Random(42)
+    q = tmpl._gq_counterfactual(world, rng, numeric_corr)
+    assert q is not None, "Should generate counterfactual question"
+    assert q.competency == "counterfactual"
+    # GT must match old_val of one of the corrections
+    matching = [c for c in numeric_corr
+                if tmpl._format_value(c.attr, c.old_val) == q.answer]
+    assert matching, f"GT {q.answer} doesn't match any correction old_val"
+    assert "correction" in q.question.lower() or "before" in q.question.lower()
+
+
+def test_multi_constraint_gt_correct():
+    """Multi-constraint count must match actual filtered entities."""
+    tmpl = CompanyWorld()
+    world = tmpl.generate_world(seed=42, n_entities=60)
+    rng = Random(42)
+    q = None
+    for _ in range(100):
+        q = tmpl._gq_multi_constraint(world, rng, world.entities)
+        if q is not None:
+            break
+    assert q is not None, "Should generate multi_constraint question"
+    assert q.competency == "multi_constraint"
+    count = int(q.answer)
+    assert count >= 0
+    assert len(q.required_entities) >= 3  # at least 3 entities required

@@ -95,7 +95,8 @@ def _smart_guess(q: GeneratedQA, world: World, rng: Random) -> str | None:
 
     # New dtype question types — no reliable guess strategy
     if q.competency in ("temporal_trend", "temporal_extreme",
-                        "text_match", "enum_filter"):
+                        "text_match", "enum_filter",
+                        "counterfactual", "multi_constraint"):
         return None
     # Try to identify the attribute from the question
     for adef in world.attr_defs:
@@ -163,6 +164,16 @@ def _data_available(
         return coverage >= 0.5
 
     if q.competency in ("update", "delta"):
+        entity = q.required_entities[0]
+        if entity not in stored_names:
+            return False
+        if not applies_updates:
+            return False
+        return entity in updated_names
+
+    # Counterfactual: requires storing entity AND processing corrections
+    # (agent must remember both old and new values)
+    if q.competency == "counterfactual":
         entity = q.required_entities[0]
         if entity not in stored_names:
             return False

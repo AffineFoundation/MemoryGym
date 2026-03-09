@@ -202,6 +202,138 @@ class AdvancedQuestionMixin:
             source_attr=attr,
         )
 
+    # ── Counterfactual and multi-constraint questions ──
+
+    def _gq_counterfactual(self, world, rng, corrections):
+        """Ask what a value was BEFORE a correction happened.
+
+        Requires the agent to remember pre-correction values alongside
+        current values — tests memory maintenance depth beyond simple updates.
+        """
+        if not corrections:
+            return None
+        # Only numeric corrections have unambiguous old values
+        numeric_corr = [c for c in corrections
+                        if isinstance(c.old_val, (int, float))]
+        if not numeric_corr:
+            return None
+        c = rng.choice(numeric_corr)
+        label = self.attr_label(c.attr)
+        fmt_old = self._format_value(c.attr, c.old_val)
+        ew = self.entity_word
+        q = rng.choice([
+            f"Before the correction, what was {c.entity_name}'s {label}?",
+            f"What was the original {label} for {c.entity_name}, "
+            f"prior to the correction?",
+            f"If the correction to {c.entity_name}'s {label} had not "
+            f"happened, what would the value be?",
+        ])
+        return GeneratedQA(
+            q, fmt_old, "counterfactual",
+            [c.entity_name], purpose="comprehension",
+            source_attr=c.attr,
+        )
+
+    def _gq_multi_constraint(self, world, rng, available):
+        """Count entities satisfying 2-3 simultaneous constraints.
+
+        Requires the agent to have stored multiple attributes per entity
+        and perform combinatorial filtering — harder than single-attr queries.
+        """
+        if len(available) < 5:
+            return None
+        avail_names = {e.name for e in available}
+
+        # Pick 2 numeric attributes for threshold constraints
+        numeric_attrs = [a for a in world.active_attrs
+                         if any(isinstance(e.get(a), (int, float))
+                                for e in available)]
+        if len(numeric_attrs) < 2:
+            return None
+        attrs = rng.sample(numeric_attrs, 2)
+
+        # Pick an enum attribute for category constraint (if available)
+        enum_attrs = [a for a in world.active_attrs
+                      if any(isinstance(e.get(a), str) and e.get(a)
+                             for e in available)
+                      and a not in attrs]
+        use_enum = bool(enum_attrs) and rng.random() < 0.5
+
+        # Build constraints
+        constraints = []
+        labels = []
+        for attr in attrs:
+            vals = [e.get(attr) for e in available
+                    if isinstance(e.get(attr), (int, float))]
+            if not vals:
+                return None
+            # Pick a threshold that splits the population ~30-70%
+            sorted_vals = sorted(vals)
+            idx = len(sorted_vals) // 3
+            use_gt = rng.choice([True, False])
+            if use_gt:
+                threshold = sorted_vals[idx]
+                constraints.append((attr, ">", threshold))
+                label = self.attr_label(attr)
+                labels.append(f"{label} > {self._format_value(attr, threshold)}")
+            else:
+                threshold = sorted_vals[-(idx + 1)]
+                constraints.append((attr, "<", threshold))
+                label = self.attr_label(attr)
+                labels.append(f"{label} < {self._format_value(attr, threshold)}")
+
+        if use_enum:
+            enum_attr = rng.choice(enum_attrs)
+            enum_vals = [e.get(enum_attr) for e in available
+                         if isinstance(e.get(enum_attr), str) and e.get(enum_attr)]
+            if enum_vals:
+                enum_val = rng.choice(enum_vals)
+                constraints.append((enum_attr, "==", enum_val))
+                labels.append(
+                    f"{self.attr_label(enum_attr)} = \"{enum_val}\"")
+
+        # Compute GT: count entities matching ALL constraints
+        matching = []
+        for e in available:
+            if e.name not in avail_names:
+                continue
+            match = True
+            for attr, op, threshold in constraints:
+                val = e.get(attr)
+                if val is None:
+                    match = False
+                    break
+                if op == ">" and not (isinstance(val, (int, float)) and val > threshold):
+                    match = False
+                    break
+                if op == "<" and not (isinstance(val, (int, float)) and val < threshold):
+                    match = False
+                    break
+                if op == "==" and str(val) != str(threshold):
+                    match = False
+                    break
+            if match:
+                matching.append(e)
+
+        count = len(matching)
+        # Require checking at least 3 entities (prevents vacuous truth for guesser)
+        req_entities = list({e.name for e in matching[:5]}
+                           | {e.name for e in rng.sample(
+                                  available, min(3, len(available)))})
+        ew = self.entity_word
+        ewp = self.entity_word_plural
+        constraint_text = " AND ".join(labels)
+        q = rng.choice([
+            f"How many {ewp} satisfy: {constraint_text}?",
+            f"Count the {ewp} where {constraint_text}.",
+        ])
+        return GeneratedQA(
+            q, str(count), "multi_constraint",
+            req_entities,
+            purpose="comprehension",
+            source_attr=constraints[0][0],
+        )
+
     # ── Entity detection and comprehension replacement ──
 
     def _numeric_variants(self, attr: str, val: Any) -> list[str]:
@@ -287,6 +419,7 @@ class AdvancedQuestionMixin:
             "temporal_extreme": self._gq_temporal_extreme,
             "text_match": self._gq_text_match,
             "enum_filter": self._gq_enum_filter,
+            "multi_constraint": self._gq_multi_constraint,
             "relationship_lookup": self._gq_relationship_lookup,
             "relationship_hop": self._gq_relationship_hop,
             "relationship_chain": self._gq_relationship_chain,

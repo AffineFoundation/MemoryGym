@@ -23,7 +23,7 @@
 - Phase 25: 评分有效性修复（公式统一、效率轴重设计、maintenance gate 修复、distractor 去标记）✅
 - Phase 26-28: 红队审计、修复、缺陷修复 + 测试补全 ✅
 - 6 模板 × 22-23 attrs × 6 dtypes × 18 reasoning competencies
-- 263 tests, simulation ALL PASS（1 个 company smart_guesser flaky 已知）
+- 265 tests, simulation ALL PASS（10 seeds; 3 seeds 偶尔 smart_guesser flaky 已知）
 - MemoryEnv shaped reward + verl/slime 适配器完整可用
 
 ---
@@ -100,9 +100,10 @@ abstention_diagnostic 单独报告，不计入 composite。
 
 8 种策略验证评分有效性：perfect=100%, guesser=0%, strategic>naive+10%, abstainer<15%, smart_guesser<5%。
 
-### 2.6 推理题型（18 types）
+### 2.6 推理题型（20 types）
 
 基础: synthesis, aggregation, cross_category, conditional, ratio, comparison, multi_hop, outlier, delta
+推理: counterfactual, multi_constraint
 关系: relationship_lookup, relationship_hop, relationship_chain, relationship_count, relationship_filter
 新 dtype: temporal_trend, temporal_extreme, text_match, enum_filter
 

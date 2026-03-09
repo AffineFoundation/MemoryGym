@@ -152,9 +152,10 @@ def test_ratio_gt_correct():
             rng = Random(seed + 7777)
             corrections = tmpl.generate_corrections(
                 world, Random(seed + 3333), 5)
+            # Use 40 questions to ensure diverse comp types appear
             qs = tmpl.gen_adaptive_questions(
                 world, rng, world.entities,
-                {e.name for e in world.entities}, 20, corrections)
+                {e.name for e in world.entities}, 40, corrections)
             for q in qs:
                 if q.competency == "ratio":
                     ratio_found += 1
@@ -180,9 +181,10 @@ def test_comparison_gt_correct():
             rng = Random(seed + 7777)
             corrections = tmpl.generate_corrections(
                 world, Random(seed + 3333), 5)
+            # Use 40 questions to ensure diverse comp types appear
             qs = tmpl.gen_adaptive_questions(
                 world, rng, world.entities,
-                {e.name for e in world.entities}, 20, corrections)
+                {e.name for e in world.entities}, 40, corrections)
             for q in qs:
                 if q.competency == "comparison":
                     comp_found += 1
