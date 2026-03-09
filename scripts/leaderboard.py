@@ -19,6 +19,16 @@ from collections import defaultdict
 from pathlib import Path
 
 
+def _infer_tier(extra: dict) -> str:
+    n = extra.get("n_entities", 0)
+    if n <= 30:
+        return "lite"
+    elif n <= 60:
+        return "standard"
+    else:
+        return "hard"
+
+
 def load_results(eval_dir: str = "eval") -> list[dict]:
     """Load all eval results from directory."""
     results = []
@@ -27,6 +37,8 @@ def load_results(eval_dir: str = "eval") -> list[dict]:
             continue
         path = Path(eval_dir) / f
         data = json.loads(path.read_text())
+        if "task_name" not in data:
+            continue  # Skip old-format results
         extra = data.get("extra", {})
         error = data.get("error", "")
         if error:
@@ -36,7 +48,7 @@ def load_results(eval_dir: str = "eval") -> list[dict]:
             "model": extra.get("model", "?"),
             "template": extra.get("template", "?"),
             "seed": extra.get("seed", "?"),
-            "tier": "lite",  # Default; could be inferred from entity count
+            "tier": _infer_tier(extra),
             "score": data.get("score", 0),
             "n_entities": extra.get("n_entities", 0),
             "n_questions": extra.get("n_questions", 0),
