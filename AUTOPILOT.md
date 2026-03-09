@@ -70,34 +70,38 @@ eval 数据（ROADMAP.md §3）← 衡量差距
 
 ### 阻塞任务（等待外部资源）
 - GPU 端到端训练验证（需 4+ GPU）
-- Phase 16 增强后真实 eval 冒烟测试（已加入 EVAL_QUEUE.md 批次 P17）
+- v2 评测数据收集（eval session 负责，见 EVAL_QUEUE.md）
 
 ## 待办
 
-### Phase 19 — 评测数据重建（归档旧数据 + 全面重测）
+### Phase 20 — eval JSON 加入完整对话历史（extra.conversation）
 
-**依据**：Phase 16 大幅改变了所有 6 个模板的结构（属性 10→22-24，新增 text/enum/list_float/date，新问题类型），旧版评测数据基于 10 属性模板产出，与当前代码不兼容，分数不可比较。
+**依据**：affinetes 接口要求 `extra.conversation` 包含完整对话历史，但当前 bench.py 输出的 eval JSON 缺少此字段。env.py 虽然尝试从 trajectory 构建 conversation，但 trajectory 的 turns 里只有 tool_calls/tool_results，没有 assistant 原始回复和 user/system messages，导致 conversation 实际为空或残缺。
 
-1. **归档旧评测数据**：
-    - `eval/` 目录中所有现有 JSON 移动到 `eval/archive_v1/`
-    - 创建 `eval/archive_v1/README.md` 说明：数据基于 Phase 16 前的 10 属性模板，仅供历史参考
-    - ROADMAP.md §3 旧数据标注为 `[v1, archived]`
-2. **EVAL_QUEUE.md 全面重写**：
-    - 清空现有批次（全部基于旧模板）
-    - 批次 1：冒烟测试 — 每模板 × 1 seed × Kimi-K2.5（6 任务，验证 agent 能处理新 dtype）
-    - 批次 2：新基线 — Kimi-K2.5 全模板 × 3 seeds（18 任务，计算均值±标准差）
-    - 批次 3：横评 — Qwen3.5-397B 全模板 × 1 seed（6 任务）
-    - 批次 4：补充 — MiniMax + GLM-5 各 company+movie × 1 seed（4 任务）
-    - 批次 5：standard tier — Kimi × company × 1 seed
-    - 批次 6：hard tier — Kimi × company × 1 seed
-3. **LEADERBOARD.md 重置**：
-    - 清空旧排行，标注 "v2 — Phase 16 enhanced templates"
-    - 新数据到位后重新生成
-4. **ROADMAP.md §3 更新**：
-    - 新增 v2 数据表
-    - 新旧基线定性对比（预期分数下降，属性更多+问题更复杂）
+1. **stream_agent.py 增强 trajectory**：
+    - turns 中新增 `role` 和 `content` 字段：保存 assistant 的原始回复文本（含 think block、tool call 原文）
+    - 每个事件的 trajectory 记录中新增 `event_message` 字段：保存发给模型的 user message 原文（ingest/correction/question 内容）
+    - system prompt 保存到 trajectory 的第一条记录
+2. **bench.py eval JSON 加 conversation**：
+    - 从 trajectory 构建 `extra.conversation` 列表，格式：`[{"role": "system"|"user"|"assistant", "content": "..."}]`
+    - 与 env.py 的 conversation 构建逻辑保持一致（共用同一个函数）
+3. **抽取共享函数**：
+    - 将 trajectory → conversation 的转换逻辑抽取到 `protocol.py` 或独立模块
+    - bench.py 和 env.py 都调用此函数，消除重复
+4. **env.py 移至项目根目录**：
+    - affinetes 要求 `env.py` 在项目根目录（不是 `memorygym/env.py`）
+    - 将 `memorygym/env.py` 移到项目根 `env.py`
+    - 更新所有引用（scripts/affinetes_example.py, pyproject.toml, README.md 等）
+    - 原 `memorygym/env.py` 如有内部引用需改为从根目录导入或保留一个 re-export
+5. 测试验证
 
 ## 已完成
+
+### Phase 19 — 评测数据重建 ✅
+1. ~~归档旧数据~~ ✅ → 49 JSON 移至 eval/archive_v1/ + README.md
+2. ~~EVAL_QUEUE.md 重写~~ ✅ → v2 批次 1-6（冒烟→基线→横评→tier 测试）
+3. ~~LEADERBOARD.md 重置~~ ✅ → v2 标注，待新数据填充
+4. ~~ROADMAP.md §3 更新~~ ✅ → v1 数据标记 archived，v2 数据待填
 
 ### Phase 18 — 项目全面自审 ✅
 1. ~~死代码清理~~ ✅ → 6 处未用导入移除，无死函数/类

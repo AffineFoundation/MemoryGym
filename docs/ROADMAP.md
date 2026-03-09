@@ -125,103 +125,30 @@ abstention_diagnostic 单独报告，不计入 composite。
 
 ## 3. 证据
 
-### 3.1 评测数据
+### 3.1 评测数据 (v2 — Phase 16 Enhanced Templates)
 
-**跨模型 × 跨模板覆盖矩阵（lite tier, seed=0）**
+> v1 数据（10 属性模板）已归档到 `eval/archive_v1/`。以下为 v2 数据（22-23 属性，6 dtype，20 reasoning types）。
 
-| 模型 | company | research | city | hospital | sport | movie | 均值 |
-|------|---------|----------|------|----------|-------|-------|------|
-| Qwen3.5-397B | 503 | 70%¹ | 60%¹ | 90%¹ | — | — | **73%** |
-| Kimi-K2.5 | 45% | 40% | 30% | 40% | 30% | 55% | **40%** |
-| MiniMax-M2.5 | 20% | 10% | 20% | 50% | 10% | — | **22%** |
+**v2 评测尚未开始。** 见 EVAL_QUEUE.md。
 
-¹ seed=1 数据（seed=0 时 Qwen3.5-397B 503 不可用）
+### 3.2 v1 历史数据摘要 [archived]
 
-**多 seed 数据（lite tier）**
-
-| 模型 | 模板 | Seeds | Composite | 备注 |
-|------|------|-------|-----------|------|
-| Kimi-K2.5 | company | 0,1,2,42 | 40%, 50%, 20%, 40% | 均值 38% |
-| MiniMax-M2.5 | company | 0,1 | 20%, 50% | 均值 35% |
-| Qwen3-235B | company | 0,1,2,3 | 10%, 50%, 30%, 10% | 均值 25% |
-| Qwen3-32B | company | 0,1,2 | 25%, 30%, 45% | 均值 33% |
-
-**全量详细数据**
-
-| 模型 | 模板 | Tier | Seed | Composite | Breadth | Maintenance | Reasoning | Abstention |
-|------|------|------|------|-----------|---------|-------------|-----------|------------|
-| Qwen3.5-397B | research | lite | 1 | **70%** | 100% | 33% | 50% | 100% |
-| Qwen3.5-397B | city | lite | 1 | **60%** | 100% | 33% | 0% | 100% |
-| Qwen3.5-397B | hospital | lite | 1 | **90%** | 100% | 100% | 50% | 100% |
-| Kimi-K2.5 | company | lite | 0 | **45%** | 67% | 33% | 0% | 100% |
-| Kimi-K2.5 | company | lite | 1 | **50%** | 75% | 33% | 0% | 100% |
-| Kimi-K2.5 | company | lite | 2 | **20%** | 25% | 0% | 0% | 100% |
-| Kimi-K2.5 | company | lite | 42 | **40%** | 50% | 0% | 0% | 100% |
-| Kimi-K2.5 | hospital | lite | 0 | **40%** | 40% | 50% | 0% | 100% |
-| Kimi-K2.5 | research | lite | 0 | **40%** | 60% | 0% | 0% | 100% |
-| Kimi-K2.5 | city | lite | 0 | **30%** | 20% | 0% | 50% | 100% |
-| Kimi-K2.5 | sport | lite | 0 | **30%** | 40% | 0% | 0% | 100% |
-| Kimi-K2.5 | sport | lite | 1 | **40%** | 12% | 33% | 50% | 100% |
-| Kimi-K2.5 | movie | lite | 0 | **55%** | 56% | 25% | 60% | 100% |
-| MiniMax-M2.5 | company | lite | 0 | **20%** | 25% | 0% | 0% | 50% |
-| MiniMax-M2.5 | company | lite | 1 | **50%** | 50% | 67% | 0% | 100% |
-| MiniMax-M2.5 | hospital | lite | 0 | **50%** | 40% | 50% | 50% | 100% |
-| MiniMax-M2.5 | research | lite | 0 | **10%** | 20% | 0% | 0% | 0% |
-| MiniMax-M2.5 | city | lite | 0 | **20%** | 0% | 0% | 50% | 100% |
-| MiniMax-M2.5 | sport | lite | 0 | **10%** | 0% | 0% | 0% | 100% |
-| Qwen2.5-72B | company | 极简(30e/5q) | 0 | **83%** | 100% | 100% | n/a | 100% |
-| Qwen3-235B | company | lite | 0-3 | **25%** | 20-75% | 0-100% | 0-33% | 0% |
-| Qwen3-32B | company | mixed | 0,1,2 | **33%** | 25-50% | 0-33% | 0-33% | 50-100% |
-| Qwen3-14B | company | lite | 1 | **20%** | 0% | 33% | 0% | 100% |
-| GPT-OSS-120B | company | standard | 0 | 0% | 0% | 0% | 0% | 0% |
-
-### 3.2 关键发现与解读
-
-**1. 跨模板覆盖已完成，评测有效性确认**
-- 事实：3 个模型 × 5 个模板（company/research/city/hospital/sport）均有数据
-- 事实：同一模型跨模板分数差异合理（Kimi: 30-50%, MiniMax: 10-50%），不存在系统性偏差
-- 事实：Qwen3.5-397B 跨模板一致性最高（60-90%），breadth=100%、abstention=100% 稳定
-- 解读：模板差异来自任务难度（hospital 数据结构化程度高→高分），非系统偏差
-
-**2. Maintenance（更新能力）已通过提示改进部分解决**
-- 事实：Phase 10 时 Kimi-K2.5 跨 5 模板 maintenance 均为 0%（除 hospital=50%）
-- 事实：Phase 11 改进 correction 提示后，Kimi-K2.5 company seed=0 maintenance 从 0% → 33%
-- 事实：改进内容：correction 事件中添加明确的 search→forget→store 操作步骤 + 实体名
-- 事实：仍有 4/5 corrections 失败（MISS 模式：搜索到但不执行完整更新流程）
-- 解读：明确的操作指引有效但不充分，RL 训练是进一步提升的方向
-
-**3. MiniMax-M2.5 空答案问题严重**
-- 事实：MiniMax 在 research(10%), sport(10%) 大量提交空答案
-- 事实：同模型在 hospital(50%) 表现明显更好
-- 解读：模型对某些领域的实体名称不够敏感，search 成功率低
-
-**4. Abstention 能力普遍优秀**
-- 事实：Kimi-K2.5 在所有模板 abstention=100%
-- 事实：MiniMax-M2.5 在 4/5 模板 abstention=100%（research=0% 例外）
-- 解读：弃权能力是最容易掌握的技能
-
-**5. Reasoning 能力普遍薄弱**
-- 事实：Kimi-K2.5 reasoning 仅在 city(50%) 非零，其余 4 模板均 0%
-- 事实：MiniMax-M2.5 reasoning 在 city(50%), hospital(50%) 非零
-- 解读：推理题需要模型搜索多个实体并做比较/计算，当前模型很少这样做
+v1 关键发现（仅供参考，分数不可与 v2 比较）：
+- Qwen3.5-397B 最强（73% avg），breadth/abstention 100%
+- Kimi-K2.5 中等（40% avg），maintenance 弱（多数 0%，提示改进后部分 33%）
+- MiniMax-M2.5 较弱（22% avg），空答案问题严重
+- Reasoning 普遍薄弱（多数 0%）
+- Abstention 普遍优秀（多数 100%）
 
 ### 3.3 数据索引
 
 ```
-eval/
-├── Qwen_Qwen3.5-397B-A17B-TEE_{research,city,hospital}_s1.json
-├── moonshotai_Kimi-K2.5-TEE_{company,hospital,research,city,sport,movie}_s0.json
-├── moonshotai_Kimi-K2.5-TEE_sport_s1.json
-├── moonshotai_Kimi-K2.5-TEE_company_s{1,2,42}.json
-├── MiniMaxAI_MiniMax-M2.5-TEE_{company,hospital,research,city,sport}_s0.json
-├── MiniMaxAI_MiniMax-M2.5-TEE_company_s1.json
-├── Qwen_Qwen2.5-72B-Instruct_company_s0.json
-├── Qwen_Qwen3-235B-*_company_s{0,1,2,3}.json
-├── Qwen_Qwen3-32B_company_s{0,1,2}.json
-├── Qwen_Qwen3-14B_company_s1.json
-├── openai_gpt-oss-120b-TEE_company_s0.json
-├── deepseek_DeepSeek-V3-0324_aggregate.json
-└── *_trajectory.json  # 轨迹文件（Phase 6+ 新格式）
+eval/archive_v1/  # v1 数据（Phase 16 前，10 属性模板）
+├── 49 JSON files (results + trajectories)
+└── README.md
+
+eval/              # v2 数据（Phase 16 后，22-23 属性模板）
+└── (pending)
 ```
 
 ---
