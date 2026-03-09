@@ -11,20 +11,19 @@
 
 > 新 session 先看这里 + `AUTOPILOT.md`。上下文不足时可读最近的 devlog 文件。
 
-**当前焦点**: 战略推导 — RL 训练准备（shaped reward）
+**当前焦点**: 战略推导 — 所有非阻塞任务已完成
 
 **最大差距**: RL 训练验证（需 GPU）+ v2 eval 数据（eval session 进行中）
 
 **已完成**:
 - Phase 0-2: 多模板 eval + 跨模型兼容 + 任务复杂度升级 ✅
 - Phase 3: RL 训练闭环（代码完成，待 GPU 验证）
-- Phase 5-17: 评测质量迭代、模板增强、工具链、训练基础设施 ✅
-- Phase 18: 项目全面自审（死代码清理、文档同步、架构一致性）✅
-- Phase 19: v1 eval 数据归档，v2 eval queue 重建 ✅
-- Phase 20: eval JSON 完整对话历史 + 根目录 env.py ✅
-- 6 模板 × 22-23 attrs × 6 dtypes × 20 reasoning competencies
-- 256 tests, simulation ALL PASS
-- MemoryEnv + verl/slime 适配器完整可用
+- Phase 5-21: 评测质量迭代、模板增强、工具链、训练基础设施 ✅
+- Phase 22: 模板真正差异化（死代码清理、领域特定 list_float、领域约束）✅
+- Phase 23: 模板差异化自审（5/5 检查通过）✅
+- 6 模板 × 22-23 attrs × 6 dtypes × 18 reasoning competencies
+- 261 tests, simulation ALL PASS
+- MemoryEnv shaped reward + verl/slime 适配器完整可用
 
 ---
 
@@ -83,7 +82,7 @@ memorygym/
 |----|------|--------|
 | breadth | 0.30 | 存储广度（retrieval 正确率）|
 | maintenance | 0.25 | 记忆维护（update 正确率 × coverage gate）|
-| reasoning | 0.25 | 推理能力（20 种 competency：8 基础 + 5 关系推理 + 7 新 dtype 题型）|
+| reasoning | 0.25 | 推理能力（18 种 competency：9 基础 + 5 关系推理 + 4 新 dtype 题型）|
 | efficiency | 0.20 | 效率（correct/writes_used）|
 
 abstention_diagnostic 单独报告，不计入 composite。
@@ -100,11 +99,11 @@ abstention_diagnostic 单独报告，不计入 composite。
 
 8 种策略验证评分有效性：perfect=100%, guesser=0%, strategic>naive+10%, abstainer<15%, smart_guesser<5%。
 
-### 2.6 推理题型（20 types）
+### 2.6 推理题型（18 types）
 
 基础: synthesis, aggregation, cross_category, conditional, ratio, comparison, multi_hop, outlier, delta
 关系: relationship_lookup, relationship_hop, relationship_chain, relationship_count, relationship_filter
-新 dtype: temporal_trend, temporal_extreme, hierarchy_aggregate, hierarchy_lookup, text_match, enum_filter
+新 dtype: temporal_trend, temporal_extreme, text_match, enum_filter
 
 ### 2.5 MemoryEnv (RL 环境)
 
@@ -119,7 +118,7 @@ abstention_diagnostic 单独报告，不计入 composite。
 
 ### 2.7 测试覆盖
 
-256 tests: test_worlds(37) + test_validators(61) + test_bench(22) + test_stream_agent(21) + test_training(21) + test_backend_bench(7) + test_llm_judge(11) + test_narrative(15) + test_adapters(27) + test_new_dtypes(7) + other(25)
+261 tests: test_worlds(37) + test_validators(61) + test_bench(22) + test_stream_agent(21) + test_training(27) + test_backend_bench(7) + test_llm_judge(11) + test_narrative(15) + test_adapters(27) + test_new_dtypes(7) + other(26)
 
 ---
 
