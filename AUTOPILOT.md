@@ -66,14 +66,6 @@ eval 数据（ROADMAP.md §3）← 衡量差距
 
 ## 当前任务
 
-### Phase 35 — V2 评测数据收集
-- [x] V2 端到端验证：Qwen3.5-397B company lite seed=1 → 20% (系统工作正常)
-- [ ] 多模板评测：research/city/hospital/sport/movie
-- [ ] 多模型评测：MiniMax-M2.5, Kimi-K2.5, Qwen3-235B
-- [ ] 对比 V1 数据
-
-## 待办
-
 ### Phase 36 — 模板策略差异化修复（审计线程发现）
 
 **依据**：审计 A1 发现 Phase 31 的 template_expert 策略**未实现真正的模板差异化**。
@@ -107,6 +99,11 @@ eval 数据（ROADMAP.md §3）← 衡量差距
 3. 验证：standard tier（20 题）中 counterfactual ≥ 1 且 multi_constraint ≥ 1 的概率 > 80%（10 seeds 验证）
 
 ## 已完成
+
+### Phase 35 — V2 评测数据收集 ✅
+- Qwen3.5-397B 6模板 avg=24%: city=34%, research=31%, sport=29%, movie=21%, hospital=18%, company=13%
+- 跨模型: Kimi-K2.5=41%(standard), Qwen3.5=13%, Qwen3-235B=14%, MiniMax=0%
+- breadth普遍低(0-25%), maintenance最强轴, V2评分分化显著
 
 ### Phase 34 — 长上下文评测模式 ✅
 - --no-redaction flag：stream_agent.py + eval_task.py + bench.py CLI
