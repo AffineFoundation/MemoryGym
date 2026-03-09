@@ -621,7 +621,11 @@ def run_stream_agent(
             content = (
                 f"=== Event {event_idx+1}/{total_events} [CORRECTION] ===\n\n"
                 f"**Correction Notice:**\n{event['notice']}\n\n"
-                "Update your stored memories with the corrected value."
+                f"ACTION REQUIRED: You must update your stored memory.\n"
+                f"1. memory_search \"{entity_name}\"\n"
+                f"2. memory_forget the old entry\n"
+                f"3. memory_store with the corrected value\n"
+                f"Budget: {budget.remaining()} writes remaining."
             )
             messages.append({"role": "user", "content": content})
             stats = _run_tool_loop(client, model, messages, backend, budget)

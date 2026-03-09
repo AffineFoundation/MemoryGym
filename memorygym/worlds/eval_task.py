@@ -81,7 +81,10 @@ CORRECTION_TEMPLATE = """=== Event {event_num}/{total_events} [CORRECTION] ===
 **Correction Notice:**
 {notice}
 
-Update your stored memories with the corrected value."""
+ACTION REQUIRED: You must update your stored memory.
+1. memory_search "{entity_name}"
+2. memory_forget the old entry
+3. memory_store with the corrected value"""
 
 QUESTION_TEMPLATE = """=== Event {event_num}/{total_events} [QUESTION] ===
 
@@ -282,7 +285,8 @@ def worldbench_solver(
                 state.messages.append(ChatMessageUser(
                     content=CORRECTION_TEMPLATE.format(
                         event_num=event_idx + 1, total_events=total_events,
-                        notice=event["notice"])))
+                        notice=event["notice"],
+                        entity_name=event["entity_name"])))
                 state = await generate(state, tool_calls="loop")
                 del state.messages[initial_len:]
                 mem_summary = _build_mem_summary(
