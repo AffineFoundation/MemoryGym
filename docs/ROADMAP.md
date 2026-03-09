@@ -11,19 +11,19 @@
 
 > 新 session 先看这里 + `AUTOPILOT.md`。上下文不足时可读最近的 devlog 文件。
 
-**当前焦点**: Phase 18 — 项目全面自审（代码 + 文档 + 架构）
+**当前焦点**: 战略推导 — RL 训练准备（shaped reward）
 
-**最大差距**: 代码/文档卫生（快速迭代积累的技术债务）+ RL 训练验证（需 GPU）
+**最大差距**: RL 训练验证（需 GPU）+ v2 eval 数据（eval session 进行中）
 
 **已完成**:
 - Phase 0-2: 多模板 eval + 跨模型兼容 + 任务复杂度升级 ✅
 - Phase 3: RL 训练闭环（代码完成，待 GPU 验证）
-- Phase 5-15: 评测质量迭代、工具链、训练基础设施 ✅
-- Phase 16: 模板结构分化（6 dtypes, 22-23 attrs/template, 20 种 reasoning competency）✅
-- Phase 17: 增强模板系统性验证（7 新测试, simulation 全 PASS）✅
-- 6 个领域模板（company/research/city/hospital/sport/movie）
-- 实体关系层（5 种关系题型）+ 6 种新 dtype 题型
-- 256 tests passing
+- Phase 5-17: 评测质量迭代、模板增强、工具链、训练基础设施 ✅
+- Phase 18: 项目全面自审（死代码清理、文档同步、架构一致性）✅
+- Phase 19: v1 eval 数据归档，v2 eval queue 重建 ✅
+- Phase 20: eval JSON 完整对话历史 + 根目录 env.py ✅
+- 6 模板 × 22-23 attrs × 6 dtypes × 20 reasoning competencies
+- 256 tests, simulation ALL PASS
 - MemoryEnv + verl/slime 适配器完整可用
 
 ---
@@ -186,6 +186,7 @@ eval/              # v2 数据（Phase 16 后，22-23 属性模板）
 | 2026-03-08 | 任务复杂度升级从 #4 提升到 #3 | 用户指示：增加新世界模板和题型复杂度优先于 RL |
 | 2026-03-08 | Phase 1-3 完成，RL 训练闭环提升为最高优先 | 评测系统稳定，训练是最大差距 |
 | 2026-03-09 | Phase 18 项目自审提升为当前任务 | Phase 3-17 快速迭代积累技术债务；ROADMAP §0/§2 权重与代码不同步；RL 阻塞于 GPU 无法推进 |
+| 2026-03-09 | Phase 21 shaped reward 设计 | RL 管线代码完成但 binary reward 不足；GPU 阻塞但 reward 设计可先行；REDSearcher/Agent-R1 证明 shaped reward 提升训练效率 |
 
 ---
 

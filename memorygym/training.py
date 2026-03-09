@@ -307,10 +307,14 @@ class MemoryEnv:
         n_corrections: int | None = None,
         write_budget: int | None = None,
         eval_salt: int = 0,
+        reward_mode: str = "binary",
     ):
+        if reward_mode not in ("binary", "shaped"):
+            raise ValueError(f"reward_mode must be 'binary' or 'shaped', got '{reward_mode}'")
         self.template_name = template_name
         self._default_seed = seed
         self._eval_salt = eval_salt
+        self.reward_mode = reward_mode
 
         # Tier overrides explicit params
         if tier is not None:
@@ -337,6 +341,9 @@ class MemoryEnv:
         self._questions_answered: int = 0
         self._correct_count: int = 0
         self._total_questions: int = 0
+        # Shaped reward tracking
+        self._correction_searched: bool = False
+        self._correction_forgot: bool = False
 
         # ChromaDB embedding search (matches real eval backend)
         self._ef = SentenceTransformerEmbeddingFunction(
@@ -420,6 +427,8 @@ class MemoryEnv:
         self._questions_answered = 0
         self._correct_count = 0
         self._world = world
+        self._correction_searched = False
+        self._correction_forgot = False
 
         # Precompute question/correction counts
         self._total_questions = sum(
@@ -447,10 +456,16 @@ class MemoryEnv:
         args = action.get("args", {})
         reward = 0.0
         info: dict[str, Any] = {}
+        shaped = self.reward_mode == "shaped"
+        current_event = (self._stream[self._event_idx]
+                         if self._event_idx < len(self._stream) else None)
+        event_type = current_event["type"] if current_event else None
 
         if tool == "memory_store":
             if self._writes_used >= self.write_budget:
                 info["error"] = "Budget exhausted"
+                if shaped:
+                    reward = -0.05  # Penalty: wasted action on exhausted budget
             else:
                 self._mem_counter += 1
                 mid = f"mem_{self._mem_counter:03d}"
@@ -462,6 +477,19 @@ class MemoryEnv:
                 self._writes_used += 1
                 info["memory_id"] = mid
                 info["remaining"] = self.write_budget - self._writes_used
+
+                if shaped:
+                    # Reward for storing content with entity names
+                    if current_event and event_type == "ingest":
+                        names = current_event.get("entity_names", [])
+                        if any(n.lower() in content.lower() for n in names):
+                            reward = 0.1  # Good: stored relevant entity data
+                    elif event_type == "correction":
+                        # Storing during correction after search+forget = correction flow
+                        if self._correction_searched and self._correction_forgot:
+                            reward = 0.2  # Good: completed correction flow
+                            self._correction_searched = False
+                            self._correction_forgot = False
 
         elif tool == "memory_search":
             query = args.get("query", "")
@@ -479,6 +507,8 @@ class MemoryEnv:
                      "content": results["documents"][0][i]}
                     for i in range(len(results["ids"][0]))
                 ]
+            if shaped and event_type == "correction":
+                self._correction_searched = True
 
         elif tool == "memory_forget":
             mid = args.get("memory_id", "")
@@ -486,6 +516,8 @@ class MemoryEnv:
             if existing["ids"]:
                 self._collection.delete(ids=[mid])
                 info["deleted"] = True
+                if shaped and event_type == "correction":
+                    self._correction_forgot = True
             else:
                 info["deleted"] = False
 
@@ -506,6 +538,10 @@ class MemoryEnv:
             self._event_idx += 1
 
         elif tool == "next":
+            # Reset correction tracking when advancing past a correction event
+            if shaped and event_type == "correction":
+                self._correction_searched = False
+                self._correction_forgot = False
             self._event_idx += 1
 
         done = self._event_idx >= len(self._stream)
@@ -526,7 +562,11 @@ class MemoryEnv:
         return obs, reward, done, info
 
     def get_verifiable_reward(self) -> float:
-        """Episode composite score for GRPO."""
+        """Episode accuracy for GRPO outcome reward.
+
+        Returns correct_count / total_questions regardless of reward_mode.
+        Shaped per-step rewards are orthogonal to episode-level GRPO reward.
+        """
         if self._total_questions == 0:
             return 0.0
         return self._correct_count / self._total_questions

@@ -267,3 +267,86 @@ class TestMemoryEnv:
                 break
         assert done
         assert obs == "Episode complete."
+
+    def test_shaped_reward_store_with_entity_name(self):
+        """Shaped mode: storing content with entity name → positive reward."""
+        env = MemoryEnv("company", seed=0, n_entities=10,
+                        n_questions=3, reward_mode="shaped")
+        obs = env.reset()
+        # First event should be ingest with entity names
+        assert "DOCUMENTS" in obs
+        # Get entity names from stream
+        names = env._stream[0].get("entity_names", [])
+        assert len(names) > 0
+        # Store content containing an entity name
+        _, reward, _, info = env.step({
+            "tool": "memory_store",
+            "args": {"content": f"{names[0]} has revenue of $500M"}
+        })
+        assert reward == 0.1, f"Expected 0.1 for relevant store, got {reward}"
+        assert "memory_id" in info
+
+    def test_shaped_reward_budget_exhausted(self):
+        """Shaped mode: writing past budget → penalty."""
+        env = MemoryEnv("company", seed=0, n_entities=10,
+                        n_questions=3, write_budget=1, reward_mode="shaped")
+        env.reset()
+        # Use up the single write
+        env.step({"tool": "memory_store", "args": {"content": "data"}})
+        # Second write should fail with penalty
+        _, reward, _, info = env.step({
+            "tool": "memory_store", "args": {"content": "more data"}
+        })
+        assert reward == -0.05
+        assert "error" in info
+
+    def test_shaped_reward_correction_flow(self):
+        """Shaped mode: search→forget→store during correction → +0.2."""
+        env = MemoryEnv("company", seed=0, n_entities=30,
+                        n_questions=5, reward_mode="shaped")
+        env.reset()
+        # Advance to first correction event
+        while env._event_idx < len(env._stream):
+            if env._stream[env._event_idx]["type"] == "correction":
+                break
+            env.step({"tool": "next"})
+        if env._event_idx >= len(env._stream):
+            return  # No corrections in this stream
+        # Store something first so search has results
+        env.step({"tool": "memory_store",
+                  "args": {"content": "some entity data"}})
+        # Search (marks correction_searched)
+        env.step({"tool": "memory_search",
+                  "args": {"query": "entity"}})
+        assert env._correction_searched
+        # Forget (marks correction_forgot)
+        env.step({"tool": "memory_forget",
+                  "args": {"memory_id": "mem_001"}})
+        assert env._correction_forgot
+        # Store with correction flow complete → 0.2 reward
+        _, reward, _, _ = env.step({
+            "tool": "memory_store",
+            "args": {"content": "corrected entity data"}
+        })
+        assert reward == 0.2
+
+    def test_binary_mode_unchanged(self):
+        """Binary mode: no intermediate rewards, only submit_answer."""
+        env = MemoryEnv("company", seed=0, n_entities=10,
+                        n_questions=3, reward_mode="binary")
+        env.reset()
+        names = env._stream[0].get("entity_names", [])
+        # Store should give 0 reward in binary mode
+        _, reward, _, _ = env.step({
+            "tool": "memory_store",
+            "args": {"content": f"{names[0]} data"}
+        })
+        assert reward == 0.0
+
+    def test_reward_mode_validation(self):
+        """Invalid reward_mode raises ValueError."""
+        try:
+            MemoryEnv("company", reward_mode="invalid")
+            assert False, "Should have raised ValueError"
+        except ValueError as e:
+            assert "invalid" in str(e)

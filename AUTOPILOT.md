@@ -74,9 +74,64 @@ eval 数据（ROADMAP.md §3）← 衡量差距
 
 ## 待办
 
-（无）
+### Phase 22 — 模板真正差异化（消除结构同质性）
+
+**依据**：战略审计发现 Phase 16 后所有 6 个模板在**功能层面仍然同构**——问题类型、生成逻辑、评测维度完全一样，差异仅限于领域名称替换。具体问题：
+
+- 5 个关系问题类型（relationship_lookup/hop/chain/count/filter）**永远不触发**（不在 `gen_adaptive_questions()` 预算中）
+- 2 个层级问题类型（hierarchy_aggregate/lookup）是**死代码**（EntitySpec.parent/children 从未被填充）
+- list_float 全部用 `base.py:175-183` 相同随机游走（`rng.uniform(-0.2, 0.3) * base`）
+- Company/City/Hospital **零领域约束**（仅 Research/Sport/Movie 有一致性校验）
+- Enum 仅用于 enum_filter，Date 无时间约束，Text 无语义差异
+
+**目标**：让每个模板测试**不同的记忆管理能力维度**，而不只是换个领域名。
+
+#### Step 1 — 激活关系问题（影响所有模板）
+- `gen_adaptive_questions()` 预算分配中加入 relationship 类别（comprehension 的 20-30%）
+- 5 个关系问题类型纳入正常采样池
+- 验证：simulation 中关系问题能被抽到且评分正确
+
+#### Step 2 — 层级系统：实现或移除
+- **方案 A（推荐）**：CityWorld 中真正实现层级（省→市，hierarchy_aggregate 计算省下辖城市总人口）
+- **方案 B**：干净移除 EntitySpec.parent/children + 2 个层级问题类型（不留死代码）
+
+#### Step 3 — 领域特定 list_float 模式
+每个模板 override `_generate_list_float()`，替换通用随机游走：
+- **Sport**: 连胜/连败 streak 模式（波动+趋势性）
+- **Company**: 季节性（Q4 > Q1）
+- **City**: 平滑增长/衰退（低噪声）
+- **Movie**: 周票房指数衰减（首周最高，逐周递减）
+- **Research**: 引用先升后平（影响力曲线）
+- **Hospital**: 周期性峰值（流感季）
+
+#### Step 4 — 补齐领域约束（Company/City/Hospital）
+- **Company**: employees 与 revenue_m 合理比率（人均产出 $50K-$2M）
+- **City**: population 与 area_km2/hospital_count/school_count 密度约束
+- **Hospital**: beds ≥ icu_beds，staff_count ≥ beds × 0.5
+
+#### Step 5 — Enum 属性增强利用
+- 扩展问题：分布问题（"哪个 category 的实体最多"）、条件聚合增强
+- 评估 enum_filter 是否已覆盖，不足则新增问题子类型
+
+#### Step 6 — Date 属性时间约束
+- Movie: release_date 未来则无完整票房
+- Hospital: last_inspection_date ≤ 当前日期
+- Sport: last_championship_date 在球队存在期内
+- Company: ipo_date 在合理时间范围
+
+#### Step 7 — 验证
+- `python tests/test_worlds.py` 全 PASS
+- `python -m memorygym.bench --seeds 3 --validate` simulation 不变量
+- 确认关系问题被采样、层级可触发（或已移除）、list_float 统计特征因模板而异
 
 ## 已完成
+
+### Phase 21 — MemoryEnv shaped reward ✅
+1. ~~reward_mode 参数~~ ✅ → "binary" (默认) | "shaped"
+2. ~~store_quality~~ ✅ → 含实体名 +0.1
+3. ~~budget_penalty~~ ✅ → 预算耗尽 -0.05
+4. ~~correction_flow~~ ✅ → search→forget→store +0.2
+5. ~~测试~~ ✅ → 27 passed (22 existing + 5 new)
 
 ### Phase 20 — eval JSON 加入完整对话历史 ✅
 1. ~~stream_agent.py trajectory 增强~~ ✅ → turns 加 role+content，system prompt 存为首条记录
