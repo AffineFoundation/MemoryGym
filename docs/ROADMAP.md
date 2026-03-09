@@ -126,9 +126,17 @@ abstention_diagnostic 单独报告，不计入 composite。
 
 ### 3.1 评测数据 (v2 — Phase 16 Enhanced Templates)
 
-> v1 数据（10 属性模板）已归档到 `eval/archive_v1/`。以下为 v2 数据（22-23 属性，6 dtype，20 reasoning types）。
+> v1 数据（10 属性模板）已归档到 `eval/archive_v1/`。以下为 v2 数据（22-23 属性，6 dtype，18 reasoning types）。
 
-**v2 评测尚未开始。** 见 EVAL_QUEUE.md。
+**v2 评测进行中。** 批次 1 冒烟测试（3/6 模板完成）：
+
+| 模型 | 模板 | Seed | Composite | Breadth | Maint. | Reasoning | Abstention |
+|------|------|------|-----------|---------|--------|-----------|------------|
+| Kimi-K2.5 | company | 0 | 30% | 17% | 20% | 33% | 100% |
+| Kimi-K2.5 | research | 0 | 15% | 0% | 33% | 0% | 100% |
+| Kimi-K2.5 | city | 0 | 20% | 33% | 31% | 0% | 100% |
+
+初步发现：v2 分数显著低于 v1（22-23 属性 vs 10，信息密度更高）。Reasoning 普遍 0%（仅 company 33%）。Maintenance 改善（20-33%，v1 多数 0%）。
 
 ### 3.2 v1 历史数据摘要 [archived]
 
