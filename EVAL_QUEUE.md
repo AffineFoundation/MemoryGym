@@ -1,6 +1,8 @@
-# EVAL_QUEUE (v2 — Phase 16 Enhanced Templates)
+# EVAL_QUEUE — 评测线程
 
-> 评测专用 session 协议。每次 `/loop` 读此文件，执行队列中的下一个评测任务。
+> 启动方式：`/loop 30m 你是评测线程，读 EVAL_QUEUE.md 执行下一个评测任务`
+>
+> 评测专用线程。只跑模型评测，不改代码。
 >
 > **重要**: v1 数据（10 属性模板）已归档到 `eval/archive_v1/`。以下所有批次基于 Phase 16 增强模板（22-23 属性，6 种 dtype，18 种推理题型）。
 
@@ -128,3 +130,4 @@ python -m memorygym.bench --model moonshotai/Kimi-K2.5-TEE --seed 0 --template c
 | Kimi-K2.5 | research | 0 | **15%** | 0% | 33% | 0% | 100% | 3/5 |
 | Kimi-K2.5 | city | 0 | **20%** | 33% | 31% | 0% | 100% | 2/5 |
 | Kimi-K2.5 | hospital | 0 | **17%** | 11% | 26% | 20% | 100% | 2/5 |
+| Kimi-K2.5 | sport | 0 | **10%** | 0% | 0% | 33% | 100% | 2/5 |
