@@ -14,6 +14,7 @@ dependencies = [
 [project.optional-dependencies]
 dev = ["pytest>=8.0", "ruff>=0.4"]
 mem0 = ["mem0ai>=0.1"]
+affinetes = ["affinetes>=0.2"]
 
 [project.scripts]
 memorygym = "memorygym.bench:_cli_entry"
