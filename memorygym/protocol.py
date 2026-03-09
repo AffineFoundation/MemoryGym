@@ -92,6 +92,72 @@ def compute_composite(
             + WEIGHTS["efficiency"] * efficiency)
 
 
+# Comprehension competency types that map to the reasoning axis.
+REASONING_COMPETENCIES = [
+    "synthesis", "aggregation", "conditional", "ratio",
+    "comparison", "multi_hop", "outlier", "delta",
+    "relationship_lookup", "relationship_hop", "relationship_chain",
+    "relationship_count", "relationship_filter",
+]
+
+
+def compute_axis_scores(
+    by_competency: dict[str, list[bool]],
+    n_entities: int,
+    stored_count: int,
+    writes_used: int,
+    write_budget: int,
+) -> dict[str, float]:
+    """Compute 4-axis scores + composite from per-competency results.
+
+    Args:
+        by_competency: Maps competency name to list of correct booleans.
+        n_entities: Total entities in the world.
+        stored_count: Number of entities the agent stored.
+        writes_used: Total memory writes used.
+        write_budget: Total writes allowed.
+
+    Returns:
+        Dict with keys: breadth, maintenance, reasoning, efficiency,
+        composite, abstention_diagnostic.
+    """
+    def _rate(vals: list[bool]) -> float:
+        return sum(vals) / len(vals) if vals else 0.0
+
+    breadth = _rate(by_competency.get("retrieval", []))
+
+    maintenance_raw = _rate(by_competency.get("update", []))
+    storage_coverage = stored_count / n_entities if n_entities else 0.0
+    maintenance = maintenance_raw * min(storage_coverage / 0.5, 1.0)
+
+    reasoning_vals: list[bool] = []
+    for c in REASONING_COMPETENCIES:
+        reasoning_vals.extend(by_competency.get(c, []))
+    reasoning = _rate(reasoning_vals)
+
+    correct_total = sum(
+        sum(v) for c, v in by_competency.items()
+        if c != "abstention"
+    )
+    if writes_used > 0:
+        efficiency = (correct_total / writes_used) * (
+            writes_used / write_budget)
+    else:
+        efficiency = 0.0
+
+    composite = compute_composite(breadth, maintenance, reasoning, efficiency)
+    abstention_diagnostic = _rate(by_competency.get("abstention", []))
+
+    return {
+        "breadth": round(breadth, 4),
+        "maintenance": round(maintenance, 4),
+        "reasoning": round(reasoning, 4),
+        "efficiency": round(efficiency, 4),
+        "composite": round(composite, 4),
+        "abstention_diagnostic": round(abstention_diagnostic, 4),
+    }
+
+
 def format_leaderboard_entry(
     model: str,
     tier: str,

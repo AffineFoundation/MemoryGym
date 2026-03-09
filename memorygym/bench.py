@@ -26,6 +26,7 @@ from memorygym.protocol import (
     OFFICIAL_SEEDS,
     OFFICIAL_TEMPLATES,
     TIERS,
+    compute_axis_scores,
     compute_composite,
     format_leaderboard_entry,
 )
@@ -293,6 +294,15 @@ def main(argv: list[str] | None = None) -> int:
                 }
                 agg[args.model].append(result)
 
+                # Compute 4-axis scores
+                axis_scores = compute_axis_scores(
+                    by_competency=by_comp,
+                    n_entities=n_entities,
+                    stored_count=len(stored_names),
+                    writes_used=writes_used,
+                    write_budget=write_budget,
+                )
+
                 # Save per-seed result in LiveWeb-compatible format
                 eval_result = {
                     "task_name": (f"memorygym:{tmpl.name}"
@@ -312,6 +322,8 @@ def main(argv: list[str] | None = None) -> int:
                         "writes_used": writes_used,
                         "stored_entities": len(stored_names),
                         "missed_entities": len(missed),
+                        "per_axis": axis_scores,
+                        "composite": axis_scores["composite"],
                         "by_competency": comp_scores,
                         "answer_details": answer_details,
                     },

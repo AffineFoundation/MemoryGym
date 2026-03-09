@@ -26,7 +26,7 @@ from affinetes.core.openenv import OpenEnvResponse
 
 from memorygym.agents.stream_agent import run_stream_agent
 from memorygym.memory.backends.chromadb_backend import ChromaDBBackend
-from memorygym.protocol import TIERS, compute_composite
+from memorygym.protocol import TIERS, compute_axis_scores
 from memorygym.worlds import ALL_TEMPLATES
 
 
@@ -300,34 +300,14 @@ def _run_evaluation(
         for c, v in by_comp.items()
     }
 
-    # 4-axis scoring
-    retrieval_vals = by_comp.get("retrieval", [])
-    breadth = sum(retrieval_vals) / len(retrieval_vals) if retrieval_vals else 0.0
-    update_vals = by_comp.get("update", [])
-    maintenance_raw = (
-        sum(update_vals) / len(update_vals) if update_vals else 0.0)
-    storage_coverage = len(stored_names) / n_entities if n_entities else 0.0
-    maintenance = maintenance_raw * min(storage_coverage / 0.5, 1.0)
-
-    reasoning_comps = [
-        "synthesis", "aggregation", "conditional", "ratio",
-        "comparison", "multi_hop", "outlier", "delta",
-        "relationship_lookup", "relationship_hop", "relationship_chain",
-        "relationship_count", "relationship_filter",
-    ]
-    reasoning_vals = []
-    for c in reasoning_comps:
-        reasoning_vals.extend(by_comp.get(c, []))
-    reasoning = (
-        sum(reasoning_vals) / len(reasoning_vals)
-        if reasoning_vals else 0.0)
-
-    if writes_used > 0:
-        efficiency = (correct / writes_used) * (writes_used / write_budget)
-    else:
-        efficiency = 0.0
-
-    composite = compute_composite(breadth, maintenance, reasoning, efficiency)
+    # 4-axis scoring via shared function
+    axis_scores = compute_axis_scores(
+        by_competency=dict(by_comp),
+        n_entities=n_entities,
+        stored_count=len(stored_names),
+        writes_used=writes_used,
+        write_budget=write_budget,
+    )
 
     return {
         "task_name": f"memorygym:{template_name}:{n_entities}e:{n_questions}q",
@@ -346,13 +326,8 @@ def _run_evaluation(
             "writes_used": writes_used,
             "stored_entities": len(stored_names),
             "missed_entities": len(missed),
-            "composite": round(composite, 4),
-            "per_axis": {
-                "breadth": round(breadth, 4),
-                "maintenance": round(maintenance, 4),
-                "reasoning": round(reasoning, 4),
-                "efficiency": round(efficiency, 4),
-            },
+            "per_axis": axis_scores,
+            "composite": axis_scores["composite"],
             "by_competency": comp_scores,
             "answer_details": answer_details,
             "conversation": conversation,
