@@ -28,6 +28,7 @@ from memorygym.protocol import (
     compute_axis_scores,
     compute_composite,
     format_leaderboard_entry,
+    trajectory_to_conversation,
 )
 
 # Re-export simulation symbols for backward compatibility with tests.
@@ -325,6 +326,7 @@ def main(argv: list[str] | None = None) -> int:
                         "composite": axis_scores["composite"],
                         "by_competency": comp_scores,
                         "answer_details": answer_details,
+                        "conversation": trajectory_to_conversation(traj),
                     },
                 }
                 if eval_error:

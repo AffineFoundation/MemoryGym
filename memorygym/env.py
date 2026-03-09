@@ -26,7 +26,7 @@ from affinetes.core.openenv import OpenEnvResponse
 
 from memorygym.agents.stream_agent import run_stream_agent
 from memorygym.memory.backends.chromadb_backend import ChromaDBBackend
-from memorygym.protocol import TIERS, compute_axis_scores
+from memorygym.protocol import TIERS, compute_axis_scores, trajectory_to_conversation
 from memorygym.worlds import ALL_TEMPLATES
 
 
@@ -282,16 +282,9 @@ def _run_evaluation(
             "validation_reason": r.validation_reason,
         })
 
-    # Build conversation from trajectory
+    # Build conversation from trajectory using shared function
     if traj:
-        for event_record in traj:
-            for turn in event_record.get("turns", []):
-                conversation.append({
-                    "role": turn.get("role", "unknown"),
-                    "content": turn.get("content", ""),
-                    "tool_calls": turn.get("tool_calls", []),
-                    "tool_results": turn.get("tool_results", []),
-                })
+        conversation = trajectory_to_conversation(traj)
 
     stored_names, missed = tmpl.detect_stored_entities(world, stored)
 

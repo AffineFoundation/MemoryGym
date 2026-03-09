@@ -74,28 +74,17 @@ eval 数据（ROADMAP.md §3）← 衡量差距
 
 ## 待办
 
-### Phase 20 — eval JSON 加入完整对话历史（extra.conversation）
-
-**依据**：affinetes 接口要求 `extra.conversation` 包含完整对话历史，但当前 bench.py 输出的 eval JSON 缺少此字段。env.py 虽然尝试从 trajectory 构建 conversation，但 trajectory 的 turns 里只有 tool_calls/tool_results，没有 assistant 原始回复和 user/system messages，导致 conversation 实际为空或残缺。
-
-1. **stream_agent.py 增强 trajectory**：
-    - turns 中新增 `role` 和 `content` 字段：保存 assistant 的原始回复文本（含 think block、tool call 原文）
-    - 每个事件的 trajectory 记录中新增 `event_message` 字段：保存发给模型的 user message 原文（ingest/correction/question 内容）
-    - system prompt 保存到 trajectory 的第一条记录
-2. **bench.py eval JSON 加 conversation**：
-    - 从 trajectory 构建 `extra.conversation` 列表，格式：`[{"role": "system"|"user"|"assistant", "content": "..."}]`
-    - 与 env.py 的 conversation 构建逻辑保持一致（共用同一个函数）
-3. **抽取共享函数**：
-    - 将 trajectory → conversation 的转换逻辑抽取到 `protocol.py` 或独立模块
-    - bench.py 和 env.py 都调用此函数，消除重复
-4. **env.py 移至项目根目录**：
-    - affinetes 要求 `env.py` 在项目根目录（不是 `memorygym/env.py`）
-    - 将 `memorygym/env.py` 移到项目根 `env.py`
-    - 更新所有引用（scripts/affinetes_example.py, pyproject.toml, README.md 等）
-    - 原 `memorygym/env.py` 如有内部引用需改为从根目录导入或保留一个 re-export
-5. 测试验证
+（无）
 
 ## 已完成
+
+### Phase 20 — eval JSON 加入完整对话历史 ✅
+1. ~~stream_agent.py trajectory 增强~~ ✅ → turns 加 role+content，system prompt 存为首条记录
+2. ~~protocol.py trajectory_to_conversation()~~ ✅ → 共享函数，从 trajectory 重建对话
+3. ~~bench.py eval JSON 加 conversation~~ ✅ → extra.conversation 字段
+4. ~~env.py 修复 conversation 构建~~ ✅ → 替换为调用共享函数
+5. ~~根目录 env.py~~ ✅ → 薄 re-export，affinetes 自动发现
+6. ~~测试验证~~ ✅ → 256 passed + simulation ALL PASS (3 seeds)
 
 ### Phase 19 — 评测数据重建 ✅
 1. ~~归档旧数据~~ ✅ → 49 JSON 移至 eval/archive_v1/ + README.md

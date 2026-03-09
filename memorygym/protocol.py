@@ -204,3 +204,43 @@ def format_leaderboard_entry(
     entry["per_seed"] = per_seed_results
 
     return entry
+
+
+def trajectory_to_conversation(trajectory: list[dict]) -> list[dict[str, Any]]:
+    """Convert a trajectory log into a flat conversation list.
+
+    Args:
+        trajectory: List of event dicts from stream_agent, each containing
+            turns with role/content/tool_calls/tool_results.
+
+    Returns:
+        List of message dicts: [{"role": "system"|"user"|"assistant", "content": ...}, ...]
+    """
+    conversation: list[dict[str, Any]] = []
+    for event in trajectory:
+        if event.get("type") == "system":
+            conversation.append({
+                "role": "system",
+                "content": event.get("content", ""),
+            })
+            continue
+
+        # User message for this event
+        content = event.get("content", "")
+        if content:
+            conversation.append({"role": "user", "content": content})
+
+        # Assistant turns
+        for turn in event.get("turns", []):
+            if turn.get("role") == "assistant" and turn.get("content"):
+                conversation.append({
+                    "role": "assistant",
+                    "content": turn["content"],
+                })
+            # Tool results as user messages
+            for result_text in turn.get("tool_results", []):
+                conversation.append({
+                    "role": "user",
+                    "content": result_text,
+                })
+    return conversation

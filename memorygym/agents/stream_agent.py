@@ -388,6 +388,8 @@ def _run_tool_loop(
         # Capture per-turn detail for trajectory
         turn_detail: dict[str, Any] = {
             "turn": turn,
+            "role": "assistant",
+            "content": text,
             "tool_calls": [
                 {"name": c.get("name"), "arguments": c.get("arguments", {})}
                 for c in parsed_calls
@@ -490,13 +492,13 @@ def run_stream_agent(
 
     total_events = len(stream)
     eval_error: str | None = None
-    messages: list[dict] = [{
-        "role": "system",
-        "content": SYSTEM_PROMPT.format(budget=write_budget),
-    }]
+    system_prompt = SYSTEM_PROMPT.format(budget=write_budget)
+    messages: list[dict] = [{"role": "system", "content": system_prompt}]
 
     results: list[AgentResult] = []
-    trajectory: list[dict] = []  # Per-event trajectory log
+    trajectory: list[dict] = [
+        {"event_idx": -1, "type": "system", "content": system_prompt},
+    ]
     pending_judge: list[tuple] = []  # (result_idx, question, gt, answer, competency)
     total_api_calls = 0
     run_t0 = time.time()
