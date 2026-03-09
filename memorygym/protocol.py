@@ -15,18 +15,21 @@ TIERS: dict[str, dict[str, int]] = {
         "questions": 10,
         "corrections": 3,
         "write_budget": 15,
+        "eval_salt": 1,
     },
     "standard": {
         "entities": 60,
         "questions": 20,
         "corrections": 5,
         "write_budget": 30,
+        "eval_salt": 1,
     },
     "hard": {
         "entities": 120,
         "questions": 40,
         "corrections": 10,
         "write_budget": 30,
+        "eval_salt": 1,
     },
 }
 
@@ -141,11 +144,8 @@ def compute_axis_scores(
         sum(v) for c, v in by_competency.items()
         if c != "abstention"
     )
-    if writes_used > 0:
-        efficiency = (correct_total / writes_used) * (
-            writes_used / write_budget)
-    else:
-        efficiency = 0.0
+    # Efficiency = correct answers per unit of budget, capped at 1.0
+    efficiency = min(correct_total / write_budget, 1.0) if write_budget > 0 else 0.0
 
     composite = compute_composite(breadth, maintenance, reasoning, efficiency)
     abstention_diagnostic = _rate(by_competency.get("abstention", []))

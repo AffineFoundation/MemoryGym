@@ -68,7 +68,9 @@ def test_corrections_and_contradictions_new_dtypes():
 
 
 def test_temporal_trend_gt():
-    """temporal_trend slope calculation matches answer."""
+    """temporal_trend 5-level classification matches slope."""
+    valid_answers = {"strongly rising", "slightly rising", "flat",
+                     "slightly falling", "strongly falling"}
     for TmplClass in ALL_TMPLS:
         tmpl = TmplClass()
         world = tmpl.generate_world(seed=42, n_entities=30)
@@ -77,13 +79,18 @@ def test_temporal_trend_gt():
             q = tmpl.gen_question(world, rng, "temporal_trend", world.entities)
             if q is None:
                 continue
-            assert q.answer in ("rising", "falling")
+            assert q.answer in valid_answers, (
+                f"{TmplClass.__name__}: unexpected answer '{q.answer}'")
+            # Verify direction is consistent with slope sign
             vals = world.get_entity(q.required_entities[0]).get(q.source_attr)
             n = len(vals)
             x_mean = (n - 1) / 2
             y_mean = sum(vals) / n
             num = sum((i - x_mean) * (v - y_mean) for i, v in enumerate(vals))
-            assert q.answer == ("rising" if num > 0 else "falling")
+            if "rising" in q.answer:
+                assert num > 0, "rising answer but negative slope"
+            elif "falling" in q.answer:
+                assert num < 0, "falling answer but positive slope"
             break
 
 

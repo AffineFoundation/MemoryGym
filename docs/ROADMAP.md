@@ -11,16 +11,16 @@
 
 > 新 session 先看这里 + `AUTOPILOT.md`。上下文不足时可读最近的 devlog 文件。
 
-**当前焦点**: 战略推导 — 所有非阻塞任务已完成
+**当前焦点**: Phase 26 红队审计
 
 **最大差距**: RL 训练验证（需 GPU）+ v2 eval 数据（eval session 进行中）
 
 **已完成**:
 - Phase 0-2: 多模板 eval + 跨模型兼容 + 任务复杂度升级 ✅
 - Phase 3: RL 训练闭环（代码完成，待 GPU 验证）
-- Phase 5-21: 评测质量迭代、模板增强、工具链、训练基础设施 ✅
-- Phase 22: 模板真正差异化（死代码清理、领域特定 list_float、领域约束）✅
-- Phase 23: 模板差异化自审（5/5 检查通过）✅
+- Phase 5-23: 评测质量迭代、模板增强、工具链、训练基础设施、模板差异化 ✅
+- Phase 24: affinetes SDK 端到端验证 ✅
+- Phase 25: 评分有效性修复（公式统一、效率轴重设计、maintenance gate 修复、distractor 去标记）✅
 - 6 模板 × 22-23 attrs × 6 dtypes × 18 reasoning competencies
 - 261 tests, simulation ALL PASS
 - MemoryEnv shaped reward + verl/slime 适配器完整可用
@@ -83,7 +83,7 @@ memorygym/
 | breadth | 0.30 | 存储广度（retrieval 正确率）|
 | maintenance | 0.25 | 记忆维护（update 正确率 × coverage gate）|
 | reasoning | 0.25 | 推理能力（18 种 competency：9 基础 + 5 关系推理 + 4 新 dtype 题型）|
-| efficiency | 0.20 | 效率（correct/writes_used）|
+| efficiency | 0.20 | 效率（correct_count / write_budget）|
 
 abstention_diagnostic 单独报告，不计入 composite。
 
@@ -201,6 +201,8 @@ eval/              # v2 数据（Phase 16 后，22-23 属性模板）
 | 预算上下文 | 动态注入（非强制限制） | 存储决策应由 agent 做 |
 | MemoryEnv obs | 文本格式 | 与 LLM 输入格式一致 |
 | RL 框架 | verl + slime 双适配（memorygym/adapters/） | 共享 MemoryEnv，薄适配层对接各框架 |
+| Multi-entity packing | 允许（合法策略） | 智能压缩是记忆管理核心技能，Phase 26 红队审计确认 |
+| 效率公式 | correct_count / write_budget | 不惩罚少写，奖励正确答案产出，Phase 25 统一 |
 
 ### 待决定
 

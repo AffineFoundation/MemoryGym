@@ -66,145 +66,15 @@ eval 数据（ROADMAP.md §3）← 衡量差距
 
 ## 当前任务
 
-Phase 25 — 评分有效性系统性修复
+战略推导 — Phase 25-27 完成
 
 ### 阻塞任务（等待外部资源）
 - GPU 端到端训练验证（需 4+ GPU）
 - v2 评测数据收集（eval session 负责，见 EVAL_QUEUE.md）
 
-### 战略推导结论（2026-03-09）
-
-评测系统已成熟：6 模板 × 18 推理题型 × 4 轴评分 × 261 测试 × simulation ALL PASS。
-模板差异化已验证（Phase 23 审计 5/5 PASS）。RL 训练管线代码完整（shaped reward + 双框架适配）。
-
-**最大差距**仍是 GPU 训练验证和 v2 eval 数据——这两项无法自主推进。
-不制造忙碌工作。当外部资源解除阻塞时，优先执行：
-1. v2 eval 冒烟测试（EVAL_QUEUE.md 批次 1）
-2. GPU 训练端到端验证（Phase 3 剩余）
-
 ## 待办
 
-### Phase 25 — 评分有效性系统性修复
-
-**依据**：战略审计发现评分系统存在 3 类高优先级缺陷：效率轴公式可博弈、maintenance 轴用错误代理指标做 gate、干扰信息有可学习的语言标记。此外评分公式在 3 个文件中不一致（eval_scorer.py 4 轴、protocol.py 4 轴但公式不同、test_worlds.py 6 轴遗留公式）。
-
-**原则**：
-- 必须先设计后实施——每项修改先写预期的 simulation 不变量，再改代码
-- 评分变更后所有已有 simulation 策略的排序不变量必须保持
-- 修改后重跑 `--seeds 10 --validate`
-
----
-
-#### Step 1 — 评分公式统一（先修 bug）
-
-**现状 3 套不一致公式**：
-- `eval_scorer.py:119-125`: `efficiency = min(correct/writes/ideal_rate, 1.0) × accuracy`，其中 `ideal_rate = n_questions/budget`
-- `protocol.py:144-148`: `efficiency = (correct/writes) × (writes/budget)` = 实质 `correct/budget`
-- `test_worlds.py:536-555`: **6 轴遗留公式**（含 accuracy、storage、process 轴，权重 0.25/0.20/0.20/0.15/0.10/0.10），与生产 4 轴完全不同
-
-**修复**：
-1. 确定唯一正确公式（见 Step 2 设计），统一到 `protocol.py` 的 `compute_axis_scores()`
-2. `eval_scorer.py` 调用 `compute_axis_scores()`，不自行计算
-3. `test_worlds.py` 的 `_compute_simulated_composite()` 删除，改用 `compute_axis_scores()`
-4. `bench.py` / `env.py` 已用 `compute_axis_scores()`，确认一致
-
----
-
-#### Step 2 — 效率轴重新设计
-
-**当前问题**：
-- 公式 `correct/writes × accuracy` 鼓励"用极少 writes 答对极少题"
-- 例：5 writes 答对 2/10 题 → raw_eff=0.6, accuracy=0.2, eff=0.12
-- 例：15 writes 答对 8/10 题 → raw_eff=0.8, accuracy=0.8, eff=0.64
-- 看似合理，但极端 case：1 write 答对 1/10 题 → raw_eff=1.5→cap 1.0, accuracy=0.1, eff=0.1
-
-**新公式设计**（需满足 simulation 不变量）：
-
-```
-efficiency = (correct_count / write_budget)  # 每单位预算产出多少正确答案
-```
-
-直觉：你有 N 个写入机会，你的正确答案数就是你的效率产出。写满预算且全答对 = 1.0。不写 = 0。写了但没答对 = 0。
-
-**验证标准**：
-- `perfect` strategy: efficiency ≈ 1.0（全答对，writes ≈ budget）
-- `strategic`: efficiency > `naive`（更聪明的存储选择→更多正确答案/预算）
-- `guesser`: efficiency = 0（0 writes, 0 correct）
-- `abstainer`: efficiency = 0（0 writes）
-- 不会出现"少写反而高分"的反直觉结果
-
----
-
-#### Step 3 — Maintenance gate 修复
-
-**当前问题**（`eval_scorer.py:108-109`）：
-```python
-storage_coverage = breadth  # ← 用 retrieval accuracy 做代理！
-maintenance = maintenance_raw * min(storage_coverage / 0.5, 1.0)
-```
-
-- Agent 存了 80% 实体但 retrieval 题碰巧问到没存的 → breadth=30% → maintenance 被 gate 到 60%
-- `protocol.py:132-133` 已正确使用 `stored_count/n_entities`，但 `eval_scorer.py` 用的是 breadth
-
-**修复**：
-1. `eval_scorer.py` 改用 `state.store.get("stored_count", 0) / state.store.get("n_entities", 1)` 作为 coverage
-2. 如果 `stored_count` 未在 state.store 中，从 eval_task.py 的 solver 中传入
-3. 确保 `eval_scorer.py` 和 `protocol.py` 的 maintenance gate 完全一致
-
-**验证标准**：
-- `perfect`（存所有）: gate = 1.0
-- `strategic`（存 70%）: gate = 1.0（0.7/0.5 > 1）
-- `naive`（存全部但不更新）: gate = 1.0，但 maintenance_raw = 0 → 最终 maintenance = 0
-- `guesser`（不存）: gate = 0
-
----
-
-#### Step 4 — 干扰信息语言标记消除
-
-**当前问题**（`base.py:379-404`）：
-- Temporal 干扰: 模板中使用 "previous year"、"was" 等过去时标记
-- Comparative 干扰: 使用 "industry average"、"peer"、"compared to" 等标记
-- Qualified 干扰: 使用 "on-site"、"not including"、"excluding" 等标记
-- 模型可通过识别这些语言模式直接过滤干扰值，无需理解内容
-
-**修复策略**：
-
-A. **去除时态标记**：temporal 干扰不用过去时，改用同等格式的竞争值
-   - 旧: "revenue grew from {distractor} to {val} over the fiscal year"
-   - 新: "fiscal year figures show {distractor} in Q1 and {val} in Q2"（两个值看起来同等重要）
-
-B. **去除来源标记**：comparative 干扰不用 "industry average"
-   - 旧: "revenue of {val}, compared to the industry average of {other_val}"
-   - 新: "revenue estimates of {val} and {other_val} from different analysts"（无法区分哪个是真实值）
-
-C. **去除限定标记**：qualified 干扰不用 "not including"、"excluding"
-   - 旧: "on-site employees are {distractor} (not including remote)"
-   - 新: "internal count shows {distractor}, total headcount {val}"（两个数字同等呈现）
-
-D. **修改所有 6 个模板的 `_SENTENCE_TMPLS`**：每个干扰模板去除可学习标记
-
-**验证标准**：
-- `smart_guesser` 不变量保持 < 5%（干扰消除不影响猜测策略）
-- `perfect` 不受影响（100%）
-- 需要人工审查 3 个模板的渲染样例，确认干扰值与真实值格式上不可区分
-
----
-
-#### Step 5 — simulation 不变量全量回归
-
-修改后必须通过：
-```bash
-python -m memorygym.bench --seeds 10 --validate
-python -m pytest tests/ -q
-```
-
-不变量清单：
-- perfect = 100%
-- guesser = 0%
-- smart_guesser < 5%
-- abstainer < 15%
-- strategic > naive + 10%（全局均值，2% tolerance）
-- 效率轴排序：perfect > strategic > naive > guesser
+（无非阻塞待办。等待 GPU 和 eval 数据。）
 
 ---
 
@@ -294,6 +164,26 @@ corrections=False: retrieval=50%, comprehension=40%, abstention=10%
 - 如果发现高威胁漏洞，作为后续独立 Phase 修复
 
 ## 已完成
+
+### Phase 27 — 红队发现修复 ✅
+1. ~~temporal_trend 5 级答案~~ ✅ → random baseline 50%→20%（strongly rising/slightly rising/flat/slightly falling/strongly falling）
+2. ~~eval_salt 官方配置~~ ✅ → TIERS 全部加入 eval_salt: 1
+3. ~~Correction 时序随机化~~ ✅ → [40%, 70%] 随机替代固定 60%
+4. ~~Multi-entity packing~~ ✅ → 设计决策：合法策略（智能压缩是记忆管理核心技能）
+5. ~~simulation 不变量~~ ✅ → 261 tests + 10 seeds × 6 templates ALL PASS
+
+### Phase 26 — 抗博弈性红队审计 ✅
+1. ~~9 个攻击面分析~~ ✅ → 2 Medium-High, 2 Medium, 5 Low
+2. ~~红队报告~~ ✅ → devlog/2026-03-09-red-team-audit.md
+3. **关键发现**：multi-entity packing 可绕过预算（设计决策）、temporal_trend 50% random baseline
+4. **结论**：无高威胁漏洞，2 个 medium-high 待后续 Phase 修复
+
+### Phase 25 — 评分有效性系统性修复 ✅
+1. ~~评分公式统一~~ ✅ → eval_scorer.py/bench.py/_build_per_seed_axis_scores/test_worlds.py 全部改用 compute_axis_scores()
+2. ~~效率轴重设计~~ ✅ → `min(correct_total / write_budget, 1.0)` 替代旧公式
+3. ~~Maintenance gate 修复~~ ✅ → eval_scorer.py 改用 stored_count/n_entities（eval_task.py 注入 stored_count）
+4. ~~干扰语言标记消除~~ ✅ → 6 模板 ~100 个 distractor 模板去除方向性/标签性语言，distractor 方向随机化
+5. ~~simulation 不变量回归~~ ✅ → 261 tests + 10 seeds × 6 templates ALL PASS
 
 ### Phase 24 — affinetes SDK 端到端验证 ✅
 1. ~~依赖导入~~ ✅ → pip install, Actor import, OpenEnvResponse import

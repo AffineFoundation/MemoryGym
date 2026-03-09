@@ -499,7 +499,12 @@ class QuestionGeneratorMixin:
     # ── New dtype question types (Phase 16) ──
 
     def _gq_temporal_trend(self, world, rng, available):
-        """Trend direction from list_float: is the series rising or falling?"""
+        """Trend direction from list_float: 5-level classification.
+
+        Answers: strongly rising, slightly rising, flat,
+        slightly falling, strongly falling.
+        Random baseline: 20% (vs 50% for the old binary version).
+        """
         list_attrs = [a for a in world.active_attrs
                       if any(isinstance(e.get(a), list) for e in available)]
         if not list_attrs:
@@ -511,22 +516,35 @@ class QuestionGeneratorMixin:
             return None
         e = rng.choice(cands)
         vals = e.get(attr)
-        # Simple linear slope: positive = rising, negative = falling
+        # Normalized slope: slope / mean gives scale-independent rate
         n = len(vals)
         x_mean = (n - 1) / 2
         y_mean = sum(vals) / n
         num = sum((i - x_mean) * (v - y_mean) for i, v in enumerate(vals))
         denom = sum((i - x_mean) ** 2 for i in range(n))
         slope = num / denom if denom else 0
-        answer = "rising" if slope > 0 else "falling"
+        norm_slope = slope / abs(y_mean) if y_mean else 0
+        # Classify into 5 levels
+        if norm_slope > 0.15:
+            answer = "strongly rising"
+        elif norm_slope > 0.03:
+            answer = "slightly rising"
+        elif norm_slope < -0.15:
+            answer = "strongly falling"
+        elif norm_slope < -0.03:
+            answer = "slightly falling"
+        else:
+            answer = "flat"
         label = self.attr_label(attr)
-        ew = self.entity_word
         q = rng.choice([
-            f"Is {_possessive(e.name)} {label} trend rising or falling?",
+            f"Is {_possessive(e.name)} {label} trend strongly rising, "
+            f"slightly rising, flat, slightly falling, or strongly falling?",
             f"Looking at {_possessive(e.name)} {label} over time, "
-            f"is the trend upward or downward?",
+            f"classify the trend: strongly rising, slightly rising, "
+            f"flat, slightly falling, or strongly falling.",
             f"Based on {_possessive(e.name)} {label} series, "
-            f"is it going up or down?",
+            f"is it strongly rising, slightly rising, flat, "
+            f"slightly falling, or strongly falling?",
         ])
         return GeneratedQA(
             q, answer, "temporal_trend", [e.name],
