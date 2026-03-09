@@ -75,6 +75,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
                    help="run invariant checks")
     p.add_argument("--verbose", "-v", action="store_true",
                    help="print per-question details")
+    p.add_argument("--quiet", "-q", action="store_true",
+                   help="minimal output (single-line per event)")
     p.add_argument("--stream", action="store_true",
                    help="use interleaved stream (vs 3-phase)")
     p.add_argument("--model", "-m", type=str, metavar="MODEL",
@@ -216,6 +218,7 @@ def main(argv: list[str] | None = None) -> int:
                     write_budget=write_budget,
                     api_base=args.api_base,
                     verbose=args.verbose,
+                    quiet=args.quiet,
                     world=world,
                     template=tmpl,
                     seed=seed,

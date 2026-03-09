@@ -13,6 +13,52 @@ import time
 from dataclasses import dataclass, field
 from typing import Any
 
+
+def _budget_bar(used: int, total: int, width: int = 15) -> str:
+    """Render a budget progress bar like [████░░░░░░] 6/15."""
+    filled = round(used / total * width) if total else 0
+    empty = width - filled
+    return f"[{'█' * filled}{'░' * empty}] {used}/{total} writes"
+
+
+def _extract_stored_keys(turns: list[dict]) -> list[str]:
+    """Extract entity names/keys from memory_store calls in turn data."""
+    keys = []
+    for turn in turns:
+        for call in turn.get("tool_calls", []):
+            if call.get("name") == "memory_store":
+                content = call.get("arguments", {}).get("content", "")
+                # Common format: "EntityName | attr1: val1, ..."
+                if "|" in content:
+                    keys.append(content.split("|")[0].strip())
+                elif content:
+                    keys.append(content[:40])
+    return keys
+
+
+def _extract_search_queries(turns: list[dict]) -> list[str]:
+    """Extract search queries from memory_search calls."""
+    queries = []
+    for turn in turns:
+        for call in turn.get("tool_calls", []):
+            if call.get("name") == "memory_search":
+                q = call.get("arguments", {}).get("query", "")
+                if q:
+                    queries.append(q)
+    return queries
+
+
+def _extract_action_chain(turns: list[dict]) -> str:
+    """Summarize tool call sequence as a chain like search→forget→store."""
+    actions = []
+    for turn in turns:
+        for call in turn.get("tool_calls", []):
+            name = call.get("name", "")
+            short = name.replace("memory_", "").replace("submit_", "")
+            if short and short not in actions[-1:]:
+                actions.append(short)
+    return " → ".join(actions) if actions else "(no action)"
+
 from dotenv import load_dotenv
 from openai import OpenAI
 
@@ -391,6 +437,7 @@ def run_stream_agent(
     api_base: str | None = None,
     api_key: str | None = None,
     verbose: bool = False,
+    quiet: bool = False,
     backend: MemoryBackend | None = None,
     world: Any = None,
     template: Any = None,
@@ -404,7 +451,8 @@ def run_stream_agent(
         write_budget: Total memory writes allowed.
         api_base: API base URL (default: OpenAI).
         api_key: API key (default: from env).
-        verbose: Print per-event details.
+        verbose: Print per-event details (legacy, superseded by default).
+        quiet: Minimal output (old-style single-line per event).
         backend: Memory backend (default: ChromaDBBackend). Pass a Mem0Backend
             for mem0-based memory.
         world: World instance for adaptive comprehension questions.
@@ -415,14 +463,17 @@ def run_stream_agent(
         (results, writes_used, stored_contents, error_or_none)
     """
     if api_key is None:
-        api_key = os.environ.get("OPENAI_API_KEY") or os.environ.get("CHUTES_API_KEY")
+        api_key = os.environ.get("CHUTES_API_KEY") or os.environ.get("OPENAI_API_KEY")
     if not api_key:
         raise RuntimeError(
-            "Set OPENAI_API_KEY or CHUTES_API_KEY environment variable")
+            "Set CHUTES_API_KEY or OPENAI_API_KEY environment variable")
 
     kwargs: dict[str, Any] = {"api_key": api_key}
     if api_base:
         kwargs["base_url"] = api_base
+    elif not os.environ.get("OPENAI_API_KEY"):
+        # Default to Chutes API when using CHUTES_API_KEY
+        kwargs["base_url"] = "https://llm.chutes.ai/v1"
 
     client = OpenAI(**kwargs)
 
@@ -458,15 +509,47 @@ def run_stream_agent(
     n_corrections_total = sum(1 for e in stream if e["type"] == "correction")
     entities_seen = 0
 
+    prev_phase = None  # Track phase transitions for separators
+    correction_results: list[dict] = []  # Track correction outcomes
+
     for event_idx, event in enumerate(stream):
         msg_start = len(messages)
         event_type = event["type"]
         event_label = f"[{event_idx+1}/{total_events}]"
 
+        # Phase separator
+        if not quiet and event_type != prev_phase:
+            if prev_phase == "ingest" and event_type == "correction":
+                print(f"\n  {'─' * 50}")
+                print(f"  PHASE: CORRECTIONS ({n_corrections_total} expected)")
+                print(f"  {_budget_bar(budget.writes_used, write_budget)}")
+                print(f"  {'─' * 50}")
+            elif prev_phase in ("ingest", "correction") and event_type == "question":
+                # Summarize corrections if any happened
+                if correction_results:
+                    ok = sum(1 for c in correction_results if c["success"])
+                    print(f"  Corrections: {ok}/{len(correction_results)} "
+                          f"successfully updated")
+                print(f"\n  {'─' * 50}")
+                print(f"  PHASE: QUESTIONS")
+                print(f"  {_budget_bar(budget.writes_used, write_budget)}")
+                stored_entries = backend.list()
+                print(f"  Memory: {len(stored_entries)} entries stored")
+                print(f"  {'─' * 50}")
+            prev_phase = event_type
+
         if event_type == "ingest":
-            n_ents = len(event.get("entity_names", []))
-            print(f"  {event_label} INGEST  {n_ents} entities ...",
-                  end="", flush=True)
+            entity_names = event.get("entity_names", [])
+            n_ents = len(entity_names)
+            if quiet:
+                print(f"  {event_label} INGEST  {n_ents} entities ...",
+                      end="", flush=True)
+            else:
+                preview = ", ".join(entity_names[:5])
+                if n_ents > 5:
+                    preview += f" (+{n_ents - 5} more)"
+                print(f"  {event_label} INGEST  {n_ents} entities: "
+                      f"{preview}")
 
             docs_text = _format_documents(event["documents"])
             # Dynamic budget context
@@ -491,12 +574,26 @@ def run_stream_agent(
             stats = _run_tool_loop(client, model, messages, backend, budget)
             total_api_calls += stats.api_calls
 
-            print(f" {stats.api_calls} calls {stats.elapsed:.1f}s "
-                  f"budget={budget.remaining()}")
+            if quiet:
+                print(f" {stats.api_calls} calls {stats.elapsed:.1f}s "
+                      f"budget={budget.remaining()}")
+            else:
+                stored_keys = _extract_stored_keys(stats.turns)
+                skipped = n_ents - len(stored_keys)
+                print(f"           stored {len(stored_keys)}/{n_ents}: "
+                      f"{', '.join(stored_keys[:6])}"
+                      + (f" (+{len(stored_keys)-6})"
+                         if len(stored_keys) > 6 else ""))
+                if skipped > 0:
+                    print(f"           skipped {skipped} entities")
+                print(f"           {stats.api_calls} calls, "
+                      f"{stats.elapsed:.1f}s  "
+                      f"{_budget_bar(budget.writes_used, write_budget)}")
+
             trajectory.append({
                 "event_idx": event_idx,
                 "type": "ingest",
-                "entity_names": event.get("entity_names", []),
+                "entity_names": entity_names,
                 "writes": stats.writes,
                 "searches": stats.searches,
                 "api_calls": stats.api_calls,
@@ -509,9 +606,17 @@ def run_stream_agent(
                 break
 
         elif event_type == "correction":
-            entity_attr = f"{event['entity_name']}.{event['attr']}"
-            print(f"  {event_label} CORRECT {entity_attr} ...",
-                  end="", flush=True)
+            entity_name = event["entity_name"]
+            attr = event["attr"]
+            old_val = event.get("old_val", "?")
+            new_val = event.get("new_val", "?")
+
+            if quiet:
+                print(f"  {event_label} CORRECT {entity_name}.{attr} ...",
+                      end="", flush=True)
+            else:
+                print(f"  {event_label} CORRECT {entity_name}.{attr}: "
+                      f"{old_val} -> {new_val}")
 
             content = (
                 f"=== Event {event_idx+1}/{total_events} [CORRECTION] ===\n\n"
@@ -522,16 +627,55 @@ def run_stream_agent(
             stats = _run_tool_loop(client, model, messages, backend, budget)
             total_api_calls += stats.api_calls
 
-            print(f" {stats.api_calls} calls {stats.elapsed:.1f}s "
-                  f"budget={budget.remaining()}")
+            # Determine if correction was actually applied
+            chain = _extract_action_chain(stats.turns)
+            did_store = any(
+                c.get("name") == "memory_store"
+                for t in stats.turns for c in t.get("tool_calls", [])
+            )
+            did_search = any(
+                c.get("name") == "memory_search"
+                for t in stats.turns for c in t.get("tool_calls", [])
+            )
+            # Check if stored content contains new value
+            stored_new = False
+            for t in stats.turns:
+                for c in t.get("tool_calls", []):
+                    if c.get("name") == "memory_store":
+                        sc = str(c.get("arguments", {}).get("content", ""))
+                        if str(new_val) in sc:
+                            stored_new = True
+
+            correction_ok = did_store and stored_new
+            correction_results.append({
+                "entity": entity_name, "attr": attr,
+                "success": correction_ok,
+                "chain": chain,
+            })
+
+            if quiet:
+                print(f" {stats.api_calls} calls {stats.elapsed:.1f}s "
+                      f"budget={budget.remaining()}")
+            else:
+                mark = "OK" if correction_ok else "MISS"
+                print(f"           [{mark}] {chain}")
+                if did_store and not stored_new:
+                    print(f"           WARNING: stored but with old value")
+                print(f"           {stats.api_calls} calls, "
+                      f"{stats.elapsed:.1f}s  "
+                      f"{_budget_bar(budget.writes_used, write_budget)}")
+
             trajectory.append({
                 "event_idx": event_idx,
                 "type": "correction",
-                "entity_name": event["entity_name"],
-                "attr": event["attr"],
+                "entity_name": entity_name,
+                "attr": attr,
+                "old_val": old_val,
+                "new_val": new_val,
                 "writes": stats.writes,
                 "searches": stats.searches,
                 "api_calls": stats.api_calls,
+                "correction_applied": correction_ok,
                 "turns": stats.turns,
             })
             if stats.error:
@@ -547,12 +691,20 @@ def run_stream_agent(
                     event, world, stored_contents,
                     rng_seed=seed + event_idx,
                 )
-            print(f"  {event_label} QUESTION [{event['competency']:12s}] ...",
-                  end="", flush=True)
+
+            competency = event["competency"]
+            question_text = event["question"]
+
+            if quiet:
+                print(f"  {event_label} QUESTION [{competency:12s}] ...",
+                      end="", flush=True)
+            else:
+                print(f"  {event_label} QUESTION [{competency}] "
+                      f"{question_text[:70]}")
 
             content = (
                 f"=== Event {event_idx+1}/{total_events} [QUESTION] ===\n\n"
-                f"**Question:**\n{event['question']}\n\n"
+                f"**Question:**\n{question_text}\n\n"
                 "Search your memory and call submit_answer(answer=\"...\")."
             )
             messages.append({"role": "user", "content": content})
@@ -562,12 +714,12 @@ def run_stream_agent(
 
             if stats.error:
                 # Eval model unreachable — record as error, skip scoring
-                print(f" ERROR {stats.error[:80]}")
+                print(f"           ERROR: {stats.error[:80]}")
                 results.append(AgentResult(
-                    question=event["question"],
+                    question=question_text,
                     answer="",
                     ground_truth=str(event["answer"]),
-                    competency=event["competency"],
+                    competency=competency,
                     purpose=event.get("purpose", ""),
                     correct=False,
                     n_writes=stats.writes,
@@ -588,37 +740,42 @@ def run_stream_agent(
             # If rule passes, accept immediately. If rule fails,
             # defer judge call to run in parallel after all events.
             is_correct, reason = validate_with_fallback(
-                agent_answer, gt, event["competency"],
-                question=event["question"],
+                agent_answer, gt, competency,
+                question=question_text,
                 judge_fn=None,  # no judge yet — deferred
             )
 
             result_idx = len(results)
-            if not is_correct and event["competency"] != "abstention":
+            if not is_correct and competency != "abstention":
                 # Needs judge — defer to post-loop parallel batch
                 pending_judge.append((
                     result_idx,
-                    event["question"], gt, agent_answer,
-                    event["competency"],
+                    question_text, gt, agent_answer,
+                    competency,
                 ))
 
             mark = "+" if is_correct else "?"  # "?" = pending judge
             via = reason.split(":")[0]
-            print(f" {mark} {stats.api_calls} calls {stats.elapsed:.1f}s "
-                  f"via={via} "
-                  f"budget={budget.remaining()}")
 
-            if verbose:
-                print(f"           A={agent_answer[:60]}")
-                print(f"          GT={gt[:60]}")
-                if reason:
-                    print(f"       Valid: {reason}")
+            if quiet:
+                print(f" {mark} {stats.api_calls} calls "
+                      f"{stats.elapsed:.1f}s via={via} "
+                      f"budget={budget.remaining()}")
+            else:
+                search_qs = _extract_search_queries(stats.turns)
+                search_info = (f"  searched: {', '.join(search_qs[:3])}"
+                               if search_qs else "")
+                print(f"           [{mark}] GT={gt[:50]}  "
+                      f"A={agent_answer[:50]}")
+                print(f"           {stats.api_calls} calls, "
+                      f"{stats.elapsed:.1f}s, via={via}"
+                      f"{search_info}")
 
             results.append(AgentResult(
-                question=event["question"],
+                question=question_text,
                 answer=agent_answer,
                 ground_truth=gt,
-                competency=event["competency"],
+                competency=competency,
                 purpose=event.get("purpose", ""),
                 correct=is_correct,
                 n_writes=stats.writes,
@@ -633,9 +790,9 @@ def run_stream_agent(
             trajectory.append({
                 "event_idx": event_idx,
                 "type": "question",
-                "competency": event["competency"],
+                "competency": competency,
                 "purpose": event.get("purpose", ""),
-                "question": event["question"],
+                "question": question_text,
                 "ground_truth": gt,
                 "agent_answer": agent_answer,
                 "correct": is_correct,
@@ -720,14 +877,61 @@ def run_stream_agent(
     correct_count = sum(r.correct for r in results)
     total_q = len(results)
     pct = f"{correct_count/total_q:.0%}" if total_q else "n/a"
-    summary = (f"  --- Summary: {correct_count}/{total_q} correct "
-               f"({pct}) | "
-               f"{total_api_calls} API calls | "
-               f"{budget.writes_used} writes | "
-               f"{total_elapsed:.1f}s total")
-    if eval_error:
-        summary += f" | ERROR: {eval_error[:80]}"
-    print(summary + " ---")
+
+    if quiet:
+        summary = (f"  --- Summary: {correct_count}/{total_q} correct "
+                   f"({pct}) | "
+                   f"{total_api_calls} API calls | "
+                   f"{budget.writes_used} writes | "
+                   f"{total_elapsed:.1f}s total")
+        if eval_error:
+            summary += f" | ERROR: {eval_error[:80]}"
+        print(summary + " ---")
+    else:
+        print(f"\n  {'═' * 50}")
+        print(f"  RESULTS")
+        print(f"  {'═' * 50}")
+        print(f"  Score: {correct_count}/{total_q} ({pct})")
+        print(f"  {_budget_bar(budget.writes_used, write_budget)}")
+        stored_entries = backend.list()
+        print(f"  Memory: {len(stored_entries)} entries stored")
+        print(f"  API calls: {total_api_calls}  "
+              f"Time: {total_elapsed:.1f}s")
+
+        # Per-competency breakdown
+        from collections import defaultdict as _defaultdict
+        comp_stats: dict[str, list[bool]] = _defaultdict(list)
+        for r in results:
+            comp_stats[r.competency].append(r.correct)
+        if comp_stats:
+            print(f"\n  Per-competency:")
+            for comp, vals in sorted(comp_stats.items()):
+                ok = sum(vals)
+                print(f"    {comp:20s} {ok}/{len(vals)} "
+                      f"({ok/len(vals):.0%})")
+
+        # Correction summary
+        if correction_results:
+            ok = sum(1 for c in correction_results if c["success"])
+            print(f"\n  Corrections: {ok}/{len(correction_results)} "
+                  f"successfully updated")
+            for c in correction_results:
+                mark = "OK" if c["success"] else "MISS"
+                print(f"    [{mark}] {c['entity']}.{c['attr']}: "
+                      f"{c['chain']}")
+
+        # Timing distribution
+        if results:
+            times = [r.elapsed for r in results if r.elapsed > 0]
+            if times:
+                avg_t = sum(times) / len(times)
+                max_t = max(times)
+                print(f"\n  Timing: avg={avg_t:.1f}s  "
+                      f"max={max_t:.1f}s  total={total_elapsed:.1f}s")
+
+        if eval_error:
+            print(f"\n  ERROR: {eval_error[:120]}")
+        print(f"  {'═' * 50}")
 
     stored_contents = [e["content"] for e in backend.list()]
     return results, budget.writes_used, stored_contents, eval_error, trajectory

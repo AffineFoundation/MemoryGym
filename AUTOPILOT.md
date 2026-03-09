@@ -62,9 +62,34 @@ eval 数据（ROADMAP.md §3）← 衡量差距
 
 ## 当前任务
 
-> 所有可执行任务已完成。仅剩阻塞任务（GPU/API key）。下次获得资源时继续。
+### Phase 9 — 评测过程可视化增强
+
+目标：让评测过程输出信息完整、可读、有诊断价值，但不冗余。当前输出过于压缩，缺少关键上下文。
+
+改进点：
+1. **INGEST 事件**：显示实体名列表（前几个+总数）、agent 实际存了哪些（tool_calls 中 memory_store 的 key）、跳过了哪些、写入效率（stored/seen）
+2. **CORRECTION 事件**：显示修正内容摘要（entity.attr: old→new）、agent 操作链（search→forget→store）、是否成功更新了值
+3. **QUESTION 事件**：显示完整问题文本、GT 答案、agent 答案、判定结果（不仅在 verbose 模式）、搜索了什么关键词
+4. **阶段分隔**：用清晰的分隔线区分 ingest/correction/question 阶段，显示阶段汇总统计
+5. **实时预算仪表**：每个事件后显示预算进度条（如 `[████░░░░░░] 6/15 writes`）
+6. **最终报告增强**：per-competency 分数、存储覆盖率、correction 成功率、耗时分布
+
+约束：默认开启增强输出，`--quiet` 恢复当前简洁模式。不引入 rich/tqdm 等额外依赖。
+
+### Phase 10 — 评测覆盖扩展
+
+1. 用可用模型跑多模板评测（hospital/research/city/sport），打破 company-only 偏斜
+2. 核心模型多 seed（至少 3 个），报告均值±标准差
+3. 重跑旧评测带轨迹（用当前代码获取完整轨迹）
+4. 更新 STATUS_REPORT.md 和 ROADMAP.md
 
 ## 已完成
+
+### Phase 8 — 评测可靠性 + 工具链 ✅
+1. ~~Judge 超时机制~~ ✅ → 300s 总超时 + 7 备用模型
+2. ~~轨迹分析脚本~~ ✅ → `scripts/analyze_trajectory.py`
+3. ~~Leaderboard 生成器~~ ✅ → `scripts/leaderboard.py`（markdown/csv）
+4. ~~批量评测运行器~~ ✅ → `scripts/batch_eval.py`（自动跳过已有结果）
 
 ### Phase 7 — 一致性修复 + 训练安全 ✅
 1. ~~eval_scorer 补全 3 种关系题型~~ ✅ → _REASONING_COMPETENCIES 14 types

@@ -527,6 +527,8 @@ class WorldTemplate(QuestionGeneratorMixin, ABC):
                         "notice": c.notice,
                         "entity_name": c.entity_name,
                         "attr": c.attr,
+                        "old_val": c.old_val,
+                        "new_val": c.new_val,
                     })
 
             # Emit contradictions at contradiction_batch as normal ingest

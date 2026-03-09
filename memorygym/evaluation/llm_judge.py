@@ -17,7 +17,14 @@ JUDGE_MODELS = [
     "Qwen/Qwen3-235B-A22B-Instruct-2507-TEE",
     "unsloth/gemma-3-27b-it",
     "openai/gpt-oss-120b-TEE",
+    "moonshotai/Kimi-K2.5-TEE",
+    "MiniMaxAI/MiniMax-M2.5-TEE",
+    "zai-org/GLM-5-TEE",
 ]
+
+# Total timeout for all judge attempts (seconds).
+# After this, raise RuntimeError instead of retrying forever.
+JUDGE_TIMEOUT_S = 300
 
 _VERDICT_RE = re.compile(r"(VERDICT_CORRECT|VERDICT_INCORRECT)", re.IGNORECASE)
 
@@ -152,33 +159,37 @@ def llm_judge_validate_sync(
 
     import time as _time
 
+    t0 = _time.monotonic()
     errors: list[str] = []
     for round_num in range(10):  # up to 10 full rounds through all models
         for model in JUDGE_MODELS:
+            if _time.monotonic() - t0 > JUDGE_TIMEOUT_S:
+                raise RuntimeError(
+                    f"Judge timeout after {JUDGE_TIMEOUT_S}s. "
+                    f"Last errors: {'; '.join(errors[-3:])}"
+                )
             try:
                 response = client.chat.completions.create(
                     model=model,
                     messages=[{"role": "user", "content": prompt}],
                     max_tokens=500,
+                    timeout=60,
                 )
                 text = response.choices[0].message.content.strip()
                 return _parse_verdict(text)
             except Exception as exc:
-                err = str(exc).lower()
-                transient = ("429" in str(exc) or "503" in str(exc)
-                             or "502" in str(exc) or "capacity" in err
-                             or "overloaded" in err or "timeout" in err)
                 errors.append(f"{model}: {exc}")
-                if transient:
-                    continue  # try next model immediately
-                else:
-                    continue  # non-transient: also try next model
+                continue  # try next model immediately
         # All models failed this round — backoff before next round
         if round_num < 9:
+            elapsed = _time.monotonic() - t0
+            if elapsed > JUDGE_TIMEOUT_S:
+                break
             wait = min(2 ** round_num * 5, 60)
             _time.sleep(wait)
 
     raise RuntimeError(
-        f"All judge models failed after 10 rounds: "
+        f"All judge models failed after {round_num + 1} rounds "
+        f"({_time.monotonic() - t0:.0f}s): "
         f"{'; '.join(errors[-len(JUDGE_MODELS):])}"
     )
