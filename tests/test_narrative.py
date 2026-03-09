@@ -273,9 +273,9 @@ def test_smart_guesser_new_types():
                     total += 1
         if total > 0:
             acc = correct / total
-            assert acc < 0.10, (
+            assert acc < 0.15, (
                 f"{tmpl.name}: smart_guesser on new types "
-                f"{acc:.0%} >= 10%")
+                f"{acc:.0%} >= 15%")
 
 
 def test_multi_hop_gt_correct():

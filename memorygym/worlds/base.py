@@ -1021,6 +1021,17 @@ class WorldTemplate(AdvancedQuestionMixin, QuestionGeneratorMixin, ABC):
             ])
         rng.shuffle(comp_types)
 
+        # Priority types get first slots to ensure adequate sampling.
+        # Without this, 19 types / ~5 slots = each type appears <30% of evals.
+        priority = []
+        if has_corrections:
+            priority.append("counterfactual")
+        priority.append("multi_constraint")
+        for pt in priority:
+            if pt in comp_types:
+                comp_types.remove(pt)
+                comp_types.insert(0, pt)
+
         # Counterfactual needs corrections, not available — wrap it
         def _counterfactual_wrapper(world, rng, available):
             return self._gq_counterfactual(world, rng, corrections)

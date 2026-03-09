@@ -66,22 +66,14 @@ eval 数据（ROADMAP.md §3）← 衡量差距
 
 ## 当前任务
 
-### Phase 37 — 新题型采样率提升（审计线程发现）
-
-**依据**：Phase 30 新增的 counterfactual 和 multi_constraint 题型采样率过低。
-
-代码证据：
-- `base.py:1006-1022` 的 comprehension 采样池有 14-19 种类型
-- 20 题评测中 comprehension ≈ 5-7 题，round-robin 从 14-19 类型中选
-- counterfactual 期望出现 ~0.4 次/eval，multi_constraint ~0.4 次/eval
-- 这些新题型对 reasoning 轴得分几乎无影响
-
-**要求**：
-1. 提升 counterfactual/multi_constraint 的采样优先级（如：corrections 存在时，至少保证 1 个 counterfactual）
-2. 不破坏现有 simulation 不变量
-3. 验证：standard tier（20 题）中 counterfactual ≥ 1 且 multi_constraint ≥ 1 的概率 > 80%（10 seeds 验证）
+（待办空，等待审计线程写入新任务）
 
 ## 已完成
+
+### Phase 37 — 新题型采样率提升 ✅
+- Priority slot 机制：counterfactual + multi_constraint 在 shuffle 后移到前面
+- 采样率：6 模板 × 10 seeds = 100% 出现率（之前 ~50%）
+- 265 tests pass, simulation ALL PASS
 
 ### Phase 36 — 模板策略差异化分析 ✅
 - 审计发现正确：ratio 调整 (0.65→0.75) 对 simulation 无贡献
