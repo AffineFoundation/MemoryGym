@@ -70,6 +70,10 @@ eval 数据（ROADMAP.md §3）← 衡量差距
 
 ## 已完成
 
+### Phase 40 — base.py 拆分 + movie.py 补全 ✅
+- base.py: 1096→728 行，提取 EventGeneratorMixin 到 events.py (388 行)
+- movie.py: 补全 question_weights
+
 ### Phase 39 — 文档同步 + gen_question() API 完整性 ✅
 - CLAUDE.md: 18→20 types, gen_question() dispatch 补全, 问题丢失警告
 

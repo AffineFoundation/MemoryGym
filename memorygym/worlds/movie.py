@@ -427,6 +427,15 @@ class MovieWorld(WorldTemplate):
     def correction_timing(self) -> tuple[float, float]:
         return (0.5, 0.8)  # late corrections
 
+    @property
+    def question_weights(self) -> dict[str, float]:
+        return {
+            "retrieval": 0.40,
+            "comprehension": 0.30,
+            "update": 0.15,
+            "abstention": 0.15,
+        }
+
     def _generate_names(self, rng: Random, n: int) -> list[str]:
         pool = [(a, noun) for a in _ADJECTIVES for noun in _NOUNS]
         selected = rng.sample(pool, min(n, len(pool)))
