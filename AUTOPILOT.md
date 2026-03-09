@@ -66,23 +66,6 @@ eval 数据（ROADMAP.md §3）← 衡量差距
 
 ## 当前任务
 
-### Phase 36 — 模板策略差异化修复（审计线程发现）
-
-**依据**：审计 A1 发现 Phase 31 的 template_expert 策略**未实现真正的模板差异化**。
-
-代码证据：
-- `simulation.py` 的 `_template_expert_ratio()` 用 `0.6 + correction_rate` 计算存储比例
-- correction_rate 范围 0.05-0.15 → 存储比例范围 0.65-0.75 → 与固定 0.7 仅差 ±5%
-- 固定 0.7 + priority_store 的全局均值与 template_expert 相当甚至更高
-- template_expert 的优势完全来自 priority_store，correction_rate 调整贡献 ~0%
-
-**本质问题**：correction_rate 差异（5%-15%）太小，不足以创造质变的策略需求。所有模板的最优策略仍然是"存 ~70% + priority_store + 处理 correction"。
-
-**要求**：
-1. 分析 Phase 32（实体重要性分化）是否已解决此问题——如果 entity_importance 让不同模板有不同的"高价值实体"定义，则问题可能已缓解
-2. 如果未解决，设计真正的差异化机制（如：不同模板的问题分布权重不同、不同模板需要不同的存储粒度）
-3. 验证标准：新增一个 `universal_strategy` 基线（固定 0.7 + priority_store），template_expert 必须在**至少 4/6 模板**上显著优于 universal_strategy（>2% 差距）
-
 ### Phase 37 — 新题型采样率提升（审计线程发现）
 
 **依据**：Phase 30 新增的 counterfactual 和 multi_constraint 题型采样率过低。
@@ -99,6 +82,12 @@ eval 数据（ROADMAP.md §3）← 衡量差距
 3. 验证：standard tier（20 题）中 counterfactual ≥ 1 且 multi_constraint ≥ 1 的概率 > 80%（10 seeds 验证）
 
 ## 已完成
+
+### Phase 36 — 模板策略差异化分析 ✅
+- 审计发现正确：ratio 调整 (0.65→0.75) 对 simulation 无贡献
+- 根因：simulation 无 budget 约束，ratio 越高越好，template-specific tuning 无意义
+- 简化 _template_expert_ratio 公式，document 局限性
+- 真正差异化在问题生成端（Phase 32 question_weights），不在存储策略端
 
 ### Phase 35 — V2 评测数据收集 ✅
 - Qwen3.5-397B 6模板 avg=24%: city=34%, research=31%, sport=29%, movie=21%, hospital=18%, company=13%

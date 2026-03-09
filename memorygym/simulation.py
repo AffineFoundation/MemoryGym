@@ -79,16 +79,18 @@ def _entity_priority_score(
 
 
 def _template_expert_ratio(tmpl: WorldTemplate) -> float:
-    """Compute optimal store_ratio using template's correction_rate.
+    """Compute store_ratio for template_expert strategy.
 
-    High-correction templates (hospital): store more to ensure corrections
-    can be applied (maintenance axis).
-    Low-correction templates (city): store at moderate level, prioritizing
-    high-value entities via priority_store.
+    Uses template's question_weights: high retrieval weight → store more
+    for breadth coverage. The main advantage of template_expert over
+    a universal strategy comes from priority_store + applies_updates,
+    not from ratio tuning (validated: ratio differences < 5% have
+    negligible impact in simulation).
     """
-    # Base ratio 0.6 + bonus for high-correction templates
-    # hospital (0.15) → 0.75, city (0.05) → 0.65, company (0.10) → 0.70
-    return min(0.8, 0.6 + tmpl.correction_rate)
+    w = tmpl.question_weights
+    # Base 0.70, slight boost for high-retrieval templates
+    ratio = 0.70 + 0.20 * max(0, w["retrieval"] - 0.35)
+    return max(0.70, min(0.80, ratio))
 
 
 def _smart_guess(q: GeneratedQA, world: World, rng: Random) -> str | None:
