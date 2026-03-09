@@ -29,7 +29,9 @@ class QuestionGeneratorMixin:
 
     def gen_question(self, world: World, rng: Random,
                      competency: str,
-                     available: list[EntitySpec]) -> GeneratedQA | None:
+                     available: list[EntitySpec],
+                     corrections: list | None = None,
+                     ) -> GeneratedQA | None:
         """Generate a question of the given competency type."""
         fn = {
             "retrieval": self._gq_retrieval,
@@ -51,8 +53,16 @@ class QuestionGeneratorMixin:
             "temporal_extreme": self._gq_temporal_extreme,
             "text_match": self._gq_text_match,
             "enum_filter": self._gq_enum_filter,
+            "multi_constraint": self._gq_multi_constraint,
         }.get(competency)
-        return fn(world, rng, available) if fn else None
+        if fn:
+            return fn(world, rng, available)
+        # Correction-dependent types
+        if competency == "delta" and corrections:
+            return self._gq_delta(world, rng, corrections)
+        if competency == "counterfactual" and corrections:
+            return self._gq_counterfactual(world, rng, corrections)
+        return None
 
     def _gq_retrieval(self, world, rng, available):
         attr = rng.choice(world.active_attrs)

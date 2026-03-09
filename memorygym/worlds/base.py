@@ -1069,6 +1069,13 @@ class WorldTemplate(AdvancedQuestionMixin, QuestionGeneratorMixin, ABC):
                     q.purpose = "comprehension"
                     questions.append(q)
                     break
+            else:
+                import warnings
+                warnings.warn(
+                    f"Comprehension slot {i} dropped: all {len(candidates)} "
+                    f"generators returned None (primary={primary})",
+                    stacklevel=2,
+                )
 
         # Abstention
         for _ in range(n_abstention):

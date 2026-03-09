@@ -66,34 +66,12 @@ eval 数据（ROADMAP.md §3）← 衡量差距
 
 ## 当前任务
 
-### Phase 39 — 文档同步 + gen_question() API 完整性
-
-**依据**：审计 A4 发现 3 个实现正确性问题。
-
-#### Step 1 — CLAUDE.md 推理题型数修正
-
-CLAUDE.md 评测系统表格写 "comprehension (18 types)"，但 REASONING_COMPETENCIES（protocol.py:99-107）实际有 **20 种**（Phase 30 加入 counterfactual + multi_constraint 后未同步）。改为 "comprehension (20 types)"。同时检查 CLAUDE.md 其他地方是否引用 "18"。
-
-#### Step 2 — gen_question() dispatch 补全
-
-questions.py:34-54 的 dispatch table 缺少 3 种类型：
-- `"delta": self._gq_delta`（函数在 questions.py:389-420）
-- `"counterfactual": self._gq_counterfactual`（函数在 questions_advanced.py:207-235，需要 wrapper 传 corrections）
-- `"multi_constraint": self._gq_multi_constraint`（函数在 questions_advanced.py:237-335）
-
-注意：counterfactual 和 delta 需要 corrections 数据，gen_question() 签名可能需要增加 optional corrections 参数，或在无 corrections 时返回 None。
-
-#### Step 3 — 静默问题预算丢失警告
-
-gen_adaptive_questions()（base.py）的 comprehension 循环中，当所有 fallback 生成器返回 None，question slot 被静默丢弃。加入 `warnings.warn()` 或 debug log，方便诊断评测中实际生成了多少题。
-
-#### 验证标准
-- CLAUDE.md 中不再出现 "18 types"/"18 种"
-- `gen_question(world, rng, "delta", entities)` 不再返回 None（需 corrections）
-- `python -m pytest tests/ -q` 全量通过
-- `python -m memorygym.bench --seeds 3 --validate` simulation 不变量通过
+（待办空，等待审计线程写入新任务）
 
 ## 已完成
+
+### Phase 39 — 文档同步 + gen_question() API 完整性 ✅
+- CLAUDE.md: 18→20 types, gen_question() dispatch 补全, 问题丢失警告
 
 ### Phase 38 — 系统提示词修正 + ChromaDB 搜索改进 ✅
 - stream_agent.py: "substring matching" → "semantic search"
