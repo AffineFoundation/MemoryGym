@@ -63,17 +63,42 @@ class ChromaDBBackend:
         count = self._collection.count()
         if count == 0:
             return []
+        # Primary: embedding similarity search
         results = self._collection.query(
             query_texts=[query],
             n_results=min(top_k, count),
         )
         entries = []
+        seen_ids = set()
         for i in range(len(results["ids"][0])):
+            eid = results["ids"][0][i]
+            seen_ids.add(eid)
             entries.append({
-                "id": results["ids"][0][i],
+                "id": eid,
                 "content": results["documents"][0][i],
                 "created_at": results["metadatas"][0][i].get("created_at", ""),
             })
+
+        # Keyword fallback: substring match on all stored entries.
+        # Embedding search can miss exact entity names when content
+        # contains many attributes that dilute the entity name signal.
+        query_lower = query.lower()
+        if query_lower:
+            all_results = self._collection.get()
+            for i in range(len(all_results["ids"])):
+                eid = all_results["ids"][i]
+                if eid in seen_ids:
+                    continue
+                content = all_results["documents"][i]
+                if query_lower in content.lower():
+                    entries.append({
+                        "id": eid,
+                        "content": content,
+                        "created_at": all_results["metadatas"][i].get(
+                            "created_at", ""),
+                    })
+                    seen_ids.add(eid)
+
         return entries
 
     def get(self, memory_id: str) -> dict | None:

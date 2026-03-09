@@ -87,7 +87,7 @@ Call tools by outputting JSON blocks:
 **memory_store** — Store info (costs 1 write, budget: {budget}):
 <tool_call>{{"name": "memory_store", "arguments": {{"content": "info to store"}}}}</tool_call>
 
-**memory_search** — Search stored memories (free, uses substring matching):
+**memory_search** — Search stored memories (free, uses semantic search — best results with specific entity names or keywords):
 <tool_call>{{"name": "memory_search", "arguments": {{"query": "entity name"}}}}</tool_call>
 
 **memory_forget** — Delete entry by ID (free):
