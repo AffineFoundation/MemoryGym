@@ -143,7 +143,7 @@ def test_new_question_types_no_placeholder_leak():
         world = tmpl.generate_world(seed=42, n_entities=30)
         rng = Random(42)
         for comp in ["temporal_trend", "temporal_extreme", "text_match",
-                     "enum_filter", "hierarchy_aggregate", "hierarchy_lookup"]:
+                     "enum_filter"]:
             for _ in range(50):
                 q = tmpl.gen_question(world, rng, comp, world.entities)
                 if q is None:

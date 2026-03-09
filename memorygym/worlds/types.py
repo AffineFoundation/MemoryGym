@@ -43,8 +43,6 @@ class EntitySpec:
     name: str
     category: str
     attrs: dict[str, Any] = field(default_factory=dict)
-    parent: str | None = None  # hierarchical parent entity name
-    children: list[str] = field(default_factory=list)
 
     def get(self, attr: str, default=None):
         return self.attrs.get(attr, default)

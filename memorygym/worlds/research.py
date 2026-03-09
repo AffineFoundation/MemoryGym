@@ -369,6 +369,19 @@ class ResearchWorld(WorldTemplate):
         selected = rng.sample(pool, min(n, len(pool)))
         return [f"{f} {l}" for f, l in selected]
 
+    def _generate_list_float(self, adef, rng):
+        """Impact curve: rise then plateau (publications/citations grow then level off)."""
+        peak = rng.uniform(adef.max_val * 0.4, adef.max_val * 0.8)
+        values = []
+        for i in range(adef.list_len):
+            # Logistic-like growth: rapid early rise, then saturation
+            t = (i + 1) / adef.list_len
+            growth = peak * (1 - (1 - t) ** 2)  # quadratic rise toward peak
+            noise = rng.uniform(0.85, 1.15)
+            val = max(adef.min_val, min(adef.max_val, growth * noise))
+            values.append(round(val, 2))
+        return values
+
     def generate_entity(self, rng: Random, name: str, category: str,
                         active_attrs: list[str]) -> EntitySpec:
         attrs: dict[str, Any] = {}

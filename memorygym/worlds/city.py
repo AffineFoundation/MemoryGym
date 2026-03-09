@@ -415,6 +415,18 @@ class CityWorld(WorldTemplate):
         selected = rng.sample(pool, min(n, len(pool)))
         return [f"{a} {b}" for a, b in selected]
 
+    def _generate_list_float(self, adef, rng):
+        """Smooth monotonic trend: steady growth or decline with low noise."""
+        start = rng.uniform(adef.min_val * 0.3, adef.max_val * 0.7)
+        growth_rate = rng.uniform(-0.03, 0.08)  # mostly growth, some decline
+        values = []
+        for i in range(adef.list_len):
+            val = start * (1 + growth_rate) ** i
+            noise = rng.uniform(0.98, 1.02)  # very low noise
+            val = max(adef.min_val, min(adef.max_val, val * noise))
+            values.append(round(val, 2))
+        return values
+
     def generate_entity(self, rng: Random, name: str, category: str,
                         active_attrs: list[str]) -> EntitySpec:
         attrs: dict[str, Any] = {}
@@ -422,6 +434,26 @@ class CityWorld(WorldTemplate):
             if adef.name not in active_attrs:
                 continue
             attrs[adef.name] = self._generate_attr_value(rng, adef)
+        # Constraint: population density and infrastructure scale
+        if "population" in attrs and "area_km2" in attrs:
+            pop = attrs["population"]
+            area = attrs["area_km2"]
+            density = pop / area if area > 0 else 0
+            # Keep density in realistic range (50-30000 per km²)
+            if density < 50:
+                attrs["area_km2"] = round(pop / rng.uniform(200, 2000), 1)
+            elif density > 30000:
+                attrs["area_km2"] = round(pop / rng.uniform(5000, 15000), 1)
+        if "population" in attrs and "hospital_count" in attrs:
+            pop = attrs["population"]
+            # ~1 hospital per 20K-80K people
+            attrs["hospital_count"] = max(1, rng.randint(
+                max(1, pop // 80000), max(2, pop // 20000)))
+        if "population" in attrs and "school_count" in attrs:
+            pop = attrs["population"]
+            # ~1 school per 3K-10K people
+            attrs["school_count"] = max(2, rng.randint(
+                max(2, pop // 10000), max(3, pop // 3000)))
         return EntitySpec(name=name, category=category, attrs=attrs)
 
     def _format_value(self, attr: str, val: Any) -> str:

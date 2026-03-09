@@ -373,6 +373,18 @@ class CompanyWorld(WorldTemplate):
         selected = rng.sample(pool, min(n, len(pool)))
         return [f"{p} {s}" for p, s in selected]
 
+    def _generate_list_float(self, adef, rng):
+        """Seasonal pattern: Q4 > Q1, with realistic quarterly variation."""
+        base = rng.uniform(adef.min_val * 0.3, adef.max_val * 0.6)
+        seasonal = [0.85, 0.90, 1.05, 1.20]  # Q1-Q4 multipliers
+        values = []
+        for i in range(adef.list_len):
+            mult = seasonal[i % 4]
+            noise = rng.uniform(0.9, 1.1)
+            val = max(adef.min_val, min(adef.max_val, base * mult * noise))
+            values.append(round(val, 2))
+        return values
+
     def generate_entity(self, rng: Random, name: str, category: str,
                         active_attrs: list[str]) -> EntitySpec:
         attrs: dict[str, Any] = {}
@@ -380,6 +392,15 @@ class CompanyWorld(WorldTemplate):
             if adef.name not in active_attrs:
                 continue
             attrs[adef.name] = self._generate_attr_value(rng, adef)
+        # Constraint: employees and revenue should have realistic ratio
+        # (per-employee revenue $50K - $2M)
+        if "employees" in attrs and "revenue_m" in attrs:
+            emp = attrs["employees"]
+            rev = attrs["revenue_m"]
+            per_emp = (rev * 1_000_000) / emp if emp > 0 else 0
+            if per_emp < 50_000 or per_emp > 2_000_000:
+                target_per_emp = rng.uniform(100_000, 800_000)
+                attrs["revenue_m"] = round(emp * target_per_emp / 1_000_000, 2)
         return EntitySpec(name=name, category=category, attrs=attrs)
 
     def _format_value(self, attr: str, val: Any) -> str:

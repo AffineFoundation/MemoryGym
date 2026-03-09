@@ -66,7 +66,7 @@ eval 数据（ROADMAP.md §3）← 衡量差距
 
 ## 当前任务
 
-待办空，执行战略推导。
+### Phase 23 — 模板差异化自审（Phase 22 验收门禁）
 
 ### 阻塞任务（等待外部资源）
 - GPU 端到端训练验证（需 4+ GPU）
@@ -74,57 +74,56 @@ eval 数据（ROADMAP.md §3）← 衡量差距
 
 ## 待办
 
-### Phase 22 — 模板真正差异化（消除结构同质性）
+### Phase 23 — 模板差异化自审（Phase 22 验收门禁）
 
-**依据**：战略审计发现 Phase 16 后所有 6 个模板在**功能层面仍然同构**——问题类型、生成逻辑、评测维度完全一样，差异仅限于领域名称替换。具体问题：
+**依据**：Phase 16 曾声称"模板结构分化"已完成，但战略审计发现 6 个模板仍然同构。Phase 22 做完后必须用**可量化、可自动化的标准**验证差异化是否真正实现，防止再次出现"改了但没变"的问题。
 
-- 5 个关系问题类型（relationship_lookup/hop/chain/count/filter）**永远不触发**（不在 `gen_adaptive_questions()` 预算中）
-- 2 个层级问题类型（hierarchy_aggregate/lookup）是**死代码**（EntitySpec.parent/children 从未被填充）
-- list_float 全部用 `base.py:175-183` 相同随机游走（`rng.uniform(-0.2, 0.3) * base`）
-- Company/City/Hospital **零领域约束**（仅 Research/Sport/Movie 有一致性校验）
-- Enum 仅用于 enum_filter，Date 无时间约束，Text 无语义差异
+**本 Phase 是 Phase 22 的验收门禁，不通过则打回 Phase 22 补充修复。**
 
-**目标**：让每个模板测试**不同的记忆管理能力维度**，而不只是换个领域名。
+#### 检查 1 — 问题类型覆盖差异（代码级）
+对每个模板生成 100 个问题（10 seeds × 10 questions），统计各 competency 的出现频率：
+- **FAIL 条件**：如果 6 个模板的 competency 分布完全相同（余弦相似度 > 0.95），说明问题生成仍然同构
+- **PASS 条件**：至少 3 个模板有独占或显著偏向的 competency（如 city 的 hierarchy 问题占比 > 10%，其他模板 = 0%）
 
-#### Step 1 — 激活关系问题（影响所有模板）
-- `gen_adaptive_questions()` 预算分配中加入 relationship 类别（comprehension 的 20-30%）
-- 5 个关系问题类型纳入正常采样池
-- 验证：simulation 中关系问题能被抽到且评分正确
+#### 检查 2 — 属性值统计指纹
+对每个模板生成 50 个实体，对所有 list_float 属性计算统计特征（均值/方差/自相关/趋势斜率）：
+- **FAIL 条件**：任意两个模板的 list_float 统计特征向量余弦相似度 > 0.9
+- **PASS 条件**：每个模板的时序模式可通过统计特征区分（如 movie 衰减斜率 < -0.1，city 斜率 ≈ 0，sport 自相关 < 0.5）
 
-#### Step 2 — 层级系统：实现或移除
-- **方案 A（推荐）**：CityWorld 中真正实现层级（省→市，hierarchy_aggregate 计算省下辖城市总人口）
-- **方案 B**：干净移除 EntitySpec.parent/children + 2 个层级问题类型（不留死代码）
+#### 检查 3 — 领域约束覆盖率
+检查每个模板的 `generate_entity()` 中是否存在属性间一致性校验：
+- **FAIL 条件**：仍有模板 0 约束（Company/City/Hospital 在 Phase 22 前就是 0）
+- **PASS 条件**：6 个模板**每个**至少有 1 条属性间约束（不是范围约束，是属性间逻辑关系）
 
-#### Step 3 — 领域特定 list_float 模式
-每个模板 override `_generate_list_float()`，替换通用随机游走：
-- **Sport**: 连胜/连败 streak 模式（波动+趋势性）
-- **Company**: 季节性（Q4 > Q1）
-- **City**: 平滑增长/衰退（低噪声）
-- **Movie**: 周票房指数衰减（首周最高，逐周递减）
-- **Research**: 引用先升后平（影响力曲线）
-- **Hospital**: 周期性峰值（流感季）
+#### 检查 4 — 独占评测维度
+列出每个模板**独有的**评测能力维度（仅此模板能测试的能力）：
+- **FAIL 条件**：存在模板没有任何独占维度（可被其他模板完全替代）
+- **PASS 条件**：每个模板至少有 1 个独占维度，例如：
+  - City: 层级聚合（hierarchy）— 其他模板无层级
+  - Movie: 时序衰减趋势识别 — 其他模板无单调递减模式
+  - Sport: 派生值一致性（win_pct）— 其他模板无计算派生
+  - Research: 量级约束（h_index→citations）— 其他模板无量级依赖
+  - Company: 季节性模式识别 — 其他模板无周期性
+  - Hospital: 周期性峰值检测 — 其他模板无季节波动
 
-#### Step 4 — 补齐领域约束（Company/City/Hospital）
-- **Company**: employees 与 revenue_m 合理比率（人均产出 $50K-$2M）
-- **City**: population 与 area_km2/hospital_count/school_count 密度约束
-- **Hospital**: beds ≥ icu_beds，staff_count ≥ beds × 0.5
+#### 检查 5 — 死代码清零
+- 无未触发的问题类型（所有注册的 competency 在 100 题样本中至少出现 1 次，或已从代码中移除）
+- 无未填充的数据结构字段（如 EntitySpec.parent 要么被使用，要么被删除）
 
-#### Step 5 — Enum 属性增强利用
-- 扩展问题：分布问题（"哪个 category 的实体最多"）、条件聚合增强
-- 评估 enum_filter 是否已覆盖，不足则新增问题子类型
-
-#### Step 6 — Date 属性时间约束
-- Movie: release_date 未来则无完整票房
-- Hospital: last_inspection_date ≤ 当前日期
-- Sport: last_championship_date 在球队存在期内
-- Company: ipo_date 在合理时间范围
-
-#### Step 7 — 验证
-- `python tests/test_worlds.py` 全 PASS
-- `python -m memorygym.bench --seeds 3 --validate` simulation 不变量
-- 确认关系问题被采样、层级可触发（或已移除）、list_float 统计特征因模板而异
+#### 输出
+- 产出审查报告 `devlog/{date}-template-differentiation-audit.md`
+- 每项检查标注 PASS/FAIL
+- FAIL 项列出具体补救措施，打回 Phase 22 相应 Step
 
 ## 已完成
+
+### Phase 22 — 模板真正差异化 ✅
+1. ~~层级死代码移除~~ ✅ → EntitySpec.parent/children + hierarchy_aggregate/lookup 问题类型 + ~90 行代码
+2. ~~新问题类型激活~~ ✅ → temporal_trend/extreme, text_match, enum_filter 纳入 comprehension 采样池
+3. ~~领域特定 list_float~~ ✅ → 6 种不同时序模式（季节性/影响力曲线/平滑趋势/周期峰值/streak/指数衰减）
+4. ~~领域约束补齐~~ ✅ → Company 人均产出、City 人口密度+基础设施、Hospital beds≥icu_beds+staff
+5. ~~smart_guesser 修复~~ ✅ → 新 dtype 问题返回 None（无可靠猜测策略）
+6. ~~验证~~ ✅ → 261 tests + simulation ALL PASS (5 seeds × 6 templates × 8 strategies)
 
 ### Phase 21 — MemoryEnv shaped reward ✅
 1. ~~reward_mode 参数~~ ✅ → "binary" (默认) | "shaped"

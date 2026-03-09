@@ -441,6 +441,22 @@ class HospitalWorld(WorldTemplate):
         selected = rng.sample(pool, min(n, len(pool)))
         return [f"{a} {b}" for a, b in selected]
 
+    def _generate_list_float(self, adef, rng):
+        """Periodic peaks: baseline with seasonal spikes (flu season pattern)."""
+        baseline = rng.uniform(adef.min_val * 0.3, adef.max_val * 0.5)
+        peak_idx = rng.randint(0, adef.list_len - 1)  # peak year
+        values = []
+        for i in range(adef.list_len):
+            if i == peak_idx:
+                spike = rng.uniform(1.4, 1.8)  # 40-80% spike
+            elif abs(i - peak_idx) == 1:
+                spike = rng.uniform(1.1, 1.3)  # adjacent years elevated
+            else:
+                spike = rng.uniform(0.9, 1.1)
+            val = max(adef.min_val, min(adef.max_val, baseline * spike))
+            values.append(round(val, 2))
+        return values
+
     def generate_entity(self, rng: Random, name: str, category: str,
                         active_attrs: list[str]) -> EntitySpec:
         attrs: dict[str, Any] = {}
@@ -448,6 +464,16 @@ class HospitalWorld(WorldTemplate):
             if adef.name not in active_attrs:
                 continue
             attrs[adef.name] = self._generate_attr_value(rng, adef)
+        # Constraint: beds >= icu_beds
+        if "beds" in attrs and "icu_beds" in attrs:
+            if attrs["icu_beds"] > attrs["beds"]:
+                attrs["icu_beds"] = rng.randint(0, attrs["beds"] // 5)
+        # Constraint: staff_count >= beds * 0.5
+        if "staff_count" in attrs and "beds" in attrs:
+            min_staff = int(attrs["beds"] * 0.5)
+            if attrs["staff_count"] < min_staff:
+                attrs["staff_count"] = rng.randint(
+                    min_staff, max(min_staff + 1, attrs["beds"] * 3))
         return EntitySpec(name=name, category=category, attrs=attrs)
 
     def _format_value(self, attr: str, val: Any) -> str:

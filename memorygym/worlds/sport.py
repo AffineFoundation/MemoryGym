@@ -389,6 +389,22 @@ class SportWorld(WorldTemplate):
         selected = rng.sample(pool, min(n, len(pool)))
         return [f"{c} {m}" for c, m in selected]
 
+    def _generate_list_float(self, adef, rng):
+        """Streak pattern: high volatility with momentum (win/loss streaks)."""
+        val = rng.uniform(adef.min_val * 0.2, adef.max_val * 0.8)
+        momentum = 0.0
+        values = []
+        for _ in range(adef.list_len):
+            # Momentum carries forward (streaks), but can reverse sharply
+            if rng.random() < 0.3:
+                momentum = rng.uniform(-0.3, 0.3) * val  # reversal
+            else:
+                momentum *= rng.uniform(0.5, 1.5)  # momentum persists
+            change = momentum + rng.uniform(-0.15, 0.15) * val
+            val = max(adef.min_val, min(adef.max_val, val + change))
+            values.append(round(val, 2))
+        return values
+
     def generate_entity(self, rng: Random, name: str, category: str,
                         active_attrs: list[str]) -> EntitySpec:
         attrs: dict[str, Any] = {}

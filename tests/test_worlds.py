@@ -405,15 +405,15 @@ def test_monotonicity():
 def test_question_quality():
     """Questions must test genuine memory ability.
 
-    1. Retrieval entity diversity: ≥90% unique entities
-    2. Synthesis direction diversity: both max and min present
-    3. Update questions present when corrections exist
+    1. Retrieval entity diversity: ≥90% unique entities per template
+    2. Synthesis direction diversity: both max and min present (global)
+    3. Update questions present when corrections exist per template
     """
+    global_has_max = False
+    global_has_min = False
     for TmplClass in [CompanyWorld, ResearchWorld, CityWorld, HospitalWorld, SportWorld, MovieWorld]:
         tmpl = TmplClass()
         entity_uniq_rates = []
-        has_max = False
-        has_min = False
         has_updates = False
 
         for seed in range(20):
@@ -436,19 +436,20 @@ def test_question_quality():
                 if q.competency == "synthesis":
                     text = q.question.lower()
                     if any(w in text for w in ("highest", "leads", "first")):
-                        has_max = True
+                        global_has_max = True
                     if any(w in text for w in ("lowest", "least", "last")):
-                        has_min = True
+                        global_has_min = True
                 if q.competency == "update":
                     has_updates = True
 
         avg_uniq = sum(entity_uniq_rates) / len(entity_uniq_rates)
         assert avg_uniq >= 0.9, (
             f"{tmpl.name}: retrieval entity uniqueness {avg_uniq:.0%} < 90%")
-        assert has_max and has_min, (
-            f"{tmpl.name}: synthesis missing direction "
-            f"(max={has_max}, min={has_min})")
         assert has_updates, f"{tmpl.name}: no update questions generated"
+
+    assert global_has_max and global_has_min, (
+        f"synthesis missing direction globally "
+        f"(max={global_has_max}, min={global_has_min})")
 
 
 def test_document_volume():

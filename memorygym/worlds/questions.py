@@ -45,8 +45,6 @@ class QuestionGeneratorMixin:
             "relationship_filter": self._gq_relationship_filter,
             "temporal_trend": self._gq_temporal_trend,
             "temporal_extreme": self._gq_temporal_extreme,
-            "hierarchy_aggregate": self._gq_hierarchy_aggregate,
-            "hierarchy_lookup": self._gq_hierarchy_lookup,
             "text_match": self._gq_text_match,
             "enum_filter": self._gq_enum_filter,
         }.get(competency)
@@ -569,95 +567,6 @@ class QuestionGeneratorMixin:
             purpose="comprehension", source_attr=attr,
         )
 
-    def _gq_hierarchy_aggregate(self, world, rng, available):
-        """Aggregate a numeric attr across all children of a parent entity."""
-        parents = [e for e in available if e.children]
-        if not parents:
-            return None
-        parent = rng.choice(parents)
-        child_entities = [world.get_entity(c) for c in parent.children]
-        child_entities = [c for c in child_entities if c is not None]
-        if len(child_entities) < 2:
-            return None
-        numeric = [a for a in world.active_attrs
-                   if sum(1 for c in child_entities
-                          if isinstance(c.get(a), (int, float))) >= 2]
-        if not numeric:
-            return None
-        attr = rng.choice(numeric)
-        label = self.attr_label(attr)
-        vals = [c.get(attr) for c in child_entities
-                if isinstance(c.get(attr), (int, float))]
-        if not vals:
-            return None
-        op = rng.choice(["total", "average"])
-        if op == "total":
-            result = sum(vals)
-            if isinstance(result, float):
-                result = round(result, 2)
-        else:
-            result = round(sum(vals) / len(vals), 2)
-        child_names = [c.name for c in child_entities]
-        q = rng.choice([
-            f"What is the {op} {label} across all sub-entities of "
-            f"{parent.name}?",
-            f"Calculate the {op} {label} for {_possessive(parent.name)} "
-            f"sub-entities.",
-        ])
-        return GeneratedQA(
-            q, str(result), "hierarchy_aggregate",
-            [parent.name] + child_names,
-            purpose="comprehension", source_attr=attr,
-        )
-
-    def _gq_hierarchy_lookup(self, world, rng, available):
-        """Look up parent entity or parent's attribute."""
-        children_with_parent = [e for e in available if e.parent]
-        if not children_with_parent:
-            return None
-        child = rng.choice(children_with_parent)
-        parent = world.get_entity(child.parent)
-        if not parent:
-            return None
-        # 50% chance: ask parent name, 50% ask parent's attribute
-        if rng.random() < 0.5:
-            q = rng.choice([
-                f"What is {_possessive(child.name)} parent entity?",
-                f"Which entity does {child.name} belong to?",
-            ])
-            return GeneratedQA(
-                q, parent.name, "hierarchy_lookup", [child.name, parent.name],
-                purpose="comprehension", source_attr="",
-            )
-        else:
-            numeric = [a for a in world.active_attrs
-                       if isinstance(parent.get(a), (int, float))]
-            if not numeric:
-                q = rng.choice([
-                    f"What is {_possessive(child.name)} parent entity?",
-                    f"Which entity does {child.name} belong to?",
-                ])
-                return GeneratedQA(
-                    q, parent.name, "hierarchy_lookup",
-                    [child.name, parent.name],
-                    purpose="comprehension", source_attr="",
-                )
-            attr = rng.choice(numeric)
-            label = self.attr_label(attr)
-            val = parent.get(attr)
-            fmt_val = self._format_value(attr, val)
-            q = rng.choice([
-                f"What is the {label} of {_possessive(child.name)} "
-                f"parent entity?",
-                f"Look up {_possessive(child.name)} parent and report "
-                f"its {label}.",
-            ])
-            return GeneratedQA(
-                q, fmt_val, "hierarchy_lookup",
-                [child.name, parent.name],
-                purpose="comprehension", source_attr=attr,
-            )
-
     def _gq_text_match(self, world, rng, available):
         """Which entity's text attribute contains a specific keyword?"""
         text_attrs = [a for a in world.active_attrs
@@ -1021,8 +930,6 @@ class QuestionGeneratorMixin:
             "outlier": self._gq_outlier,
             "temporal_trend": self._gq_temporal_trend,
             "temporal_extreme": self._gq_temporal_extreme,
-            "hierarchy_aggregate": self._gq_hierarchy_aggregate,
-            "hierarchy_lookup": self._gq_hierarchy_lookup,
             "text_match": self._gq_text_match,
             "enum_filter": self._gq_enum_filter,
         }

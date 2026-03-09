@@ -339,7 +339,7 @@ def test_comprehension_types_not_fingerprint_exploitable():
         tmpl = TmplClass()
         correct = 0
         total = 0
-        for seed in range(10):
+        for seed in range(20):
             world = tmpl.generate_world(seed=seed, n_entities=60)
             rng_q = Random(seed + 7777)
             corrections = tmpl.generate_corrections(

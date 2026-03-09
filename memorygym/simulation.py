@@ -93,20 +93,10 @@ def _smart_guess(q: GeneratedQA, world: World, rng: Random) -> str | None:
     if q.competency == "abstention":
         return None  # smart guesser knows it can't win abstention
 
-    # New dtype question types — hard to guess
-    if q.competency == "temporal_trend":
-        return rng.choice(["rising", "falling"])  # 50% chance
-    if q.competency == "temporal_extreme":
-        return str(rng.randint(1, 5))  # guess a period
-    if q.competency == "text_match":
-        return rng.choice(world.entities).name  # random entity
-    if q.competency == "enum_filter":
-        return rng.choice(world.entities).name
-    if q.competency == "hierarchy_lookup":
-        return rng.choice(world.entities).name
-    if q.competency == "hierarchy_aggregate":
-        return str(rng.choice([100, 500, 1000, 5000]))
-
+    # New dtype question types — no reliable guess strategy
+    if q.competency in ("temporal_trend", "temporal_extreme",
+                        "text_match", "enum_filter"):
+        return None
     # Try to identify the attribute from the question
     for adef in world.attr_defs:
         label = adef.label or adef.name.replace("_", " ")

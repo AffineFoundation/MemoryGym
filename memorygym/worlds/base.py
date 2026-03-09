@@ -149,8 +149,7 @@ class WorldTemplate(QuestionGeneratorMixin, ABC):
         return (f"{rel.source} has a {rel.relation.replace('_', ' ')} "
                 f"relationship with {rel.target}.")
 
-    @staticmethod
-    def _generate_attr_value(rng: Random, adef: AttrDef) -> Any:
+    def _generate_attr_value(self, rng: Random, adef: AttrDef) -> Any:
         """Generate a random value for an attribute definition.
 
         Handles all dtypes: int, float, text, enum, list_float, date.
@@ -172,15 +171,10 @@ class WorldTemplate(QuestionGeneratorMixin, ABC):
             parts = rng.sample(adef.text_pool, n_sentences)
             return " ".join(parts)
         elif adef.dtype == "list_float":
-            base = rng.uniform(adef.min_val, adef.max_val)
-            values = []
-            for _ in range(adef.list_len):
-                change = rng.uniform(-0.2, 0.3) * base
-                val = max(adef.min_val, min(adef.max_val,
-                                            base + change))
-                values.append(round(val, 2))
-                base = val
-            return values
+            # Fork RNG so list_float pattern complexity doesn't shift
+            # subsequent attribute generation.
+            sub_seed = rng.randint(0, 2**31)
+            return self._generate_list_float(adef, Random(sub_seed))
         elif adef.dtype == "date":
             year = rng.randint(int(adef.min_val), int(adef.max_val))
             month = rng.randint(1, 12)
@@ -188,6 +182,17 @@ class WorldTemplate(QuestionGeneratorMixin, ABC):
             return f"{year:04d}-{month:02d}-{day:02d}"
         else:
             raise ValueError(f"Unknown dtype '{adef.dtype}' for '{adef.name}'")
+
+    def _generate_list_float(self, adef: AttrDef, rng: Random) -> list[float]:
+        """Generate a list_float value. Override for domain-specific patterns."""
+        base = rng.uniform(adef.min_val, adef.max_val)
+        values = []
+        for _ in range(adef.list_len):
+            change = rng.uniform(-0.2, 0.3) * base
+            val = max(adef.min_val, min(adef.max_val, base + change))
+            values.append(round(val, 2))
+            base = val
+        return values
 
     # ── Concrete: world generation ──
 
@@ -874,7 +879,9 @@ class WorldTemplate(QuestionGeneratorMixin, ABC):
             comp_pool = introduced
         comp_types = ["synthesis", "aggregation", "cross_category",
                       "conditional", "ratio", "comparison",
-                      "multi_hop", "outlier"]
+                      "multi_hop", "outlier",
+                      "temporal_trend", "temporal_extreme",
+                      "text_match", "enum_filter"]
         # Add relationship types only if world has relationships
         if world.relationships:
             comp_types.extend([
@@ -897,6 +904,10 @@ class WorldTemplate(QuestionGeneratorMixin, ABC):
             "relationship_chain": self._gq_relationship_chain,
             "relationship_count": self._gq_relationship_count,
             "relationship_filter": self._gq_relationship_filter,
+            "temporal_trend": self._gq_temporal_trend,
+            "temporal_extreme": self._gq_temporal_extreme,
+            "text_match": self._gq_text_match,
+            "enum_filter": self._gq_enum_filter,
         }
         for i in range(n_comprehension):
             q = None

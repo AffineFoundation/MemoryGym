@@ -424,6 +424,18 @@ class MovieWorld(WorldTemplate):
         selected = rng.sample(pool, min(n, len(pool)))
         return [f"{a} {noun}" for a, noun in selected]
 
+    def _generate_list_float(self, adef, rng):
+        """Exponential decay: first week highest, each subsequent week drops."""
+        peak = rng.uniform(adef.max_val * 0.3, adef.max_val * 0.9)
+        decay = rng.uniform(0.35, 0.65)  # 35-65% drop per week
+        values = []
+        for i in range(adef.list_len):
+            val = peak * (decay ** i)
+            noise = rng.uniform(0.85, 1.15)
+            val = max(adef.min_val, min(adef.max_val, val * noise))
+            values.append(round(val, 2))
+        return values
+
     def generate_entity(self, rng: Random, name: str, category: str,
                         active_attrs: list[str]) -> EntitySpec:
         attrs: dict[str, Any] = {}
