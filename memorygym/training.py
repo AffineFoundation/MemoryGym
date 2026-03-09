@@ -86,11 +86,20 @@ def generate_sft_trajectory(
     rng_correct = Random(seed + 3333)
     corrections = tmpl.generate_corrections(world, rng_correct, n_corrections)
 
+    # Implicit contradictions
+    n_contras = max(1, n_corrections // 3)
+    exclude_corrected = {c.entity_name for c in corrections}
+    rng_contra = Random(seed + 7373)
+    contradictions = tmpl.generate_contradictions(
+        world, rng_contra, n_contras,
+        exclude_entities=exclude_corrected)
+
     # Generate stream
     rng_stream = Random(seed + 5555)
     stream = tmpl.generate_stream(
         world, rng_stream, corrections, stored_names,
         n_questions=n_questions, entities_per_batch=10,
+        contradictions=contradictions,
     )
 
     # Build system prompt
@@ -297,9 +306,11 @@ class MemoryEnv:
         n_questions: int | None = None,
         n_corrections: int | None = None,
         write_budget: int | None = None,
+        eval_salt: int = 0,
     ):
         self.template_name = template_name
         self._default_seed = seed
+        self._eval_salt = eval_salt
 
         # Tier overrides explicit params
         if tier is not None:
@@ -379,15 +390,23 @@ class MemoryEnv:
         tmpl_cls = TEMPLATES[self.template_name]
         self._tmpl = tmpl_cls()
         world = self._tmpl.generate_world(
-            seed=seed, n_entities=self.n_entities)
+            seed=seed, n_entities=self.n_entities,
+            eval_salt=self._eval_salt)
         rng = Random(seed)
         corrections = self._tmpl.generate_corrections(
             world, rng, self.n_corrections)
+        n_contras = max(1, self.n_corrections // 3)
+        exclude_corrected = {c.entity_name for c in corrections}
+        rng_contra = Random(seed + 7373)
+        contradictions = self._tmpl.generate_contradictions(
+            world, rng_contra, n_contras,
+            exclude_entities=exclude_corrected)
         self._stream = self._tmpl.generate_stream(
             world, rng, corrections,
             stored_names=set(),
             n_questions=self.n_questions,
             entities_per_batch=10,
+            contradictions=contradictions,
         )
         self._event_idx = 0
         self._mem_counter = 0

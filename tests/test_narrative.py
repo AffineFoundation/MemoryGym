@@ -282,14 +282,14 @@ def test_multi_hop_gt_correct():
     for TmplClass in ALL_TMPLS:
         tmpl = TmplClass()
         found = 0
-        for seed in range(10):
+        for seed in range(20):
             world = tmpl.generate_world(seed=seed, n_entities=60)
             rng = Random(seed + 7777)
             corrections = tmpl.generate_corrections(
                 world, Random(seed + 3333), 5)
             qs = tmpl.gen_adaptive_questions(
                 world, rng, world.entities,
-                {e.name for e in world.entities}, 20, corrections)
+                {e.name for e in world.entities}, 40, corrections)
             for q in qs:
                 if q.competency == "multi_hop":
                     found += 1
@@ -299,7 +299,7 @@ def test_multi_hop_gt_correct():
                         assert world.get_entity(name) is not None
                     assert v.validate(q.answer, q.answer, q.competency)
         assert found > 0, (
-            f"{tmpl.name}: no multi_hop questions across 10 seeds")
+            f"{tmpl.name}: no multi_hop questions across 20 seeds")
 
 
 def test_outlier_gt_correct():
@@ -308,14 +308,14 @@ def test_outlier_gt_correct():
     for TmplClass in ALL_TMPLS:
         tmpl = TmplClass()
         found = 0
-        for seed in range(10):
+        for seed in range(20):
             world = tmpl.generate_world(seed=seed, n_entities=60)
             rng = Random(seed + 7777)
             corrections = tmpl.generate_corrections(
                 world, Random(seed + 3333), 5)
             qs = tmpl.gen_adaptive_questions(
                 world, rng, world.entities,
-                {e.name for e in world.entities}, 20, corrections)
+                {e.name for e in world.entities}, 40, corrections)
             for q in qs:
                 if q.competency == "outlier":
                     found += 1
@@ -324,7 +324,7 @@ def test_outlier_gt_correct():
                         assert world.get_entity(name) is not None
                     assert v.validate(q.answer, q.answer, q.competency)
         assert found > 0, (
-            f"{tmpl.name}: no outlier questions across 10 seeds")
+            f"{tmpl.name}: no outlier questions across 20 seeds")
 
 
 def test_comprehension_types_not_fingerprint_exploitable():

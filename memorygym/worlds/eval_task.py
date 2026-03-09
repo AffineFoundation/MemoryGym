@@ -172,6 +172,14 @@ def build_worldbench_stream(
     # Generate corrections (mutates world state)
     corrections = tmpl.generate_corrections(world, rng, n_corrections)
 
+    # Implicit contradictions (~30% of correction count)
+    n_contras = max(1, n_corrections // 3)
+    exclude_corrected = {c.entity_name for c in corrections}
+    rng_contra = Random(seed + 7373)
+    contradictions = tmpl.generate_contradictions(
+        world, rng_contra, n_contras,
+        exclude_entities=exclude_corrected)
+
     # Generate interleaved stream
     # For Inspect AI: we pre-generate with empty stored_names
     # (real detection happens at scoring time)
@@ -180,6 +188,7 @@ def build_worldbench_stream(
         stored_names=set(),  # unknown at build time
         n_questions=n_questions,
         entities_per_batch=entities_per_batch,
+        contradictions=contradictions,
     )
 
     return {
@@ -187,6 +196,7 @@ def build_worldbench_stream(
         "template": tmpl,
         "stream": stream,
         "corrections": corrections,
+        "contradictions": contradictions,
         "template_name": template_name,
         "seed": seed,
     }

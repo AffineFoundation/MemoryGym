@@ -62,9 +62,28 @@ eval 数据（ROADMAP.md §3）← 衡量差距
 
 ## 当前任务
 
-待办清空。所有非阻塞任务已完成。剩余任务阻塞于 GPU（端到端训练验证）和 API key（movie eval）。
+> 所有可执行任务已完成。仅剩阻塞任务（GPU/API key）。下次获得资源时继续。
 
 ## 已完成
+
+### Phase 7 — 一致性修复 + 训练安全 ✅
+1. ~~eval_scorer 补全 3 种关系题型~~ ✅ → _REASONING_COMPETENCIES 14 types
+2. ~~ROADMAP.md 权重表同步~~ ✅
+3. ~~训练 eval_salt 随机化~~ ✅ → MemoryEnv + generate_train_data.py
+4. ~~待办区清理~~ ✅
+
+### Phase 6 — 代码质量 + 轨迹分析 ✅
+1. ~~test_worlds.py 拆分~~ ✅ → test_worlds.py(699) + test_worlds_features.py(679)
+2. ~~轨迹分析~~ ✅ → 发现仅保存统计计数，缺失 tool_calls/results
+3. ~~增强轨迹保存~~ ✅ → turns 列表含 tool_calls(name+args) + tool_results
+
+### Phase 5 — 评测质量持续迭代 ✅
+1. ~~实体属性异构化~~ ✅ → per-entity 随机激活 5-9 个属性
+2. ~~跨类别聚合问题（cross_category）~~ ✅ → top-K 排名后聚合另一属性，需跨多类别实体
+3. ~~隐式矛盾（implicit contradictions）~~ ✅ → Contradiction 类 + generate_contradictions()
+4. ~~评分权重调整~~ ✅ → breadth 0.25, reasoning 0.30
+5. ~~轨迹保存~~ ✅ → *_trajectory.json
+6. ~~base.py 拆分~~ ✅ → types.py(125) + questions.py(769) + base.py(802)
 
 ### Phase 3 — RL 训练闭环（代码完成，待 GPU 验证）
 1. ~~MemoryEnv search 从 substring → embedding~~ ✅
@@ -86,17 +105,6 @@ eval 数据（ROADMAP.md §3）← 衡量差距
 1. ~~REDSearcher + agent RL 训练范式调研~~ ✅ → 产出 devlog/2026-03-08-agent-rl-research.md
 
 ## 待办
-
-> 战略推导。依据：所有外部依赖任务（GPU/API key）已阻塞，聚焦代码质量和鲁棒性。
-
-### Phase 4a — 系统鲁棒性（不依赖外部资源）
-1. ~~修复 priority>random 不变量 flaky~~ ✅ → 改为 global avg 软检查（2% 容差），67/67 invariants PASS
-2. ~~提升 stream_agent 工具解析鲁棒性~~ ✅ → 支持 <function_call>、markdown code block、bare JSON 三种格式，adapters/_common.py 同步更新
-3. ~~更新 ROADMAP §7 参考文献~~ ✅ → 补充 Search-R1, VerlTool, AgentGym-RL
-
-### Phase 4b — 训练准备（不依赖 GPU）
-1. ~~渐进式训练 curriculum 配置~~ ✅ → verl_curriculum.yaml（3 阶段）+ generate_train_data.py --curriculum（60/30/10 分布）
-2. ~~VerlTool 分离 tokenization 方案预研~~ ✅ → 设计文档 devlog/2026-03-08-verltool-tokenization.md（待 GPU 验证后实施）
 
 ### 阻塞任务（等待外部资源）
 - GPU 端到端训练验证（需 4+ GPU）

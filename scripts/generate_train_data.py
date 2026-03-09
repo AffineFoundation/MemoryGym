@@ -40,11 +40,15 @@ def generate_prompts(
 
     for template_name in templates:
         for seed in range(seeds):
+            # eval_salt prevents RL from memorizing seed-specific values.
+            # Hash of seed ensures deterministic but varied perturbation.
+            salt = (seed * 6971 + hash(template_name)) % (2**16)
             # Create env to get the first observation
             env = MemoryEnv(
                 template_name=template_name,
                 tier=tier,
                 seed=seed,
+                eval_salt=salt,
             )
             first_obs = env.reset(seed=seed)
             system_prompt = get_system_prompt(env.write_budget)
@@ -58,6 +62,7 @@ def generate_prompts(
                     "template": template_name,
                     "tier": tier,
                     "seed": seed,
+                    "eval_salt": salt,
                     "data_source": "memorygym",
                 },
             }

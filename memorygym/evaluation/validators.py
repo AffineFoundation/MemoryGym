@@ -57,7 +57,7 @@ class AnswerValidator:
             return True
 
         if question_type in ("retrieval", "update", "aggregation",
-                              "ratio", "delta"):
+                              "cross_category", "ratio", "delta"):
             if self._numeric_match(answer, ground_truth):
                 return True
 

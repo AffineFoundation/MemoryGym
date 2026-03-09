@@ -9,7 +9,7 @@ Axes:
 Diagnostic (not in composite):
 - abstention_diagnostic: abstention question accuracy
 
-Composite: 0.30×breadth + 0.25×maintenance + 0.25×reasoning + 0.20×efficiency
+Composite: 0.25×breadth + 0.25×maintenance + 0.30×reasoning + 0.20×efficiency
 """
 
 from __future__ import annotations
@@ -31,9 +31,10 @@ log = logging.getLogger(__name__)
 
 # All comprehension competency types for the reasoning axis
 _REASONING_COMPETENCIES = frozenset({
-    "synthesis", "aggregation", "conditional", "ratio",
+    "synthesis", "aggregation", "cross_category", "conditional", "ratio",
     "comparison", "multi_hop", "outlier", "delta",
     "relationship_lookup", "relationship_hop",
+    "relationship_chain", "relationship_count", "relationship_filter",
 })
 
 
@@ -136,9 +137,9 @@ def worldbench_scorer(judge_model: str | None = None) -> Any:
             sum(r["correct"] for r in abs_rs) / len(abs_rs)
             if abs_rs else 0.0)
 
-        # Composite: weighted sum
-        composite = (0.30 * breadth + 0.25 * maintenance
-                     + 0.25 * reasoning + 0.20 * efficiency)
+        # Composite: weighted sum (reasoning > breadth to reward deep understanding)
+        composite = (0.25 * breadth + 0.25 * maintenance
+                     + 0.30 * reasoning + 0.20 * efficiency)
 
         # Per-competency breakdown
         by_comp: dict[str, list[bool]] = defaultdict(list)

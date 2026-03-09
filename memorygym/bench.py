@@ -182,7 +182,15 @@ def main(argv: list[str] | None = None) -> int:
                       end="", flush=True)
                 corrections = tmpl.generate_corrections(
                     world, rng, n_corrections)
-                print(f" {len(corrections)} corrections")
+                # Implicit contradictions: ~30% of correction count
+                n_contras = max(1, n_corrections // 3)
+                exclude_corrected = {c.entity_name for c in corrections}
+                rng_contra = Random(seed + 7373)
+                contradictions = tmpl.generate_contradictions(
+                    world, rng_contra, n_contras,
+                    exclude_entities=exclude_corrected)
+                print(f" {len(corrections)} corrections, "
+                      f"{len(contradictions)} contradictions")
 
                 print(f"  [{tmpl.name}] seed={seed} — Building stream ...",
                       end="", flush=True)
@@ -191,6 +199,7 @@ def main(argv: list[str] | None = None) -> int:
                     stored_names=set(),
                     n_questions=n_questions,
                     entities_per_batch=10,
+                    contradictions=contradictions,
                 )
                 n_ingest = sum(1 for e in stream if e["type"] == "ingest")
                 n_correct = sum(1 for e in stream if e["type"] == "correction")
@@ -201,7 +210,7 @@ def main(argv: list[str] | None = None) -> int:
 
                 print(f"  [{tmpl.name}] seed={seed} — Running agent "
                       f"({args.model}) ...")
-                agent_results, writes_used, stored, eval_error = run_stream_agent(
+                agent_results, writes_used, stored, eval_error, traj = run_stream_agent(
                     model=args.model,
                     stream=stream,
                     write_budget=write_budget,
@@ -301,6 +310,16 @@ def main(argv: list[str] | None = None) -> int:
                     json.dumps(eval_result, indent=2, default=str))
                 tmp_path.rename(eval_path)
                 print(f"  Saved: {eval_path}")
+
+                # Save trajectory alongside result
+                if traj:
+                    traj_path = (eval_dir / f"{safe_model}_{tmpl.name}"
+                                 f"_s{seed}_trajectory.json")
+                    traj_tmp = traj_path.with_suffix(".tmp")
+                    traj_tmp.write_text(
+                        json.dumps(traj, indent=2, default=str))
+                    traj_tmp.rename(traj_path)
+                    print(f"  Trajectory: {traj_path}")
 
             else:
                 # Simulation mode (system self-testing)

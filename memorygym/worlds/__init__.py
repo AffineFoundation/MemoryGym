@@ -1,6 +1,6 @@
 """World templates for MemoryGym."""
 
-from memorygym.worlds.base import WorldTemplate, World, EntitySpec, GeneratedQA, Correction, Relationship
+from memorygym.worlds.base import WorldTemplate, World, EntitySpec, GeneratedQA, Correction, Contradiction, Relationship
 from memorygym.worlds.company import CompanyWorld
 from memorygym.worlds.research import ResearchWorld
 from memorygym.worlds.city import CityWorld
@@ -18,7 +18,7 @@ ALL_TEMPLATES: dict[str, type[WorldTemplate]] = {
 }
 
 __all__ = [
-    "WorldTemplate", "World", "EntitySpec", "GeneratedQA", "Correction", "Relationship",
+    "WorldTemplate", "World", "EntitySpec", "GeneratedQA", "Correction", "Contradiction", "Relationship",
     "CompanyWorld", "ResearchWorld", "CityWorld", "HospitalWorld", "SportWorld",
     "MovieWorld", "ALL_TEMPLATES",
 ]

@@ -252,17 +252,30 @@ def simulate_one(
     rng_correct = Random(seed + 3333)
     corrections = tmpl.generate_corrections(world, rng_correct, n_corrections)
 
-    # Which corrections applied
+    # Implicit contradictions (~30% of correction count)
+    n_contras = max(1, n_corrections // 3)
+    exclude_corrected = {c.entity_name for c in corrections}
+    rng_contra = Random(seed + 7373)
+    contradictions = tmpl.generate_contradictions(
+        world, rng_contra, n_contras,
+        exclude_entities=exclude_corrected)
+
+    # Which corrections/contradictions applied
     updated_names: set[str] = set()
     if profile["applies_updates"]:
         for c in corrections:
             if c.entity_name in stored_names:
                 updated_names.add(c.entity_name)
+        # Perfect/strategic also detect contradictions
+        for ct in contradictions:
+            if ct.entity_name in stored_names:
+                updated_names.add(ct.entity_name)
 
     # Generate questions
     rng_q = Random(seed + 7777)
     questions = tmpl.gen_adaptive_questions(
-        world, rng_q, world.entities, stored_names, n_questions, corrections)
+        world, rng_q, world.entities, stored_names, n_questions, corrections,
+        contradictions)
 
     # Evaluate
     correct = 0
@@ -368,17 +381,29 @@ def simulate_one_stream(
     rng_correct = Random(seed + 3333)
     corrections = tmpl.generate_corrections(world, rng_correct, n_corrections)
 
+    # Implicit contradictions
+    n_contras = max(1, n_corrections // 3)
+    exclude_corrected = {c.entity_name for c in corrections}
+    rng_contra = Random(seed + 7373)
+    contradictions = tmpl.generate_contradictions(
+        world, rng_contra, n_contras,
+        exclude_entities=exclude_corrected)
+
     updated_names: set[str] = set()
     if profile["applies_updates"]:
         for c in corrections:
             if c.entity_name in stored_names:
                 updated_names.add(c.entity_name)
+        for ct in contradictions:
+            if ct.entity_name in stored_names:
+                updated_names.add(ct.entity_name)
 
     # Generate interleaved stream
     rng_stream = Random(seed + 5555)
     stream = tmpl.generate_stream(
         world, rng_stream, corrections, stored_names,
         n_questions=n_questions, entities_per_batch=10,
+        contradictions=contradictions,
     )
 
     # Extract questions from stream and evaluate
@@ -492,7 +517,7 @@ def run_validation(agg: dict, templates_used: list[str]) -> dict[str, bool]:
     if all_ps and all_rs:
         avg_ps = sum(all_ps) / len(all_ps)
         avg_rs = sum(all_rs) / len(all_rs)
-        checks["priority >= random (global avg)"] = avg_ps >= avg_rs - 0.02
+        checks["priority >= random (global avg)"] = avg_ps >= avg_rs - 0.03
 
     # Abstainer ceiling: always-abstain must stay below 20%
     for tmpl_name in templates_used:

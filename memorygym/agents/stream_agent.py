@@ -251,6 +251,7 @@ class _LoopStats:
     retries: int = 0
     ctx_trims: int = 0
     error: str | None = None
+    turns: list[dict] = field(default_factory=list)  # per-turn detail
 
 
 def _run_tool_loop(
@@ -319,9 +320,37 @@ def _run_tool_loop(
         text = response.choices[0].message.content or ""
         messages.append({"role": "assistant", "content": text})
 
-        results, answer, n_w, n_s = _parse_and_execute(text, backend, budget)
+        parsed_calls = _extract_tool_calls(text)
+        results: list[str] = []
+        answer: str | None = None
+        n_w = n_s = 0
+        for call in parsed_calls:
+            name = call.get("name", "")
+            args = call.get("arguments", {})
+            if name == "memory_store":
+                n_w += 1
+            elif name in ("memory_search", "memory_list", "memory_get"):
+                n_s += 1
+            result_text, submitted = _execute_tool(
+                name, args, backend, budget)
+            results.append(f"[{name}] {result_text}")
+            if submitted is not None:
+                answer = submitted
         stats.writes += n_w
         stats.searches += n_s
+
+        # Capture per-turn detail for trajectory
+        turn_detail: dict[str, Any] = {
+            "turn": turn,
+            "tool_calls": [
+                {"name": c.get("name"), "arguments": c.get("arguments", {})}
+                for c in parsed_calls
+            ],
+            "tool_results": results,
+        }
+        if answer is not None:
+            turn_detail["answer"] = answer
+        stats.turns.append(turn_detail)
 
         if answer is not None:
             stats.answer = answer
@@ -416,6 +445,7 @@ def run_stream_agent(
     }]
 
     results: list[AgentResult] = []
+    trajectory: list[dict] = []  # Per-event trajectory log
     pending_judge: list[tuple] = []  # (result_idx, question, gt, answer, competency)
     total_api_calls = 0
     run_t0 = time.time()
@@ -463,6 +493,16 @@ def run_stream_agent(
 
             print(f" {stats.api_calls} calls {stats.elapsed:.1f}s "
                   f"budget={budget.remaining()}")
+            trajectory.append({
+                "event_idx": event_idx,
+                "type": "ingest",
+                "entity_names": event.get("entity_names", []),
+                "writes": stats.writes,
+                "searches": stats.searches,
+                "api_calls": stats.api_calls,
+                "budget_remaining": budget.remaining(),
+                "turns": stats.turns,
+            })
             if stats.error:
                 print(f"  ERROR: {stats.error}")
                 eval_error = stats.error
@@ -484,6 +524,16 @@ def run_stream_agent(
 
             print(f" {stats.api_calls} calls {stats.elapsed:.1f}s "
                   f"budget={budget.remaining()}")
+            trajectory.append({
+                "event_idx": event_idx,
+                "type": "correction",
+                "entity_name": event["entity_name"],
+                "attr": event["attr"],
+                "writes": stats.writes,
+                "searches": stats.searches,
+                "api_calls": stats.api_calls,
+                "turns": stats.turns,
+            })
             if stats.error:
                 print(f"  ERROR: {stats.error}")
                 eval_error = stats.error
@@ -580,6 +630,21 @@ def run_stream_agent(
                 elapsed=stats.elapsed,
                 retries=stats.retries,
             ))
+            trajectory.append({
+                "event_idx": event_idx,
+                "type": "question",
+                "competency": event["competency"],
+                "purpose": event.get("purpose", ""),
+                "question": event["question"],
+                "ground_truth": gt,
+                "agent_answer": agent_answer,
+                "correct": is_correct,
+                "writes": stats.writes,
+                "searches": stats.searches,
+                "api_calls": stats.api_calls,
+                "elapsed": round(stats.elapsed, 2),
+                "turns": stats.turns,
+            })
 
         # Selective redaction: keep system prompt + memory state summary.
         # Without this, the model enters each event with zero context
@@ -665,4 +730,4 @@ def run_stream_agent(
     print(summary + " ---")
 
     stored_contents = [e["content"] for e in backend.list()]
-    return results, budget.writes_used, stored_contents, eval_error
+    return results, budget.writes_used, stored_contents, eval_error, trajectory

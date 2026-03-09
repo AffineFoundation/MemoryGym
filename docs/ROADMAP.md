@@ -82,9 +82,9 @@ memorygym/
 
 | 轴 | 权重 | 测什么 |
 |----|------|--------|
-| breadth | 0.30 | 存储广度（retrieval 正确率）|
+| breadth | 0.25 | 存储广度（retrieval 正确率）|
 | maintenance | 0.25 | 记忆维护（update 正确率 × coverage gate）|
-| reasoning | 0.25 | 推理能力（13 种 comprehension 题型，含 5 种关系推理）|
+| reasoning | 0.30 | 推理能力（14 种 comprehension 题型，含 5 种关系推理）|
 | efficiency | 0.20 | 效率（correct/writes_used）|
 
 abstention_diagnostic 单独报告，不计入 composite。

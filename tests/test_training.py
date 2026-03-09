@@ -223,6 +223,32 @@ class TestMemoryEnv:
         assert "Corrections coming:" in obs
         assert "Suggestion:" in obs
 
+    def test_eval_salt_changes_values(self):
+        """eval_salt must perturb entity values to prevent RL memorization."""
+        env0 = MemoryEnv("company", seed=0, n_entities=10,
+                         n_questions=3, eval_salt=0)
+        env0.reset(seed=0)
+        vals0 = {e.name: dict(e.attrs) for e in env0._world.entities}
+
+        env1 = MemoryEnv("company", seed=0, n_entities=10,
+                         n_questions=3, eval_salt=99)
+        env1.reset(seed=0)
+        vals1 = {e.name: dict(e.attrs) for e in env1._world.entities}
+
+        # Same entity names
+        assert set(vals0.keys()) == set(vals1.keys())
+        # Values must differ
+        changed = 0
+        total = 0
+        for name in vals0:
+            for attr in vals0[name]:
+                if vals0[name][attr] is not None:
+                    total += 1
+                    if vals0[name][attr] != vals1[name].get(attr):
+                        changed += 1
+        assert changed > total * 0.5, (
+            f"eval_salt changed only {changed}/{total} values")
+
     def test_episode_complete_text(self):
         env = MemoryEnv("company", seed=0, n_entities=10, n_questions=5)
         obs = env.reset()
