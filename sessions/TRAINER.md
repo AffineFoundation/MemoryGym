@@ -112,33 +112,59 @@
 
 ---
 
-## 当前任务
+## 训练 CLI
 
-### 训练 CLI
+统一入口 `python -m memorygym.training <command>`，一键完成数据生成→训练全流程。
 
 ```bash
-# 远程训练（自动检测 GPU、流式日志）
-# SSH 地址和模型路径见 .env 文件
-python scripts/train.py --remote $GPU_SSH \
-    --model $MODEL_PATH --data data/sft_short.jsonl --lora --epochs 5 --max-length 8192
+# 冒烟测试（无 GPU）
+python -m memorygym.training smoke
 
-# 仅查看 GPU 状态
-python scripts/train.py --remote $GPU_SSH --check-gpu
+# 生成 SFT 数据（6 模板 × 20 seeds = 120 轨迹）
+python -m memorygym.training data --seeds 20 -o data/sft_train.jsonl
 
-# 同步代码 + 训练
+# SFT 一键训练（自动生成数据 + 训练）
+python -m memorygym.training sft --model $MODEL_PATH --lora
+
+# SFT 用已有数据
+python -m memorygym.training sft --model $MODEL_PATH --data data/sft_train.jsonl --lora
+
+# GRPO 强化学习（从 SFT checkpoint 出发）
+python -m memorygym.training grpo --model $MODEL_PATH --adapter checkpoints/sft/final \
+    --steps 50 --group-size 4
+
+# 远程训练（SSH 到 GPU 机，见 .env 中 $GPU_SSH）
 python scripts/train.py --remote $GPU_SSH --sync --model $MODEL_PATH --lora
 ```
 
+### 训练模块结构
+
+```
+memorygym/training/
+    __init__.py      # 向后兼容 re-exports (MemoryEnv, generate_sft_trajectory)
+    env.py           # MemoryEnv RL 环境 + SFT 轨迹生成
+    common.py        # 共享工具（模型加载、assistant mask、chat template）
+    cli.py           # 统一 CLI 入口（data/sft/grpo/smoke）
+    __main__.py      # python -m memorygym.training 入口
+```
+
+### 输出结构
+
+每次训练自动创建 `runs/<mode>_<timestamp>/` 目录：
+- `config.json` — 完整超参（可复现）
+- `training_log.jsonl` — 每步指标（loss、reward、correct）
+- `metrics.json` — 最终摘要
+- `episodes/` — GRPO episode 采样（调试用）
+- `checkpoints/` — 模型检查点
+
 ## 待办
 
-1. **GRPO 训练**（SFT baseline 已建立）
-   - 用 SFT checkpoint 作为初始化，GRPO 优化 episode reward
-2. **SFT 全流程验收**
-   - 用 smoke_test_gpu.py 跑完整 episode，验证 tool calls 正确率
-   - 评估 composite score（目标 ≥ 45%）
-3. 训练超参调优（基于训练结果）
-4. 更多 shaped reward 信号（如 search 精准度奖励）
-5. 多模板 curriculum 效果验证
+1. **GRPO 超参调优**（当前优先）
+   - GRPO 管线已验证：1 step 2 episodes → loss=0.504, mean_r=0.350, correct=1.5/10
+   - 优化方向：增大 group_size 和 steps，减少 max_new_tokens
+   - 用更多 GPU 并行加速 rollout
+2. 更多 shaped reward 信号（如 search 精准度奖励、correction 完成奖励）
+3. 多模板 curriculum 效果验证（lite → standard → multi）
 
 ## 已完成
 
@@ -150,17 +176,20 @@ python scripts/train.py --remote $GPU_SSH --sync --model $MODEL_PATH --lora
 - 共享工具解析（_common.py：4 种格式解析 + episode runner）
 - 训练数据生成脚本（单 tier / curriculum 混合 tier）
 - 训练配置（GRPO + curriculum YAML）
-- 完整测试覆盖（36 tests in test_training.py）
-- noise/session_break 事件支持（training.py: _format_event + generate_sft_trajectory）
-- GPU 冒烟测试脚本（scripts/smoke_test_gpu.py，dry-run 验证通过）
-- GPU 端到端冒烟测试通过 ✅
+- 完整测试覆盖（36 tests in test_training.py + 32 in test_adapters.py）
+- noise/session_break 事件支持
+- GPU 冒烟测试
 - 远程训练 CLI（scripts/train.py）— SSH 远程执行 + 实时日志 + GPU 自动检测
-- SFT 训练管线完成 ✅
-  - assistant-only label masking（37.5% 有效 token，不训练文档预测）
-  - Qwen3-4B LoRA rank=16, 5 epochs, loss 0.22→0.06
-  - 训练后模型正确产出 `<tool_call>` 标签
-  - 关键参数：max_length=8192（短数据 avg 8K tokens，2048 会截断所有 assistant 内容）
-  - 数据：180 短轨迹（10 entities, 3 questions, avg 17 messages）
-  - checkpoint: `checkpoints/sft-qwen3-4b-masked` on GPU machine
-- 多卡训练支持（sft_train.py: DDP/FSDP via accelerate）
+- SFT 训练管线完成 — loss 0.22→0.06，正确产出 `<tool_call>` 标签
+- 多卡训练支持（DDP/FSDP via accelerate）
+- SFT 全流程验收 — 结果：12 stores, 0/10 correct, reward=0.07
+- 统一训练模块（`memorygym/training/` 包重构）
+  - 单入口 CLI：`python -m memorygym.training <command>`
+  - SFT 自动数据生成 + 训练
+  - GRPO 管线（episode rollout + advantage-weighted policy gradient）
+  - 共享工具层（模型加载、assistant mask、chat template）
+  - 结构化输出（config.json, training_log.jsonl, metrics.json, episodes/）
+- GRPO 管线端到端验证 — loss=0.504, mean_r=0.350, correct=1.5/10
+  - SFT checkpoint → merge → new LoRA → rollout → GRPO loss → update
+  - 详见 `devlog/sft-baseline.md`
 

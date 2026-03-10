@@ -20,9 +20,14 @@ Usage (on GPU machine):
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 import time
 from pathlib import Path
+
+# Offline mode: avoid hanging on HF hub checks for embedding models
+os.environ.setdefault("TRANSFORMERS_OFFLINE", "1")
+os.environ.setdefault("HF_HUB_OFFLINE", "1")
 
 # Add project root to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -255,7 +260,14 @@ def run_gpu_smoke(model_name: str, tier: str = "lite",
             chat_kwargs["enable_thinking"] = False
             print("  (Qwen3 thinking mode disabled for tool-calling)")
 
+    degenerate_count = 0
+    last_output = ""
+
     while not done and turn < max_turns:
+        # Context window management: keep system + last N turns
+        if len(context) > 20:
+            context = context[:1] + context[-18:]  # system + recent turns
+
         # Generate
         t0 = time.time()
         input_text = tokenizer.apply_chat_template(
