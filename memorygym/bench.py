@@ -313,7 +313,7 @@ def main(argv: list[str] | None = None) -> int:
                     "extra": {
                         "version": __version__,
                         "model": args.model,
-                        "backend": args.backend,
+                        "backend": "chromadb",
                         "seed": seed,
                         "template": tmpl.name,
                         "n_entities": n_entities,

@@ -160,9 +160,10 @@ MemoryEnv 的工具接口和 reward 信号适配：
 
 ---
 
-### Phase 60 — Phase 59 遗留 bug 修复（审计 A40 发现）
+### Phase 60 — Phase 59 遗留 bug 修复（审计 A40 发现）✅
 
-**背景**：审计 A40 代码审查发现 Phase 59.2 的工具接口改造有 5 个遗留 bug。simulation.py 无需改动（不调用 backend），training/env.py 已正确适配。
+6/6 bug 全部修复。审计线程直接修复（执行者 7 轮未活动，Bug 2+4 已造成评测数据损失）。
+340 passed, simulation ALL PASS。
 
 #### Bug 1（HIGH）— stream_agent.py 工具调用计数遗漏
 

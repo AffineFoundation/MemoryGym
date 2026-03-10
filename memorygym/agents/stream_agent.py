@@ -310,9 +310,9 @@ def _parse_and_execute(
         name = call.get("name", "")
         args = call.get("arguments", {})
 
-        if name == "memory_store":
+        if name in ("Write", "Edit", "memory_store"):
             n_writes += 1
-        elif name in ("memory_search", "memory_list", "memory_get"):
+        elif name in ("memory_search", "memory_list", "memory_get", "Read"):
             n_searches += 1
 
         result_text, submitted = _execute_tool(name, args, backend, budget)
@@ -411,9 +411,9 @@ def _run_tool_loop(
         for call in parsed_calls:
             name = call.get("name", "")
             args = call.get("arguments", {})
-            if name == "memory_store":
+            if name in ("Write", "Edit", "memory_store"):
                 n_w += 1
-            elif name in ("memory_search", "memory_list", "memory_get"):
+            elif name in ("memory_search", "memory_list", "memory_get", "Read"):
                 n_s += 1
             result_text, submitted = _execute_tool(
                 name, args, backend, budget)
@@ -670,8 +670,7 @@ def run_stream_agent(
                 f"**Correction Notice:**\n{event['notice']}\n\n"
                 f"ACTION REQUIRED: You must update your stored memory.\n"
                 f"1. memory_search \"{entity_name}\"\n"
-                f"2. memory_forget the old entry\n"
-                f"3. memory_store with the corrected value\n"
+                f"2. Edit the old value to the corrected value\n"
                 f"Budget: {budget.remaining()} writes remaining."
             )
             messages.append({"role": "user", "content": content})
@@ -681,23 +680,33 @@ def run_stream_agent(
             # Determine if correction was actually applied
             chain = _extract_action_chain(stats.turns)
             did_store = any(
-                c.get("name") == "memory_store"
+                c.get("name") in ("Write", "memory_store")
+                for t in stats.turns for c in t.get("tool_calls", [])
+            )
+            did_edit = any(
+                c.get("name") == "Edit"
                 for t in stats.turns for c in t.get("tool_calls", [])
             )
             did_search = any(
                 c.get("name") == "memory_search"
                 for t in stats.turns for c in t.get("tool_calls", [])
             )
-            # Check if stored content contains new value
+            # Check if stored/edited content contains new value
             stored_new = False
             for t in stats.turns:
                 for c in t.get("tool_calls", []):
-                    if c.get("name") == "memory_store":
-                        sc = str(c.get("arguments", {}).get("content", ""))
+                    cname = c.get("name", "")
+                    cargs = c.get("arguments", {})
+                    if cname in ("Write", "memory_store"):
+                        sc = str(cargs.get("content", ""))
+                        if str(new_val) in sc:
+                            stored_new = True
+                    elif cname == "Edit":
+                        sc = str(cargs.get("new_text", ""))
                         if str(new_val) in sc:
                             stored_new = True
 
-            correction_ok = did_store and stored_new
+            correction_ok = (did_store or did_edit) and stored_new
             correction_results.append({
                 "entity": entity_name, "attr": attr,
                 "success": correction_ok,

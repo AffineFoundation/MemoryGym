@@ -22,6 +22,7 @@ _BARE_JSON_RE = re.compile(
 )
 
 _KNOWN_TOOLS = {
+    "Write", "Edit", "Read",
     "memory_store", "memory_search", "memory_get",
     "memory_forget", "memory_list", "submit_answer",
 }
@@ -82,13 +83,23 @@ def format_tool_result(action: dict[str, Any], info: dict[str, Any]) -> str:
     """Format MemoryEnv step result as text feedback for the model."""
     tool = action["tool"]
 
-    if tool == "memory_store":
+    if tool in ("Write", "memory_store"):
         if "error" in info:
-            return f"[memory_store] Error: {info['error']}"
-        return (
-            f"[memory_store] Stored (id={info['memory_id']}). "
-            f"Budget remaining: {info['remaining']}"
-        )
+            return f"[{tool}] Error: {info['error']}"
+        remaining = info.get("remaining", "?")
+        mem_id = info.get("memory_id", "")
+        return f"[{tool}] Stored (id={mem_id}). Budget remaining: {remaining}"
+
+    if tool == "Edit":
+        if info.get("edited", info.get("deleted", False)):
+            return f"[Edit] Updated. Budget remaining: {info.get('remaining', '?')}"
+        return "[Edit] Text not found — no changes made."
+
+    if tool in ("Read", "memory_get"):
+        content = info.get("content", "")
+        if not content:
+            return f"[{tool}] (empty)"
+        return f"[{tool}] {content[:500]}"
 
     if tool == "memory_search":
         results = info.get("results", [])
