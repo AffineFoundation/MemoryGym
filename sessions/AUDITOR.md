@@ -7,10 +7,10 @@
 ## 线程架构
 
 ```
-sessions/AUDITOR.md（你，/loop 60m）— 调度中枢：审计、设计、方向决策
-  ├→ sessions/EXECUTOR.md（/loop 30m）— 执行线程：写代码、跑测试、提交
-  ├→ sessions/EVALUATOR.md（/loop 30m）— 评测线程：跑模型评测、收集数据
-  └→ sessions/TRAINER.md（/loop 60m）— 训练线程：RL 训练闭环
+sessions/AUDITOR.md（你，/loop 30m）— 调度中枢：审计、设计、方向决策
+  ├→ sessions/EXECUTOR.md（/loop 10m）— 执行线程：写代码、跑测试、提交
+  ├→ sessions/EVALUATOR.md（/loop 10m）— 评测线程：跑模型评测、收集数据
+  └→ sessions/TRAINER.md（/loop 20m）— 训练线程：RL 训练闭环
 ```
 
 - 执行线程和评测线程**不感知你的存在**
