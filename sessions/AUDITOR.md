@@ -153,11 +153,11 @@ sessions/AUDITOR.md（你，/loop 30m）— 调度中枢：审计、设计、方
 
 ## 当前任务
 
-### 审计 A60 — 下一轮
+### 审计 A61 — 下一轮
 
 - 各线程活动检查
-- Phase 65 进展跟踪
-- 维度 B（实现完整性）— 端到端集成测试审计
+- Phase 65 进展跟踪（执行者连续 10+ 轮无活动，考虑直接修复）
+- 维度 C（前沿演进）或维度 E（数据驱动）审计
 
 ## 待跟进
 
@@ -177,6 +177,18 @@ sessions/AUDITOR.md（你，/loop 30m）— 调度中枢：审计、设计、方
 ## 审计日志
 
 （每次审计的结论摘要，最新在最上面。保持简洁，详细分析写 devlog/。）
+
+### 审计 A60（2026-03-10）— 端到端集成测试（维度 B）
+
+**端到端验证**（6 个 CLI 路径全部通过）：
+- `--validate` (5 seeds): ALL PASS。单 seed smart_guesser 边界为已知问题
+- `--backend markdown`: ✅ 运行正常，template_expert=80%（vs chromadb 差异合理）
+- `--tier standard/hard` + `--template`: ✅
+- Inspect AI `worldbench(seed=0, template='company')`: ✅ Task 创建成功
+- SFT 轨迹生成: ✅ 133 messages，tool_call XML 格式与 adapter 一致
+- Training smoke: ✅ PASSED
+
+**未发现新 bug**。Phase 65（env.py Edit hasattr）仍为最高优先级。执行者持续无活动。
 
 ### 审计 A59（2026-03-10）— 能力缺口审计（维度 A）
 
