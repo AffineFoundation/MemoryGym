@@ -10,9 +10,36 @@ ChromaDB which stores content verbatim.
 
 from __future__ import annotations
 
+import os
 from typing import Any
 
 from mem0 import Memory
+
+from memorygym.config import get_api_config
+
+
+def _default_config() -> dict[str, Any]:
+    """Build mem0 config from global API configuration."""
+    cfg = get_api_config()
+    model = os.environ.get(
+        "MEM0_LLM_MODEL", "Qwen/Qwen3-235B-A22B-Instruct-2507-TEE")
+
+    config: dict[str, Any] = {
+        "llm": {"provider": "openai", "config": {
+            "model": model,
+            "api_key": cfg.api_key,
+            "openai_base_url": cfg.api_url,
+        }},
+        "embedder": {"provider": "huggingface", "config": {
+            "model": "all-MiniLM-L6-v2",
+        }},
+        "vector_store": {"provider": "qdrant", "config": {
+            "collection_name": "memorygym",
+            "path": "/tmp/mem0_qdrant",
+            "embedding_model_dims": 384,
+        }},
+    }
+    return config
 
 
 class Mem0Backend:
@@ -21,25 +48,10 @@ class Mem0Backend:
     Delegates all operations to the mem0 SDK, mapping the MemoryGym
     backend interface to mem0's API.
 
-    Args:
-        config: mem0 config dict. If None, uses defaults (requires
-            OPENAI_API_KEY). Example config for custom LLM/embedder::
+    When no config is provided, uses global API config (memorygym.config).
 
-                {
-                    "llm": {"provider": "openai", "config": {
-                        "model": "deepseek-ai/DeepSeek-V3",
-                        "api_key": "...",
-                        "openai_base_url": "https://llm.chutes.ai/v1",
-                    }},
-                    "embedder": {"provider": "huggingface", "config": {
-                        "model": "all-MiniLM-L6-v2",
-                    }},
-                    "vector_store": {"provider": "qdrant", "config": {
-                        "collection_name": "memorygym",
-                        "path": "/tmp/mem0_qdrant",
-                        "embedding_model_dims": 384,
-                    }},
-                }
+    Args:
+        config: mem0 config dict. If None, uses global API config.
         user_id: mem0 user ID for scoping memories.
     """
 
@@ -48,10 +60,9 @@ class Mem0Backend:
         config: dict[str, Any] | None = None,
         user_id: str = "memorygym",
     ) -> None:
-        if config is not None:
-            self._m = Memory.from_config(config)
-        else:
-            self._m = Memory()
+        if config is None:
+            config = _default_config()
+        self._m = Memory.from_config(config)
         self._user_id = user_id
 
     def store(self, content: str, memory_id: str | None = None) -> str:

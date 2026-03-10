@@ -64,6 +64,7 @@ from openai import OpenAI
 
 load_dotenv()
 
+from memorygym.config import get_api_config
 from memorygym.evaluation.llm_judge import llm_judge_validate_sync
 from memorygym.evaluation.validators import validate_with_fallback
 from memorygym.memory.backends.chromadb_backend import ChromaDBBackend
@@ -466,27 +467,11 @@ def run_stream_agent(
     Returns:
         (results, writes_used, stored_contents, error_or_none)
     """
-    if api_key is None:
-        api_key = os.environ.get("CHUTES_API_KEY") or os.environ.get("OPENAI_API_KEY")
-    if not api_key:
-        raise RuntimeError(
-            "Set CHUTES_API_KEY or OPENAI_API_KEY environment variable")
+    cfg = get_api_config(api_key=api_key, api_url=api_base)
+    client = OpenAI(api_key=cfg.api_key, base_url=cfg.api_url)
 
-    kwargs: dict[str, Any] = {"api_key": api_key}
-    if api_base:
-        kwargs["base_url"] = api_base
-    elif not os.environ.get("OPENAI_API_KEY"):
-        # Default to Chutes API when using CHUTES_API_KEY
-        kwargs["base_url"] = "https://llm.chutes.ai/v1"
-
-    client = OpenAI(**kwargs)
-
-    # Judge client: always uses Chutes API for cheap multi-model judging
-    judge_api_key = os.environ.get("CHUTES_API_KEY") or api_key
-    judge_client = OpenAI(
-        api_key=judge_api_key,
-        base_url="https://llm.chutes.ai/v1",
-    )
+    # Judge client: same API config (Chutes supports cheap multi-model judging)
+    judge_client = OpenAI(api_key=cfg.api_key, base_url=cfg.api_url)
 
     if backend is None:
         backend = ChromaDBBackend()

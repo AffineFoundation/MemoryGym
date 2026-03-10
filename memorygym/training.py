@@ -342,6 +342,7 @@ class MemoryEnv:
         # Shaped reward tracking
         self._correction_searched: bool = False
         self._correction_forgot: bool = False
+        self._stored_entity_names: set[str] = set()
 
         self._backend_type = backend_type
         self._backend = self._make_backend()
@@ -445,6 +446,7 @@ class MemoryEnv:
         self._world = world
         self._correction_searched = False
         self._correction_forgot = False
+        self._stored_entity_names = set()
 
         # Precompute question/correction counts
         self._total_questions = sum(
@@ -495,8 +497,17 @@ class MemoryEnv:
                     # Reward for storing content with entity names
                     if current_event and event_type == "ingest":
                         names = current_event.get("entity_names", [])
-                        if any(n.lower() in content.lower() for n in names):
-                            reward = 0.3  # Good: stored relevant entity data
+                        matched = [n for n in names
+                                   if n.lower() in content.lower()]
+                        if matched:
+                            # Check for duplicates
+                            is_dup = any(n in self._stored_entity_names
+                                         for n in matched)
+                            if is_dup:
+                                reward = -0.1  # Penalty: duplicate wastes budget
+                            else:
+                                reward = 0.3  # Good: stored new entity data
+                            self._stored_entity_names.update(matched)
                     elif event_type == "correction":
                         # Storing during correction after search+forget = correction flow
                         if self._correction_searched and self._correction_forgot:
@@ -511,7 +522,9 @@ class MemoryEnv:
                 {"id": r["id"], "content": r["content"]}
                 for r in results
             ]
-            if shaped and event_type == "correction" and info["results"]:
+            if shaped and event_type == "correction":
+                if not self._correction_searched:
+                    reward = 0.1  # Good: immediately searched after correction
                 self._correction_searched = True
 
         elif tool == "memory_forget":
@@ -564,9 +577,15 @@ class MemoryEnv:
     def get_verifiable_reward(self) -> float:
         """Episode accuracy for GRPO outcome reward.
 
-        Returns correct_count / total_questions regardless of reward_mode.
-        Shaped per-step rewards are orthogonal to episode-level GRPO reward.
+        Returns correct_count / total_questions plus efficiency bonus in
+        shaped mode. Shaped per-step rewards are orthogonal to this.
         """
         if self._total_questions == 0:
             return 0.0
-        return self._correct_count / self._total_questions
+        base = self._correct_count / self._total_questions
+        # Efficiency bonus: reward high info-density per write
+        if self.reward_mode == "shaped" and self._writes_used > 0:
+            unique_stored = len(self._stored_entity_names)
+            efficiency_bonus = min(unique_stored / self._writes_used, 1.0) * 0.2
+            base += efficiency_bonus
+        return base

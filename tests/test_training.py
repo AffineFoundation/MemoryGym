@@ -425,3 +425,63 @@ class TestMemoryEnv:
         """MemoryEnv stores backend_type for inspection."""
         env = MemoryEnv("company", seed=0, backend_type="chromadb")
         assert env._backend_type == "chromadb"
+
+    def test_duplicate_store_penalty(self):
+        """Shaped mode: storing same entity twice → negative reward."""
+        env = MemoryEnv("company", seed=0, n_entities=10,
+                        n_questions=3, reward_mode="shaped")
+        env.reset()
+        names = env._stream[0].get("entity_names", [])
+        assert len(names) > 0
+        name = names[0]
+        # First store → positive
+        _, r1, _, _ = env.step({
+            "tool": "memory_store",
+            "args": {"content": f"{name} | revenue: 500"}
+        })
+        assert r1 == 0.3
+        # Second store of same entity → penalty
+        _, r2, _, _ = env.step({
+            "tool": "memory_store",
+            "args": {"content": f"{name} | updated revenue: 600"}
+        })
+        assert r2 == -0.1
+
+    def test_efficiency_bonus(self):
+        """Shaped mode: unique entities / writes → efficiency bonus."""
+        env = MemoryEnv("company", seed=0, n_entities=10,
+                        n_questions=3, reward_mode="shaped")
+        env.reset()
+        names = env._stream[0].get("entity_names", [])
+        assert len(names) >= 2
+        # Store two unique entities in two writes → efficiency = 1.0
+        env.step({
+            "tool": "memory_store",
+            "args": {"content": f"{names[0]} | data A"}
+        })
+        env.step({
+            "tool": "memory_store",
+            "args": {"content": f"{names[1]} | data B"}
+        })
+        reward = env.get_verifiable_reward()
+        # Base is 0 (no questions answered), bonus = min(2/2, 1.0) * 0.2 = 0.2
+        assert abs(reward - 0.2) < 1e-9
+
+    def test_correction_speed_reward(self):
+        """Shaped mode: immediate search after correction → +0.1."""
+        env = MemoryEnv("company", seed=0, n_entities=30,
+                        n_questions=5, reward_mode="shaped")
+        env.reset()
+        # Advance to first correction event
+        while env._event_idx < len(env._stream):
+            if env._stream[env._event_idx]["type"] == "correction":
+                break
+            env.step({"tool": "next"})
+        if env._event_idx >= len(env._stream):
+            return  # No corrections in this stream
+        # Immediate search after correction → speed reward
+        _, reward, _, _ = env.step({
+            "tool": "memory_search",
+            "args": {"query": "entity"}
+        })
+        assert reward == 0.1

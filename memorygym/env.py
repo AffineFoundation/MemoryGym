@@ -8,7 +8,6 @@ Usage:
     actor = Actor()
     result = await actor.evaluate(
         model="moonshotai/Kimi-K2.5-TEE",
-        base_url="https://llm.chutes.ai/v1",
         seed=42,
         template="company",
     )
