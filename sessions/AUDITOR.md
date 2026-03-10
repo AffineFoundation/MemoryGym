@@ -153,11 +153,12 @@ sessions/AUDITOR.md（你，/loop 30m）— 调度中枢：审计、设计、方
 
 ## 当前任务
 
-### 审计 A53 — 下一轮
+### 审计 A54 — 下一轮
 
-- 批次 13 评测进度（连续 3 轮未执行）
-- 训练者新推送 + F1-F3 反馈是否被读取
+- Phase 63 执行进度（HIGH，train-eval mismatch）
 - Phase 62 执行进度
+- 批次 13 评测进度
+- 训练者 F1-F3 响应
 
 ## 待跟进
 
@@ -177,6 +178,31 @@ sessions/AUDITOR.md（你，/loop 30m）— 调度中枢：审计、设计、方
 ## 审计日志
 
 （每次审计的结论摘要，最新在最上面。保持简洁，详细分析写 devlog/。）
+
+### 审计 A53（2026-03-10）— train-eval 工具行为不一致（维度 A — 能力缺口）
+
+**审计维度**：training/env.py 与 eval 路径（_tool_helpers.py）的工具行为对齐。
+
+**发现 5 处不一致**（严重度排序）：
+
+1. **Write 无字符限制**（HIGH）：eval 限 2000 字符，training 无限制。RL agent 学写长内容 → eval 被拒。位置：env.py:519-523 vs _tool_helpers.py:84。
+
+2. **Edit 失败不退款**（HIGH）：eval 退还 write budget，training 消耗 budget。RL agent 高估 Edit 成本 → 避免使用 Edit。位置：env.py:552-568 vs _tool_helpers.py:106,116。
+
+3. **Edit 空 old_text 可用**（MEDIUM）：eval 返回错误，training 执行 search("")。位置：env.py:544-546 vs _tool_helpers.py:98-99。
+
+4. **Read 无行范围**（MEDIUM）：eval 支持 start_line/num_lines，training 只返回全部。位置：env.py:570-573 vs _tool_helpers.py:121-123。
+
+5. **Write 总用 store() 不用 write()**（LOW）：eval 优先用 `backend.write()`，training 总用 `store()`。位置：env.py:523 vs _tool_helpers.py:89。
+
+**影响**：Bug 1+2 直接导致 RL 训练出的策略在 eval 中表现异常——最关键的是 Bug 2，因为 Maintenance 轴（修正追踪）依赖 Edit 操作，而 RL agent 如果学到"Edit 失败也消耗预算"就会规避 Edit。
+
+**已派发**：Phase 63（HIGH）到 EXECUTOR.md。
+
+**检查清单**：
+- [x] 审计产出 Phase 63（HIGH，train-eval mismatch）
+- [x] EXECUTOR.md 待办区有 Phase 62 + 63
+- [x] 下一轮：Phase 63 执行进度
 
 ### 审计 A52（2026-03-10）— 前沿搜索 V4 + 训练者反馈（维度 C）
 

@@ -288,6 +288,92 @@ def _make_backend(self):
 - `python -m memorygym.bench --seeds 3 --validate --backend chromadb` ALL PASS（回归）
 - 两种后端的 simulation 分数差异 < 2%
 
+### Phase 63 — training/env.py 工具行为与 eval 对齐（HIGH — train-eval mismatch）
+
+**依据**：审计 A53 对比 `_tool_helpers.py`（eval 路径）和 `training/env.py`（RL 路径）发现 5 处工具行为不一致。RL 训练出的 agent 在 eval 环境中会遇到不同规则，导致策略不迁移。
+
+| # | 不一致 | eval 行为 | training 行为 | 影响 |
+|---|--------|-----------|---------------|------|
+| 1 | Write 字符限制 | >2000 字符被拒（_tool_helpers.py:84） | 无限制（env.py:519-523） | RL agent 学写长内容 → eval 失败 |
+| 2 | Edit 失败退款 | 退还 write budget（_tool_helpers.py:106,116） | 不退款（env.py:552-568） | RL agent 高估 Edit 成本 → 避免 Edit |
+| 3 | Edit 空 old_text | 返回错误（_tool_helpers.py:98-99） | search("") 返回随机结果 | RL agent 学到空 Edit 可探测 |
+| 4 | Read 行范围 | 支持 start_line/num_lines（_tool_helpers.py:121-123） | 只返回全部（env.py:570-573） | RL agent 不学 Read 参数 |
+| 5 | Write 方法 | `backend.write()` 优先（_tool_helpers.py:89） | 总用 `store()`（env.py:523） | MarkdownBackend 行为差异 |
+
+#### Step 1 — 修复 Bug 1+2+3（HIGH）
+
+**env.py L519-523**（Write 字符限制）：
+```python
+content = args.get("content", "")
+if not isinstance(content, str):
+    content = str(content)
+if len(content) > 2000:
+    info["error"] = "Content exceeds 2000 character limit"
+    # No reward, no budget consumed
+else:
+    ...  # existing store logic
+```
+
+**env.py L552-568**（Edit 退款 + 空 old_text 检查）：
+```python
+elif tool == "Edit":
+    old_text = args.get("old_text", "")
+    new_text = args.get("new_text", "")
+    if not old_text:
+        info["error"] = "old_text is required"
+    elif self._writes_used >= self.write_budget:
+        info["error"] = "Budget exhausted"
+        if shaped:
+            reward = -0.05
+    else:
+        results = self._backend.search(old_text, top_k=1)
+        if results:
+            self._backend.forget(results[0]["id"])
+            updated = results[0]["content"].replace(old_text, new_text, 1)
+            self._mem_counter += 1
+            mid = f"mem_{self._mem_counter:03d}"
+            self._backend.store(updated, memory_id=mid)
+            self._writes_used += 1
+            info["edited"] = True
+            info["remaining"] = self.write_budget - self._writes_used
+            if shaped and event_type == "correction":
+                reward = 0.5
+        else:
+            info["edited"] = False
+            info["error"] = "Text not found in memory"
+            # NO budget consumed — match eval behavior (refund)
+```
+
+#### Step 2 — 修复 Bug 4+5（MEDIUM）
+
+**env.py L570-573**（Read 行范围支持）：
+```python
+elif tool == "Read":
+    start = args.get("start_line")
+    n = args.get("num_lines")
+    if hasattr(self._backend, "read"):
+        content = self._backend.read(start_line=start, num_lines=n)
+        info["content"] = content if content else ""
+    else:
+        entries = self._backend.list()
+        info["content"] = "\n".join(e["content"] for e in entries) if entries else ""
+```
+
+**env.py L523**（Write 使用 native write()）：
+```python
+if hasattr(self._backend, "write"):
+    self._backend.write(content)
+else:
+    self._backend.store(content, memory_id=mid)
+```
+
+#### 验证标准
+- `python -m pytest tests/ -q` 全通过
+- `python -m memorygym.training smoke` 通过
+- 新增测试：Write >2000 chars → error, budget not consumed
+- 新增测试：Edit miss → budget not consumed (refund)
+- 新增测试：Edit empty old_text → error
+
 ### 低优先级 Backlog
 
 - **用户体验修正**：删除 docs/Design.md、填充 LEADERBOARD.md、README 补充、API key 错误信息
