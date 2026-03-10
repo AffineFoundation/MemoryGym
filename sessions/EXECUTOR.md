@@ -232,11 +232,25 @@ Phase 57-59 完成后 CLAUDE.md 有 3 处描述与代码不一致：
 ### Phase 55 — 静默异常处理修正 ✅
 ### Phase 56 — 测试套件精简提效 ✅
 
+### Phase 61 — stream_agent.py 拆分（违反 1000 行限制）
+
+**依据**：stream_agent.py 当前 1017 行，超过 CLAUDE.md ≤1000 行限制。Phase 59-60 新增 Edit/Read 分支后进一步膨胀。
+
+**方案**：提取以下函数到 `memorygym/agents/_event_handlers.py`：
+1. 修正事件处理逻辑（~L650-720，约 70 行）
+2. 工具执行函数 `_execute_tool`（~L170-260，约 90 行）
+
+预期：stream_agent.py 降到 ~860 行，新文件 ~160 行。
+
+**验证**：
+- `python -m pytest tests/ -q` 全通过
+- `python -m memorygym.bench --seeds 3 --validate` ALL PASS
+
 ### 低优先级 Backlog
 
 - **用户体验修正**：删除 docs/Design.md、填充 LEADERBOARD.md、README 补充、API key 错误信息
-- **stream_agent.py 拆分**：972 行，提取事件处理函数降到 ~890 行
 - **Promise/Progress Reward**：等简单 shaped reward 在真实训练中验证后，再决定是否需要更复杂的 reward 模型
+- **legacy 工具名清理**：移除 _KNOWN_TOOLS 中的 memory_store/memory_forget/memory_get/memory_list（等 v3 评测基线稳定后）
 
 ## 已完成
 
