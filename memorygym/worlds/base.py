@@ -618,7 +618,8 @@ class WorldTemplate(
                     continue
                 q = GeneratedQA(
                     self._q_text(ct.attr, ct.entity_name, rng),
-                    str(current_val), "update", [ct.entity_name],
+                    self._format_value(ct.attr, current_val),
+                    "update", [ct.entity_name],
                     source_attr=ct.attr,
                 )
                 q.purpose = "contradiction"

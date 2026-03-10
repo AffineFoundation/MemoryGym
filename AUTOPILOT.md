@@ -68,31 +68,51 @@ eval 数据（ROADMAP.md §3）← 衡量差距
 
 ## 当前任务
 
-### Phase 45 — 版本追踪 + 提交未暂存变更
+### Phase 46 — 矛盾问题 GT 格式修复
 
-已完成的变更（由审计线程完成，需要执行线程验证和提交）：
+**依据**：审计 A18 发现 `base.py:621` 的矛盾（contradiction）问题 GT 使用 `str(current_val)` 而非 `self._format_value(ct.attr, current_val)`。
 
-#### Step 1 — 验证变更
-- `memorygym/__init__.py`: `__version__` 从 0.4.0→0.5.0
-- `memorygym/bench.py`: eval JSON extra 新增 `"version": __version__`
-- `CLAUDE.md`: 新增版本号规则（每次 Phase 提交时 patch 递增）
-- `AUTOPILOT.md`: 任务执行规范新增版本号条目
+对比：
+- `_gq_update`（questions.py:295）使用 `self._format_value(c.attr, current_val)` → 正确，输出如 `"$3,847.0M"`
+- 矛盾问题（base.py:621）使用 `str(current_val)` → 不一致，输出如 `"3847.0"`
 
-#### Step 2 — 跑测试
+影响：低（AnswerValidator 和 LLM judge 都能处理数值等价），但违反 GT 格式一致性原则。
+
+#### Step 1 — 修复 base.py:621
+
+将：
+```python
+q = GeneratedQA(
+    self._q_text(ct.attr, ct.entity_name, rng),
+    str(current_val), "update", [ct.entity_name],
+    source_attr=ct.attr,
+)
+```
+改为：
+```python
+q = GeneratedQA(
+    self._q_text(ct.attr, ct.entity_name, rng),
+    self._format_value(ct.attr, current_val), "update", [ct.entity_name],
+    source_attr=ct.attr,
+)
+```
+
+#### Step 2 — 验证
 ```bash
 python -m pytest tests/ -q
 python -m memorygym.bench --seeds 3 --validate
 ```
 
-#### Step 3 — 提交
-提交以上 4 个文件的变更（注意：AUDIT.md 和 EVAL_QUEUE.md 的变更也需要一起提交）。
-
 #### 验证标准
 - 所有测试通过
-- `python -c "from memorygym import __version__; print(__version__)"` 输出 `0.5.0`
-- simulation validation ALL PASS
+- simulation ALL PASS
+- 矛盾问题 GT 格式与 update 问题 GT 格式一致
 
 ## 已完成
+
+### Phase 45 — 版本追踪 + 提交 ✅
+- v0.5.0, eval JSON 追踪版本号
+- 270 tests pass, simulation ALL PASS
 
 ### Phase 44 — RL shaped reward 修正 + 修正搜索 tightening ✅
 - 空搜索结果不再触发 correction_searched（防博弈）

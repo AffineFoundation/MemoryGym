@@ -685,8 +685,9 @@ def test_contradictions():
     for q in contra_qs:
         assert q.competency == "update"
         entity = world.get_entity(q.required_entities[0])
-        # GT must match current world state
-        assert str(entity.get(q.source_attr)) == q.answer
+        # GT must match current world state (formatted)
+        expected = tmpl._format_value(q.source_attr, entity.get(q.source_attr))
+        assert expected == q.answer
 
 
 if __name__ == "__main__":
