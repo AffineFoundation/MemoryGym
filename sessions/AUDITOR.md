@@ -153,11 +153,11 @@ sessions/AUDITOR.md（你，/loop 30m）— 调度中枢：审计、设计、方
 
 ## 当前任务
 
-### 审计 A49 — 下一轮
+### 审计 A51 — 下一轮
 
-- 批次 13 评测进度
-- Phase 61 执行进度
-- 训练者 SFT v3 + GRPO v3 进展
+- 批次 13 评测进度（是否已跑？Corrections >0？）
+- 训练者 SFT v3 / GRPO v3 进展（检查远程推送）
+- 执行者队列空——需要新 Phase 或确认进入维护模式
 
 ## 待跟进
 
@@ -167,7 +167,7 @@ sessions/AUDITOR.md（你，/loop 30m）— 调度中枢：审计、设计、方
 - **设计层面**：第 3 轴 "推理能力" 实际测 "机械计算"。不急
 - **multi tier 首测**：批次 8 在 EVALUATOR.md 中，可跑
 - **弱模型失败模式**：GLM-5 0%，MiniMax 6%。均为模型级工具使用能力不足
-- **stream_agent.py 972/1000 行**：Phase 56 已派发（提取 4 个事件处理函数→降到 ~890 行）
+- **stream_agent.py 884 行**：Phase 61 ✅ 已完成（提取到 _tool_helpers.py）
 - **GPU 已解除阻塞**：TRAINER.md 已更新，训练线程可开始端到端验证
 - **Reward hacking 风险**（A42 前沿 + A44 代码验证）：env.py L533 用 `n.lower() in content.lower()` 匹配实体名，存 `"Alice"` 即获 +0.3。无 per-turn 衰减。Edit +0.5 不验证 new_text 正确性。与 mem-agent 发现一致。**暂不修复**——训练尚未跑出数据，过早优化 reward 是 premature optimization
 - **mem-agent 方向验证**：Dria 的 mem-agent 用 Obsidian 风格 Markdown 文件记忆 + RL 训练，4B 模型接近 235B 性能。与我们的 Write/Edit/Read + MarkdownBackend 方向一致。核心发现：reward shaping >> 算法选择
@@ -175,6 +175,31 @@ sessions/AUDITOR.md（你，/loop 30m）— 调度中枢：审计、设计、方
 ## 审计日志
 
 （每次审计的结论摘要，最新在最上面。保持简洁，详细分析写 devlog/。）
+
+### 审计 A50（2026-03-10）— Phase 61 完成验证 + 状态同步（维度 B）
+
+**Phase 61 验证**：✅ PASS（commit c1a01fa）
+- stream_agent.py：1017→884 行（导入 _tool_helpers 的 7 个符号）
+- _tool_helpers.py：159 行（execute_tool + 5 辅助函数 + MemoryBackend 类型别名）
+- git 状态确认：`_tool_helpers.py` 已被 git 追踪，工作区干净
+- 340 tests passed, 1 skipped。v0.6.4
+
+**各线程状态**：
+- **执行者**：Phase 61 ✅ 完成。待办队列**空**（仅剩低优先级 backlog）
+- **评测者**：批次 13 待执行（v3 基线重跑，6 次评测）
+- **训练者**：SFT v3（新工具名）为当前最高优先级；GRPO v2 在 GPU 运行中（step 8/10）；无新战略反馈
+
+**执行者队列空分析**：
+- Phase 57-61 全部完成，所有高/中优先级任务已清零
+- Backlog 仅剩：UX 修正（docs 清理）、legacy 工具名清理（等 v3 基线稳定后）
+- **判断**：当前瓶颈在训练（SFT v3 + GRPO v3）和评测（批次 13），不在代码开发。执行者无紧急任务是正常状态。
+- 新 Phase 候选：等批次 13 数据 + 训练者反馈后再决定方向
+
+**检查清单**：
+- [x] Phase 61 完成验证
+- [x] EXECUTOR.md Phase 61 标记 ✅
+- [x] 各线程状态更新
+- [x] 执行者队列空——等数据驱动下一步
 
 ### 审计 A48（2026-03-10）— 训练者推送审查 + 合并验证（维度 B）
 

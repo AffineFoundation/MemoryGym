@@ -232,19 +232,10 @@ Phase 57-59 完成后 CLAUDE.md 有 3 处描述与代码不一致：
 ### Phase 55 — 静默异常处理修正 ✅
 ### Phase 56 — 测试套件精简提效 ✅
 
-### Phase 61 — stream_agent.py 拆分（违反 1000 行限制）
+### Phase 61 — stream_agent.py 拆分 ✅
 
-**依据**：stream_agent.py 当前 1017 行，超过 CLAUDE.md ≤1000 行限制。Phase 59-60 新增 Edit/Read 分支后进一步膨胀。
-
-**方案**：提取以下函数到 `memorygym/agents/_event_handlers.py`：
-1. 修正事件处理逻辑（~L650-720，约 70 行）
-2. 工具执行函数 `_execute_tool`（~L170-260，约 90 行）
-
-预期：stream_agent.py 降到 ~860 行，新文件 ~160 行。
-
-**验证**：
-- `python -m pytest tests/ -q` 全通过
-- `python -m memorygym.bench --seeds 3 --validate` ALL PASS
+提取 execute_tool + 5 个辅助函数到 `_tool_helpers.py`（159 行）。
+stream_agent.py 1017→884 行。340 passed, simulation ALL PASS。v0.6.4。
 
 ### 低优先级 Backlog
 
