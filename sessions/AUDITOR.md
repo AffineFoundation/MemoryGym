@@ -153,11 +153,10 @@ sessions/AUDITOR.md（你，/loop 30m）— 调度中枢：审计、设计、方
 
 ## 当前任务
 
-### 审计 A45 — 下一轮
+### 审计 A46 — 下一轮
 
-- Phase 60 执行进度（执行者是否活跃？）
-- 训练者新推送检查
-- 如果仍无进展，考虑简化 Phase 60 或拆分为更小的任务
+- Phase 60 执行进度
+- 批次 12 重跑进度（Bug 2+4 修复后）
 
 ## 待跟进
 
@@ -175,6 +174,22 @@ sessions/AUDITOR.md（你，/loop 30m）— 调度中枢：审计、设计、方
 ## 审计日志
 
 （每次审计的结论摘要，最新在最上面。保持简洁，详细分析写 devlog/。）
+
+### 审计 A45（2026-03-10）— 批次 12 数据恢复 + Bug 2 影响验证（维度 E）
+
+**重要发现**：评测线程已跑完批次 12（6/6），但 Bug 4 导致 JSON 未保存（stash 操作中本地变更丢失，手动恢复评测数据到 EVALUATOR.md）。
+
+**Bug 2 实际影响确认**：
+- **Corrections = 0/5 across ALL 6 evals**（Qwen3.5 + Kimi × 3 模板）
+- 根因：修正事件消息（L668-675）仍说 `search→forget→store`，模型按旧指令用 Write 而非 Edit
+- Bug 2 导致 Maintenance 轴分数被严重压低——模型实际上尝试了修正但用错了工具
+
+**v3 基线数据**（从 stdout 恢复，未保存 JSON）：
+- Qwen3.5 均值 33%（company 25%, research 30%, hospital 45%）
+- Kimi-K2.5 均值 27%（company 20%, research 20%, hospital 40%）
+- Abstention 100% across all — 提示词中立化后模型不再瞎猜 ✅
+
+**Phase 60 紧急度升级**：Bug 2+4 从 "代码质量问题" 升级为 "**已造成评测数据损失和评分系统性偏低**"。已推送 EVALUATOR.md 阻塞标记。
 
 ### 审计 A44（2026-03-10）— Reward hacking 风险深度验证（维度 A）
 
