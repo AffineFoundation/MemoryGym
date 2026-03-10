@@ -83,7 +83,7 @@ async def generate(
             _, _, done, info = env.step({"tool": "next"})
             if done:
                 break
-            next_obs = env._format_event(env._stream[env._event_idx])
+            next_obs = env.current_observation()
             segments.append((next_obs, 0))  # env tokens → loss_mask=0
             context.append({"role": "user", "content": next_obs})
         else:

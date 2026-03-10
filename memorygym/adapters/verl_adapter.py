@@ -175,10 +175,7 @@ if _VERL_AVAILABLE:
                     _, _, done, info = env.step({"tool": "next"})
                     if done:
                         break
-                    next_obs = env._format_event(
-                        env._stream[env._event_idx],
-                    )
-                    env_text = next_obs
+                    env_text = env.current_observation()
                 else:
                     # Execute each tool call
                     feedback_parts = []

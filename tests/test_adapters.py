@@ -136,8 +136,8 @@ class TestRunEpisode:
         def fake_generate(context):
             nonlocal turn_count
             turn_count += 1
-            event = env._stream[env._event_idx]
-            if event["type"] == "question":
+            obs = env.current_observation()
+            if "QUESTION" in obs:
                 return '<tool_call>{"name": "submit_answer", "arguments": {"answer": "I don\'t know"}}</tool_call>'
             return ""  # no tool call → advance
 
@@ -158,11 +158,10 @@ class TestRunEpisode:
         env.reset(seed=0)
 
         def fake_generate(context):
-            event = env._stream[env._event_idx]
-            if event["type"] == "question":
+            obs = env.current_observation()
+            if "QUESTION" in obs:
                 return '<tool_call>{"name": "submit_answer", "arguments": {"answer": "N/A"}}</tool_call>'
-            # Store something on first ingest
-            if event["type"] == "ingest":
+            if "DOCUMENTS" in obs:
                 return '<tool_call>{"name": "memory_store", "arguments": {"content": "test data"}}</tool_call>'
             return ""
 
@@ -229,6 +228,77 @@ class TestVerlAdapterImport:
             _agent_loop_registry,
         )
         assert "memorygym_agent" in _agent_loop_registry
+
+
+class TestSlimeAdapter:
+    def test_generate_signature(self):
+        """slime generate() has correct async signature."""
+        import inspect
+        from memorygym.adapters.slime_adapter import generate
+        sig = inspect.signature(generate)
+        params = list(sig.parameters.keys())
+        assert "args" in params
+        assert "sample" in params
+        assert "sampling_params" in params
+        assert inspect.iscoroutinefunction(generate)
+
+    def test_reward_func_signature(self):
+        """slime reward_func() has correct async signature."""
+        import inspect
+        from memorygym.adapters.slime_adapter import reward_func
+        sig = inspect.signature(reward_func)
+        assert "args" in list(sig.parameters.keys())
+        assert "sample" in list(sig.parameters.keys())
+        assert inspect.iscoroutinefunction(reward_func)
+
+    def test_reward_func_returns_stored_reward(self):
+        """reward_func returns _memorygym_reward from sample."""
+        import asyncio
+        from memorygym.adapters.slime_adapter import reward_func
+
+        class FakeSample:
+            _memorygym_reward = 0.42
+
+        sample = FakeSample()
+        result = asyncio.new_event_loop().run_until_complete(
+            reward_func(None, sample))
+        assert result == 0.42
+
+    def test_reward_func_default_zero(self):
+        """reward_func returns 0.0 when no reward stored."""
+        import asyncio
+        from memorygym.adapters.slime_adapter import reward_func
+
+        class EmptySample:
+            pass
+
+        result = asyncio.new_event_loop().run_until_complete(
+            reward_func(None, EmptySample()))
+        assert result == 0.0
+
+
+class TestCurrentObservation:
+    def test_returns_first_event(self):
+        env = MemoryEnv(template_name="company", tier="lite", seed=0)
+        env.reset(seed=0)
+        obs = env.current_observation()
+        assert "DOCUMENTS" in obs or "Event" in obs
+
+    def test_returns_empty_after_done(self):
+        env = MemoryEnv(template_name="company", seed=0,
+                        n_entities=10, n_questions=3)
+        env.reset()
+        # Run to completion
+        for _ in range(500):
+            obs = env.current_observation()
+            if not obs:
+                break
+            if "QUESTION" in obs:
+                env.step({"tool": "submit_answer",
+                          "args": {"answer": "N/A"}})
+            else:
+                env.step({"tool": "next"})
+        assert env.current_observation() == ""
 
 
 class TestGenerateTrainData:

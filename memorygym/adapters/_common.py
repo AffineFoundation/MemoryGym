@@ -147,7 +147,7 @@ def run_episode(
         }
     """
     system_prompt = get_system_prompt(env.write_budget)
-    first_obs = env._format_event(env._stream[0])
+    first_obs = env.current_observation()
 
     context = [
         {"role": "system", "content": system_prompt},
@@ -176,7 +176,7 @@ def run_episode(
             _, _, done, info = env.step({"tool": "next"})
             if done:
                 break
-            obs = env._format_event(env._stream[env._event_idx])
+            obs = env.current_observation()
             obs_tokens = tokenize_fn(obs)
             response_tokens.extend(obs_tokens)
             loss_mask.extend([0] * len(obs_tokens))

@@ -54,52 +54,6 @@
 
 ## 当前任务
 
-### Phase 50 — verl_adapter 私有 API 修复 + 适配器健壮性
-
-**依据**：verl_adapter.py:178-180 直接访问 MemoryEnv 私有属性 `env._stream[env._event_idx]` 和 `env._format_event()`。任何 MemoryEnv 内部重构都会导致训练管线静默崩溃。
-
-#### Step 1 — MemoryEnv 暴露公共接口
-
-在 `training.py` 的 MemoryEnv 中添加公共方法：
-
-```python
-def current_observation(self) -> str:
-    """Return the formatted text of the current event."""
-    if self._event_idx >= len(self._stream):
-        return ""
-    return self._format_event(self._stream[self._event_idx])
-```
-
-这比暴露 `_stream` 和 `_event_idx` 更安全——消费者不需要知道内部数据结构。
-
-#### Step 2 — verl_adapter 改用公共 API
-
-`memorygym/adapters/verl_adapter.py:178-180`：
-
-```python
-# Before:
-next_obs = env._format_event(env._stream[env._event_idx])
-
-# After:
-next_obs = env.current_observation()
-```
-
-#### Step 3 — slime_adapter 基础测试
-
-在 `tests/test_adapters.py` 中新增 slime 相关测试（不需要真实 slime 框架）：
-
-- `test_slime_generate_signature()` — 验证函数签名匹配 slime 约定
-- `test_slime_reward_func()` — 验证 reward 返回值格式
-- mock `args.post` 跑一个简化 episode
-
-#### 验证标准
-
-1. `python -m pytest tests/ -q` 全部通过
-2. verl_adapter.py 不再有 `env._stream` 或 `env._event_idx` 的直接访问
-3. 新增 ≥ 3 个测试
-
----
-
 ### Phase 51 — MemoryEnv process-based reward 增强（前沿对齐）
 
 **依据**：前沿搜索发现 Memory-R1 (arxiv 2508.19828) 和 MemoryRewardBench (arxiv 2601.11969) 都表明 process-based reward（存储决策质量）比纯 outcome-based reward（答题正确率）更有效。当前 MemoryEnv 的 shaped reward 已有雏形但信号太弱。详见 `devlog/2026-03-10-frontier-alignment-v2.md`。
@@ -168,6 +122,7 @@ if shaped and event_type == "correction":
 
 ## 已完成
 
+### Phase 50 — verl_adapter 私有 API 修复 + 适配器健壮性 ✅
 ### Phase 49 — Inspect AI 完善 + 关键模块测试补全 ✅
 ### Phase 48 — mem0 后端完善集成 ✅
 ### Phase 47 — ChromaDB 搜索精度提升 ✅

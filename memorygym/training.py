@@ -356,6 +356,15 @@ class MemoryEnv:
         return ChromaDBBackend(
             collection_name=f"memenv_{uuid.uuid4().hex[:8]}")
 
+    def current_observation(self) -> str:
+        """Return formatted text of the current event.
+
+        Public API for adapters — avoids accessing _stream/_event_idx.
+        """
+        if self._event_idx >= len(self._stream):
+            return ""
+        return self._format_event(self._stream[self._event_idx])
+
     def _format_event(self, event: dict) -> str:
         """Format an event dict as human-readable text."""
         etype = event["type"]
