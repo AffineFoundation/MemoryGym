@@ -153,10 +153,10 @@ sessions/AUDITOR.md（你，/loop 30m）— 调度中枢：审计、设计、方
 
 ## 当前任务
 
-### 审计 A66 — 下一轮
+### 审计 A67 — 下一轮
 
 - 各线程活动检查
-- 维度 B（实现完整性）— ROADMAP.md §0 + §3 数据表更新审计
+- 维度 A（能力缺口）— legacy 工具名清理可行性审计
 
 ## 待跟进
 
@@ -170,6 +170,14 @@ sessions/AUDITOR.md（你，/loop 30m）— 调度中枢：审计、设计、方
 ## 审计日志
 
 （每次审计的结论摘要，最新在最上面。保持简洁，详细分析写 devlog/。）
+
+### 审计 A66（2026-03-10）— ROADMAP.md 更新（维度 B）
+
+**更新内容**：
+- §0：Phase 51 → Phase 65，焦点更新，35→46 eval，315→340 tests，新增 MarkdownBackend
+- §2.1：backends 加 markdown，agents 加 _tool_helpers.py，simulation 8→9，training.py→training/
+- §3.1：数据表从 35 次更新为 46 次，5 模型完整汇总，加入 A62 数据分析关键发现
+- §3.3：35→46 文件数
 
 ### 审计 A65（2026-03-10）— 待跟进清理 + docs/Design.md 删除（维度 B）
 
