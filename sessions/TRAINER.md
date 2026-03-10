@@ -94,65 +94,9 @@
 
 ## 职责边界
 
-### 本线程负责
+**负责**：训练相关代码（`training.py`、`adapters/`、`scripts/`训练脚本、训练测试）、训练实验、reward 设计、curriculum 策略。
 
-- `memorygym/training.py` — MemoryEnv RL 环境
-- `memorygym/adapters/` — verl / slime 框架适配层
-- `scripts/generate_train_data.py` — 训练数据生成
-- `scripts/verl_memorygym.yaml` / `verl_curriculum.yaml` / `memorygym_agent.yaml` — 训练配置
-- `tests/test_training.py` / `tests/test_adapters.py` — 训练相关测试
-- 训练实验（SFT/GRPO）、reward 设计、curriculum 策略
-
-### 不碰的文件（其他线程/工作流负责）
-
-| 文件/目录 | 负责方 | 说明 |
-|-----------|--------|------|
-| `memorygym/worlds/` | 评测核心 | 世界模板、实体生成、问题生成、评分器 |
-| `memorygym/evaluation/` | 评测核心 | 答案验证、LLM judge |
-| `memorygym/simulation.py` | 评测核心 | 8 种策略验证评分有效性 |
-| `memorygym/protocol.py` | 评测核心 | tier 定义、评分公式、JSON schema |
-| `memorygym/memory/` | 评测核心 | 预算管理、ChromaDB/mem0 后端 |
-| `memorygym/agents/stream_agent.py` | 评测核心 | 真实 LLM agent runner |
-| `memorygym/bench.py` | 评测核心 | CLI 入口 |
-| `sessions/EVALUATOR.md` | eval session | 评测任务队列 |
-| `sessions/EXECUTOR.md` | 自治演进 | 自治循环任务 |
-| `CLAUDE.md` | 全局 | 北极星，所有线程共享 |
-
-### 共享依赖（只读使用，不修改）
-
-- `memorygym/simulation.py` 中的 `TEMPLATES`, `_construct_and_validate`, `_data_available`, `_VALIDATOR`
-- `memorygym/protocol.py` 中的 `TIERS`
-- `memorygym/agents/stream_agent.py` 中的 `SYSTEM_PROMPT`
-- `memorygym/worlds/base.py` 中的 `WorldTemplate`, `World`, `EntitySpec`
-
----
-
-## 协作协议
-
-### 对评测核心的依赖
-
-本线程依赖评测核心的接口稳定。如果以下接口变更，需要同步更新训练代码：
-
-| 接口 | 使用方 |
-|------|--------|
-| `WorldTemplate.generate_world()` | MemoryEnv.reset() |
-| `WorldTemplate.generate_corrections()` | MemoryEnv.reset() |
-| `WorldTemplate.generate_contradictions()` | MemoryEnv.reset() |
-| `WorldTemplate.generate_stream()` | MemoryEnv.reset() |
-| `WorldTemplate.render_document()` | generate_sft_trajectory() |
-| `WorldTemplate._compact_document()` | generate_sft_trajectory() |
-| `TIERS` dict 结构 | MemoryEnv.__init__(), generate_train_data.py |
-| `SYSTEM_PROMPT` 模板 | get_system_prompt() |
-| `_VALIDATOR.validate()` | MemoryEnv.step() (submit_answer) |
-
-### 变更通知
-
-- 评测核心变更以上接口时，需在本文件「接口变更日志」追加记录
-- 训练线程变更共享测试时，确保 `pytest tests/ -q` 全量通过
-
-### 接口变更日志
-
-（暂无变更记录）
+**不碰**：评测核心（`worlds/`、`evaluation/`、`simulation.py`、`protocol.py`、`bench.py`、`stream_agent.py`）。这些模块的接口只读使用。如果评测核心接口变更导致训练代码需要适配，在战略反馈区记录。
 
 ---
 
