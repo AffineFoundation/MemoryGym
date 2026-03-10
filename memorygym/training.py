@@ -496,11 +496,11 @@ class MemoryEnv:
                     if current_event and event_type == "ingest":
                         names = current_event.get("entity_names", [])
                         if any(n.lower() in content.lower() for n in names):
-                            reward = 0.1  # Good: stored relevant entity data
+                            reward = 0.3  # Good: stored relevant entity data
                     elif event_type == "correction":
                         # Storing during correction after search+forget = correction flow
                         if self._correction_searched and self._correction_forgot:
-                            reward = 0.2  # Good: completed correction flow
+                            reward = 0.5  # Good: completed correction flow
                             self._correction_searched = False
                             self._correction_forgot = False
 
@@ -520,7 +520,7 @@ class MemoryEnv:
                      "content": results["documents"][0][i]}
                     for i in range(len(results["ids"][0]))
                 ]
-            if shaped and event_type == "correction":
+            if shaped and event_type == "correction" and info["results"]:
                 self._correction_searched = True
 
         elif tool == "memory_forget":

@@ -66,28 +66,42 @@ eval 数据（ROADMAP.md §3）← 衡量差距
 
 ## 当前任务
 
-### Phase 43 — 跨 session 修正测试补全 + multi tier eval 准备
+### Phase 44 — RL shaped reward 修正 + 修正搜索 tightening
 
-**依据**：审计 A12 发现 Phase 42 有一个测试 gap——跨 session 修正约束已实现（events.py:403-440）但未被测试覆盖。
+**依据**：审计 A14 发现 MemoryEnv 两个训练质量问题。
 
-#### Step 1 — 补全跨 session 修正测试
+#### Step 1 — 修正搜索博弈漏洞
 
-在 tests/test_worlds.py 中新增测试，验证：
-- 当 n_sessions=3 且有 corrections 时，至少 1 个 correction 的 target entity 和 correction 事件分布在不同 session
-- 具体：遍历 session_break 分割后的各段，找到 correction 事件和对应 entity 的 ingest 事件，验证它们不全在同一 session
+training.py `step()` 中（约 507-524 行），当 tool=="memory_search" 且 event_type=="correction" 时：
+- 当前：`self._correction_searched = True`（无论搜索结果是否为空）
+- 修正：只在搜索返回非空结果时设置 `self._correction_searched = True`
+- 即加 `if results:` 条件
 
-使用真实的 world（有 corrections），不要用空 stored_names。
+#### Step 2 — Shaped reward 比例调整
 
-#### Step 2 — 提交 Phase 42 + 43
+training.py shaped reward 模式中：
+- 当前：store=0.1, correction_flow=0.2, answer=1.0（10:1 比例太大）
+- 调整：store=0.3, correction_flow=0.5, answer=1.0（更合理的 gradient signal）
+- 确保测试仍然通过（shaped reward 测试可能有具体数值断言）
 
-Phase 42 代码变更在 working tree 中未提交。连同 Phase 43 测试一起提交。
+#### Step 3 — Multi-session MemoryEnv 测试
+
+tests/test_training.py 中新增：
+- `test_multi_session_episode`：MemoryEnv(tier="multi") 或 n_sessions=3，验证 reset()/step() 正常跑完
+- 验证 session_break 事件在 observation 中出现
+- 验证 memory backend 跨 session 持久化
 
 #### 验证标准
-- 新测试显式验证跨 session 修正约束
+- `python -m pytest tests/test_training.py -q` 全量通过
 - `python -m pytest tests/ -q` 全量通过
-- `python -m memorygym.bench --seeds 3 --validate` 包含 multi tier 验证
+- shaped reward 0% 搜索不再触发 correction_searched
 
 ## 已完成
+
+### Phase 43 — 跨 session 修正测试补全 ✅
+- test_cross_session_correction: 验证 n_sessions=3 时至少 1 个 correction 跨 session
+- 与 Phase 42 一起提交 (commit 9ad38c2)
+- 268 tests pass
 
 ### Phase 42 — 多会话评测实现 ✅
 - events.py: `_insert_session_breaks()` + `generate_stream(n_sessions=)` 参数

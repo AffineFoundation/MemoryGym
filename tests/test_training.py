@@ -283,7 +283,7 @@ class TestMemoryEnv:
             "tool": "memory_store",
             "args": {"content": f"{names[0]} has revenue of $500M"}
         })
-        assert reward == 0.1, f"Expected 0.1 for relevant store, got {reward}"
+        assert reward == 0.3, f"Expected 0.3 for relevant store, got {reward}"
         assert "memory_id" in info
 
     def test_shaped_reward_budget_exhausted(self):
@@ -328,7 +328,7 @@ class TestMemoryEnv:
             "tool": "memory_store",
             "args": {"content": "corrected entity data"}
         })
-        assert reward == 0.2
+        assert reward == 0.5
 
     def test_binary_mode_unchanged(self):
         """Binary mode: no intermediate rewards, only submit_answer."""
@@ -342,6 +342,64 @@ class TestMemoryEnv:
             "args": {"content": f"{names[0]} data"}
         })
         assert reward == 0.0
+
+    def test_tier_multi(self):
+        env = MemoryEnv("company", tier="multi", seed=0)
+        assert env.n_entities == 60
+        assert env.n_questions == 20
+        assert env.n_sessions == 3
+
+    def test_multi_session_episode(self):
+        """Multi-session: episode runs to completion with session breaks."""
+        env = MemoryEnv("company", tier="multi", seed=0,
+                        n_entities=30, n_questions=10)
+        obs = env.reset()
+        assert isinstance(obs, str)
+
+        done = False
+        steps = 0
+        session_breaks_seen = 0
+        stored_before_break = False
+        found_after_break = False
+
+        while not done:
+            if "SESSION BREAK" in obs:
+                session_breaks_seen += 1
+                # After session break, search should still find stored data
+                if stored_before_break:
+                    obs, _, done, info = env.step({
+                        "tool": "memory_search",
+                        "args": {"query": "test entity"}
+                    })
+                    if info["results"]:
+                        found_after_break = True
+                    steps += 1
+                    if done:
+                        break
+                obs, _, done, info = env.step({"tool": "next"})
+            elif "QUESTION" in obs:
+                obs, _, done, _ = env.step({
+                    "tool": "submit_answer",
+                    "args": {"answer": "I don't have enough information"}
+                })
+            elif "DOCUMENTS" in obs and not stored_before_break:
+                # Store something in first session
+                obs, _, done, _ = env.step({
+                    "tool": "memory_store",
+                    "args": {"content": "test entity | revenue: 1000"}
+                })
+                stored_before_break = True
+            else:
+                obs, _, done, _ = env.step({"tool": "next"})
+            steps += 1
+            if steps > 300:
+                break
+        assert done, "Episode did not complete"
+        assert session_breaks_seen >= 1, "No session breaks in multi-session"
+        # Memory backend persists across sessions
+        if stored_before_break:
+            assert found_after_break, (
+                "Memory backend did not persist across session break")
 
     def test_reward_mode_validation(self):
         """Invalid reward_mode raises ValueError."""
