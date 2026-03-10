@@ -88,6 +88,9 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
                    help="OpenAI-compatible API base URL")
     p.add_argument("--eval-salt", type=int, default=0, metavar="N",
                    help="perturb numeric values (anti-fingerprint)")
+    p.add_argument("--backend", choices=["chromadb", "markdown"],
+                   default="chromadb",
+                   help="memory backend (chromadb or markdown)")
     p.add_argument("--tier", choices=list(TIERS),
                    default=None, metavar="TIER",
                    help="evaluation tier (lite/standard/hard)")
@@ -222,8 +225,12 @@ def main(argv: list[str] | None = None) -> int:
                 print(f"  [{tmpl.name}] seed={seed} — Running agent "
                       f"({args.model}) ...")
                 # Create backend
-                from memorygym.memory.backends.chromadb_backend import ChromaDBBackend
-                backend_obj = ChromaDBBackend()
+                if args.backend == "markdown":
+                    from memorygym.memory.backends.markdown_backend import MarkdownBackend
+                    backend_obj = MarkdownBackend()
+                else:
+                    from memorygym.memory.backends.chromadb_backend import ChromaDBBackend
+                    backend_obj = ChromaDBBackend()
 
                 agent_results, writes_used, stored, eval_error, traj = run_stream_agent(
                     model=args.model,
@@ -313,7 +320,7 @@ def main(argv: list[str] | None = None) -> int:
                     "extra": {
                         "version": __version__,
                         "model": args.model,
-                        "backend": "chromadb",
+                        "backend": args.backend,
                         "seed": seed,
                         "template": tmpl.name,
                         "n_entities": n_entities,
@@ -459,7 +466,7 @@ def main(argv: list[str] | None = None) -> int:
             json_data = format_leaderboard_entry(
                 model=model_name,
                 tier=tier_name,
-                backend="chromadb",
+                backend=args.backend,
                 per_seed_results=per_seed_out,
                 config=config,
                 per_template=per_template_out,

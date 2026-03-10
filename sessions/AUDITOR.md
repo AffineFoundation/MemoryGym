@@ -153,11 +153,10 @@ sessions/AUDITOR.md（你，/loop 30m）— 调度中枢：审计、设计、方
 
 ## 当前任务
 
-### 审计 A57 — 下一轮
+### 审计 A58 — 下一轮
 
-- Phase 62 执行进度
 - 各线程活动检查
-- 维度 D（用户体验）或维度 A（能力缺口）
+- 维度 D（用户体验）或维度 A（能力缺口）审计
 
 ## 待跟进
 
@@ -177,6 +176,21 @@ sessions/AUDITOR.md（你，/loop 30m）— 调度中枢：审计、设计、方
 ## 审计日志
 
 （每次审计的结论摘要，最新在最上面。保持简洁，详细分析写 devlog/。）
+
+### 审计 A57（2026-03-10）— Phase 62 发现 + 合入（维度 B）
+
+**发现**：bench.py 和 training/env.py 有未暂存的 Phase 62 变更（来源不明，可能是之前 session 的 linter 行为或另一个进程）。
+
+**变更审查**：
+- bench.py：新增 `--backend` 参数（chromadb/markdown），后端选择逻辑，eval JSON 使用 `args.backend` ✅
+- training/env.py：`_make_backend()` 新增 markdown 分支（3 行）✅
+- 代码质量好，与 Phase 62 任务描述一致
+
+**验证**：340 passed, 1 skipped ✅。
+
+**CLAUDE.md 漂移再修**：L21, L108 的 "8 种"→"9 种"（上轮修复被 linter 还原，本轮用 replace_all 重新修正）。
+
+**Phase 62 标记 ✅**。至此 Phase 57-64 全部完成。执行者队列**完全清空**（仅剩低优先级 backlog）。
 
 ### 审计 A56（2026-03-10）— 回归验证 + CLAUDE.md 漂移修复（维度 B）
 

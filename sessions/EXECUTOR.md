@@ -237,9 +237,12 @@ Phase 57-59 完成后 CLAUDE.md 有 3 处描述与代码不一致：
 提取 execute_tool + 5 个辅助函数到 `_tool_helpers.py`（159 行）。
 stream_agent.py 1017→884 行。340 passed, simulation ALL PASS。v0.6.4。
 
-### Phase 62 — MarkdownBackend 接入 bench.py + training env
+### Phase 62 — MarkdownBackend 接入 bench.py + training env ✅
 
-**依据**：Phase 59 构建了 MarkdownBackend（Markdown 文件 + 混合搜索），stream_agent.py 的 `_execute_tool`（_tool_helpers.py）已通过 hasattr 支持双后端。但系统的两个入口点都硬编码 ChromaDB：
+bench.py 新增 `--backend` 参数（chromadb/markdown），training/env.py `_make_backend()` 支持 markdown 分支。
+340 passed。v0.6.5。
+
+~~**依据**~~：Phase 59 构建了 MarkdownBackend，但系统入口点硬编码 ChromaDB：
 
 1. **bench.py L225-226**：`ChromaDBBackend()` 硬编码，无 `--backend` 参数（Phase 58 删除了）
 2. **training/env.py L374-377**：`_make_backend()` 只返回 ChromaDBBackend

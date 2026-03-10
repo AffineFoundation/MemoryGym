@@ -373,6 +373,9 @@ class MemoryEnv:
 
     def _make_backend(self):
         """Create a fresh backend instance."""
+        if self._backend_type == "markdown":
+            from memorygym.memory.backends.markdown_backend import MarkdownBackend
+            return MarkdownBackend()
         from memorygym.memory.backends.chromadb_backend import ChromaDBBackend
         return ChromaDBBackend(
             collection_name=f"memenv_{uuid.uuid4().hex[:8]}")
