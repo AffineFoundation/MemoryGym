@@ -1,6 +1,6 @@
-# EVAL_QUEUE — 评测线程
+# EVALUATOR — 评测线程
 
-> 启动方式：`/loop 30m 你是评测线程，读 EVAL_QUEUE.md 执行下一个评测任务`
+> 启动方式：`/loop 30m 你是评测线程，读 sessions/EVALUATOR.md 执行下一个评测任务`
 >
 > 评测专用线程。只跑模型评测，不改代码。
 >
@@ -39,7 +39,7 @@ python -m memorygym.bench --model <MODEL> --seed <SEED> --template <TEMPLATE> [-
 
 **不要做的事**：
 - 不要修改代码（代码变更由开发 session 负责）
-- 不要修改 AUTOPILOT.md 或 CLAUDE.md
+- 不要修改 sessions/EXECUTOR.md 或 CLAUDE.md
 - 不要跑测试（pytest）
 - 不要提交代码（git commit）
 
@@ -58,73 +58,6 @@ company, research, city, hospital, sport, movie（共 6 个，每个 22-23 属�
 ---
 
 ## 当前任务
-
-### 批次 1 — 冒烟测试（v2 首测）
-
-验证增强后的模板 agent 能正常处理新 dtype（text/enum/list_float/date）：
-
-```bash
-python -m memorygym.bench --model moonshotai/Kimi-K2.5-TEE --seed 0 --template company
-python -m memorygym.bench --model moonshotai/Kimi-K2.5-TEE --seed 0 --template research
-python -m memorygym.bench --model moonshotai/Kimi-K2.5-TEE --seed 0 --template city
-python -m memorygym.bench --model moonshotai/Kimi-K2.5-TEE --seed 0 --template hospital
-python -m memorygym.bench --model moonshotai/Kimi-K2.5-TEE --seed 0 --template sport
-python -m memorygym.bench --model moonshotai/Kimi-K2.5-TEE --seed 0 --template movie
-```
-
-### 批次 2 — Kimi-K2.5 新基线（多 seed 统计）
-
-每模板 3 seeds 建立均值±标准差：
-
-```bash
-python -m memorygym.bench --model moonshotai/Kimi-K2.5-TEE --seed 1 --template company
-python -m memorygym.bench --model moonshotai/Kimi-K2.5-TEE --seed 2 --template company
-python -m memorygym.bench --model moonshotai/Kimi-K2.5-TEE --seed 1 --template research
-python -m memorygym.bench --model moonshotai/Kimi-K2.5-TEE --seed 2 --template research
-python -m memorygym.bench --model moonshotai/Kimi-K2.5-TEE --seed 1 --template city
-python -m memorygym.bench --model moonshotai/Kimi-K2.5-TEE --seed 2 --template city
-python -m memorygym.bench --model moonshotai/Kimi-K2.5-TEE --seed 1 --template hospital
-python -m memorygym.bench --model moonshotai/Kimi-K2.5-TEE --seed 2 --template hospital
-python -m memorygym.bench --model moonshotai/Kimi-K2.5-TEE --seed 1 --template sport
-python -m memorygym.bench --model moonshotai/Kimi-K2.5-TEE --seed 2 --template sport
-python -m memorygym.bench --model moonshotai/Kimi-K2.5-TEE --seed 1 --template movie
-python -m memorygym.bench --model moonshotai/Kimi-K2.5-TEE --seed 2 --template movie
-```
-
-### 批次 3 — Qwen3.5-397B 横评
-
-```bash
-python -m memorygym.bench --model Qwen/Qwen3.5-397B-A17B-TEE --seed 0 --template company
-python -m memorygym.bench --model Qwen/Qwen3.5-397B-A17B-TEE --seed 0 --template research
-python -m memorygym.bench --model Qwen/Qwen3.5-397B-A17B-TEE --seed 0 --template city
-python -m memorygym.bench --model Qwen/Qwen3.5-397B-A17B-TEE --seed 0 --template hospital
-python -m memorygym.bench --model Qwen/Qwen3.5-397B-A17B-TEE --seed 0 --template sport
-python -m memorygym.bench --model Qwen/Qwen3.5-397B-A17B-TEE --seed 0 --template movie
-```
-
-### 批次 4 — MiniMax + GLM-5 基线
-
-```bash
-python -m memorygym.bench --model MiniMaxAI/MiniMax-M2.5-TEE --seed 0 --template company
-python -m memorygym.bench --model MiniMaxAI/MiniMax-M2.5-TEE --seed 0 --template movie
-python -m memorygym.bench --model zai-org/GLM-5-TEE --seed 0 --template company
-python -m memorygym.bench --model zai-org/GLM-5-TEE --seed 0 --template movie
-```
-
-### 批次 5 — Phase 38 对比验证（keyword fallback 效果）
-
-Phase 38 加入了 ChromaDB keyword fallback。用 seed 0 重跑 6 个模板，与批次 1（pre-Phase-38）对比检索准确率。
-
-**注意**：批次 1 的 seed 0 结果是 Phase 38 前跑的。这批用相同 seed 重跑，对比 breadth 和 composite 变化。
-
-```bash
-python -m memorygym.bench --model moonshotai/Kimi-K2.5-TEE --seed 0 --template company
-python -m memorygym.bench --model moonshotai/Kimi-K2.5-TEE --seed 0 --template research
-python -m memorygym.bench --model moonshotai/Kimi-K2.5-TEE --seed 0 --template city
-python -m memorygym.bench --model moonshotai/Kimi-K2.5-TEE --seed 0 --template hospital
-python -m memorygym.bench --model moonshotai/Kimi-K2.5-TEE --seed 0 --template sport
-python -m memorygym.bench --model moonshotai/Kimi-K2.5-TEE --seed 0 --template movie
-```
 
 ### 批次 6 — standard tier
 
@@ -196,5 +129,32 @@ python -m memorygym.bench --model moonshotai/Kimi-K2.5-TEE --seed 0 --template c
 | MiniMax-M2.5 | company | 0 | **13%** | 11% | 32% | 0% | 0% | 3/5 |
 | MiniMax-M2.5 | movie | 0 | **4%** | 12% | 0% | 0% | 50% | 1/5 |
 | GLM-5 | company | 0 | **0%** | 0% | 0% | 0% | 50% | 0/5 |
+| GLM-5 | movie | 0 | **0%** | 0% | 0% | 0% | 50% | 0/5 |
 
-**GLM-5 分析**：26/30 writes，存了 32 个实体，但搜索全部返回空 — 模型无法有效使用 search tool。非系统 bug。
+**GLM-5 分析**：company 26/30 writes 存了 32 个实体，movie 25/30 writes 存了 24 个实体，但搜索全部返回空 — 模型无法有效使用 search tool。非系统 bug。
+
+### 批次 5 — Phase 38 对比验证（完成）
+
+Phase 38 keyword fallback 效果对比（Kimi-K2.5 seed 0 重跑）：
+
+| 模型 | 模板 | Seed | Composite | Breadth | Maint. | Reasoning | Abstention | Corrections |
+|------|------|------|-----------|---------|--------|-----------|------------|-------------|
+| Kimi-K2.5 | company | 0 | **4%** | 11% | 0% | 0% | 100% | 2/5 |
+| Kimi-K2.5 | research | 0 | **25%** | 0% | 33% | 11% | 100% | 3/5 |
+| Kimi-K2.5 | city | 0 | **26%** | 0% | 97% | 0% | 100% | — |
+| Kimi-K2.5 | hospital | 0 | **35%** | 11% | 60% | 0% | 100% | 2/5 |
+| Kimi-K2.5 | sport | 0 | **5%** | 0% | 18% | 0% | 100% | — |
+| Kimi-K2.5 | movie | 0 | **9%** | 12% | 0% | 17% | 100% | — |
+
+**对比分析**（批次 1 vs 批次 5，均为 Kimi s0）：
+
+| 模板 | B1 Composite | B5 Composite | 变化 | B1 Maint | B5 Maint | 备注 |
+|------|-------------|-------------|------|---------|---------|------|
+| company | 30% | 4% | ↓26% | 20% | 0% | 大幅下降 |
+| research | 15% | 25% | ↑10% | 33% | 33% | 改善 |
+| city | 20% | 26% | ↑6% | 31% | 97% | 维护大幅提升 |
+| hospital | 17% | 35% | ↑18% | 26% | 60% | 显著改善 |
+| sport | 10% | 5% | ↓5% | 0% | 18% | 略有波动 |
+| movie | 21% | 9% | ↓12% | 62% | 0% | 下降 |
+
+**结论**：Phase 38 效果不一致。hospital/city/research 改善，company/movie 下降。注意：同 seed 不同时间跑分数差异可能源于 API 非确定性（LLM 温度），而非 keyword fallback 本身。

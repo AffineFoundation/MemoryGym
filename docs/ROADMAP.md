@@ -9,7 +9,7 @@
 
 ## 0. 当前状态
 
-> 新 session 先看这里 + `AUTOPILOT.md`。上下文不足时可读最近的 devlog 文件。
+> 新 session 先看这里 + `sessions/EXECUTOR.md`。上下文不足时可读最近的 devlog 文件。
 
 **当前焦点**: 版本追踪提交（Phase 45） + eval 数据持续积累
 
