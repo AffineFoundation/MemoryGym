@@ -113,6 +113,63 @@ except RuntimeError as e:
 - `pytest -m "not slow"`: 320 tests, 88s（3x 加速）
 - `pytest`: 330 tests, 250s（完整验证）
 
+### Phase 57 — 评测系统校准：属性覆盖率瓶颈修复
+
+**依据**：47 个 eval、883 道题全量分析发现，最强模型 retrieval 只有 11.5%，但根因不是搜索质量，而是模型只存 10/23 个属性。Coverage 题（问已存实体）只有 12% 正确率——因为 57% 的概率问到未存属性。
+
+**核心问题**：模型追求"存更多实体"（breadth），但评测要求"每个实体属性完整"（depth）。系统提示词说 "Store data compactly" 误导模型走了劣势策略。
+
+**数据证据**：
+- 模型存 34/60 实体但每个只 ~10 属性 → 有效覆盖 14.6 单位
+- 若存 30 实体但存全属性 → 有效覆盖 30 单位（2x）
+- 81% 的 retrieval 失败是模型说"没信息"（属性缺失），只 7.6% 是答错
+- `stream_agent.py:112` "Store data compactly: EntityName | attr1: val1, attr2: val2, ..." 没提到应存全属性
+
+**修复方案（3 步，互相独立）**：
+
+#### Step 1 — 系统提示词优化（stream_agent.py:111-116）
+
+当前：
+```
+## Storage Strategy
+- Store data compactly: "EntityName | attr1: val1, attr2: val2, ..."
+- Prioritize entities with extreme/distinctive values
+- Skip unremarkable entities when budget is tight
+```
+
+改为更准确的引导（不是降低难度，是让模型做出更合理的决策）：
+```
+## Storage Strategy
+- Store COMPLETE entity data: "EntityName | attr1: val1, attr2: val2, ..."
+- Include ALL attributes for each entity you store — partial records lose most of their value
+- Better to store fewer entities with full data than many entities with partial data
+- Prioritize entities with extreme/distinctive values
+- Skip unremarkable entities when budget is tight
+```
+
+#### Step 2 — 验证效果
+
+修改后跑 simulation 确认不变量仍通过：
+```bash
+python -m memorygym.bench --seeds 5 --validate
+```
+注意：提示词改变不影响 simulation（simulation 不用 LLM），但需确认无 import 错误。
+
+#### Step 3 — 跑一次对比 eval
+
+用改后提示词跑 1 个 eval 对比：
+```bash
+python -m memorygym.bench --model moonshotai/Kimi-K2.5-TEE --seed 0 --template company
+```
+对比 retrieval 正确率是否从 ~12% 提升。结果记入 devlog/。
+
+**验证标准**：
+- `python -m pytest tests/ -q` 通过
+- `python -m memorygym.bench --seeds 3 --validate` 通过
+- 有 eval 对比数据（不要求分数提升，但需要记录）
+
+**注意**：这不是降低难度。难度来自预算压力（30 writes / 60 entities），这不变。我们只是让模型知道正确的存储策略是什么。真实 agent 场景中，"存完整数据"也是更好的策略。
+
 ### 低优先级 Backlog（训练跑通后再考虑）
 
 - **用户体验修正**：删除 docs/Design.md、填充 LEADERBOARD.md、README 补充、API key 错误信息

@@ -153,11 +153,11 @@ sessions/AUDITOR.md（你，/loop 30m）— 调度中枢：审计、设计、方
 
 ## 当前任务
 
-### 审计 A32 — 下一轮
+### 审计 A33 — 下一轮
 
 - Phase 52 mem0 是否完成？
-- 训练者 GRPO 进展 + 反馈区
-- 远程新推送
+- Phase 57 执行进度（提示词校准 + 对比 eval）
+- 训练者 GRPO 超参调优进展
 
 ## 待跟进
 
@@ -173,6 +173,29 @@ sessions/AUDITOR.md（你，/loop 30m）— 调度中枢：审计、设计、方
 ## 审计日志
 
 （每次审计的结论摘要，最新在最上面。保持简洁，详细分析写 devlog/。）
+
+### 审计 A32（2026-03-10）— 训练者推送 review + 评测校准任务派发（维度 A+B+E）
+
+**训练者重大推送（cc88d47）**：
+- `memorygym/training/` 包重构：training.py → training/env.py，新增 cli.py(694行) + common.py(156行)
+- `scripts/grpo_train.py`(594行)：GRPO 训练脚本
+- 统一 CLI：`python -m memorygym.training <command>`（data/sft/grpo/smoke）
+- **GRPO 管线端到端验证通过**：loss=0.504, mean_r=0.350, correct=1.5/10
+- 训练测试：68 passed, 1 skipped ✅
+- 向后兼容 import：`from memorygym.training import MemoryEnv` 仍可用 ✅
+- 战略反馈区：仍为空
+
+**评测系统战略分析转化为 Phase 57**：
+基于上轮 883 道题全量分析，核心发现是"属性覆盖率瓶颈"——模型只存 10/23 属性，coverage 题只 12%。根因是系统提示词引导模型走了"多实体少属性"的劣势策略。Phase 57 修改提示词引导"存全属性"，不降低难度（预算压力不变），只是让模型做出更合理的决策。
+
+**Phase 52 mem0**：仍未完成（0 eval 结果）
+
+**检查清单**：
+- [x] 训练者推送 review（包重构 + GRPO 管线 + CLI）
+- [x] 训练测试验证通过
+- [x] Phase 57（评测校准）已派发到 EXECUTOR.md
+- [ ] Phase 52 仍阻塞
+- [x] 下一轮：Phase 52 + Phase 57 进度 + 训练者超参调优
 
 ### 审计 A31（2026-03-10）— 全量 competency 正确率分析（维度 E）
 
