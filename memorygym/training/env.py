@@ -558,24 +558,38 @@ class MemoryEnv:
                 if shaped:
                     reward = -0.05
             else:
-                # Search for old_text, replace via forget+store
-                results = self._backend.search(old_text, top_k=1)
-                if results:
-                    self._backend.forget(results[0]["id"])
-                    updated = results[0]["content"].replace(
-                        old_text, new_text, 1)
-                    self._mem_counter += 1
-                    mid = f"mem_{self._mem_counter:03d}"
-                    self._backend.store(updated, memory_id=mid)
-                    self._writes_used += 1
-                    info["edited"] = True
-                    info["remaining"] = self.write_budget - self._writes_used
-                    if shaped and event_type == "correction":
-                        reward = 0.5  # Good: correction via Edit
+                self._writes_used += 1  # Consume upfront (match eval)
+                if hasattr(self._backend, "edit"):
+                    ok = self._backend.edit(old_text, new_text)
+                    if not ok:
+                        self._writes_used -= 1  # Refund on miss
+                        info["edited"] = False
+                        info["error"] = "Text not found in memory"
+                    else:
+                        info["edited"] = True
+                        info["remaining"] = (self.write_budget
+                                             - self._writes_used)
+                        if shaped and event_type == "correction":
+                            reward = 0.5
                 else:
-                    # No budget consumed on miss — match eval behavior
-                    info["edited"] = False
-                    info["error"] = "Text not found in memory"
+                    # Fallback for ChromaDB: search + forget + store
+                    results = self._backend.search(old_text, top_k=1)
+                    if results:
+                        self._backend.forget(results[0]["id"])
+                        updated = results[0]["content"].replace(
+                            old_text, new_text, 1)
+                        self._mem_counter += 1
+                        mid = f"mem_{self._mem_counter:03d}"
+                        self._backend.store(updated, memory_id=mid)
+                        info["edited"] = True
+                        info["remaining"] = (self.write_budget
+                                             - self._writes_used)
+                        if shaped and event_type == "correction":
+                            reward = 0.5
+                    else:
+                        self._writes_used -= 1  # Refund on miss
+                        info["edited"] = False
+                        info["error"] = "Text not found in memory"
 
         elif tool == "Read":
             if hasattr(self._backend, "read"):

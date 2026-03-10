@@ -153,10 +153,9 @@ sessions/AUDITOR.md（你，/loop 30m）— 调度中枢：审计、设计、方
 
 ## 当前任务
 
-### 审计 A61 — 下一轮
+### 审计 A62 — 下一轮
 
 - 各线程活动检查
-- Phase 65 进展跟踪（执行者连续 10+ 轮无活动，考虑直接修复）
 - 维度 C（前沿演进）或维度 E（数据驱动）审计
 
 ## 待跟进
@@ -177,6 +176,17 @@ sessions/AUDITOR.md（你，/loop 30m）— 调度中枢：审计、设计、方
 ## 审计日志
 
 （每次审计的结论摘要，最新在最上面。保持简洁，详细分析写 devlog/。）
+
+### 审计 A61（2026-03-10）— Phase 65 直接修复（角色越界 #3）
+
+**执行者持续不活跃**（10+ 轮），Phase 65 阻塞训练者 MarkdownBackend RL 训练。直接修复。
+
+**修复内容**：
+1. env.py L560-591: Edit 路径加 `hasattr(self._backend, "edit")` 检查，成功时直接调 `backend.edit()`，失败时 refund budget。ChromaDB 走 search+forget+store 回退。与 _tool_helpers.py 行为完全对齐。
+2. stream_agent.py L353: 返回类型标注从 4 元素修正为 5 元素（加 `list[dict]` for trajectory）。
+3. 版本 → 0.6.7。
+
+**验证**：340 passed, 1 skipped。training smoke PASSED。
 
 ### 审计 A60（2026-03-10）— 端到端集成测试（维度 B）
 

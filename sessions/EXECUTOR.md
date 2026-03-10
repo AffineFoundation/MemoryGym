@@ -420,7 +420,15 @@ elif fn in ("memory_search", "memory_list", "memory_get", "Read"):
 - eval_task.py 中无 `memory_store`/`memory_forget`/`memory_get` 引用（grep 验证）
 - SYSTEM_PROMPT 工具列表与 stream_agent.py 一致
 
-### Phase 65 — training/env.py Edit 路径与 eval 对齐
+### Phase 65 — training/env.py Edit 路径与 eval 对齐 ✅
+
+审计线程直接修复（执行者 10+ 轮无活动，角色越界 #3）。
+env.py Edit 加 hasattr(backend, "edit") 检查 + refund 逻辑。stream_agent.py 返回类型 4→5 元素。
+340 passed, 1 skipped。v0.6.7。
+
+（原始任务描述保留供参考）
+
+### Phase 65 原始描述 — training/env.py Edit 路径与 eval 对齐
 
 **依据**：审计 A59 发现 training/env.py L551-578 的 Edit 处理不检查 `hasattr(backend, "edit")`，直接走 search+forget+store 回退路径。MarkdownBackend.forget() 设计为返回 False，导致旧内容不删除 + 新内容重复追加。_tool_helpers.py（eval 路径）L103 正确使用 `hasattr(backend, "edit")`。
 

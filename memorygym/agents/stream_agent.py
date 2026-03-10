@@ -350,7 +350,7 @@ def run_stream_agent(
     template: Any = None,
     seed: int = 0,
     no_redaction: bool = False,
-) -> tuple[list[AgentResult], int, list[dict], str | None]:
+) -> tuple[list[AgentResult], int, list[dict], str | None, list[dict]]:
     """Run a real LLM agent on a WorldTemplate event stream.
 
     Args:
