@@ -153,10 +153,10 @@ sessions/AUDITOR.md（你，/loop 30m）— 调度中枢：审计、设计、方
 
 ## 当前任务
 
-### 审计 A52 — 下一轮
+### 审计 A53 — 下一轮
 
-- 批次 13 评测进度（连续 2 轮未执行）
-- 训练者新推送
+- 批次 13 评测进度（连续 3 轮未执行）
+- 训练者新推送 + F1-F3 反馈是否被读取
 - Phase 62 执行进度
 
 ## 待跟进
@@ -171,10 +171,41 @@ sessions/AUDITOR.md（你，/loop 30m）— 调度中枢：审计、设计、方
 - **GPU 已解除阻塞**：TRAINER.md 已更新，训练线程可开始端到端验证
 - **Reward hacking 风险**（A42 前沿 + A44 代码验证）：env.py L533 用 `n.lower() in content.lower()` 匹配实体名，存 `"Alice"` 即获 +0.3。无 per-turn 衰减。Edit +0.5 不验证 new_text 正确性。与 mem-agent 发现一致。**暂不修复**——训练尚未跑出数据，过早优化 reward 是 premature optimization
 - **mem-agent 方向验证**：Dria 的 mem-agent 用 Obsidian 风格 Markdown 文件记忆 + RL 训练，4B 模型接近 235B 性能。与我们的 Write/Edit/Read + MarkdownBackend 方向一致。核心发现：reward shaping >> 算法选择
+- **GSPO 替代 GRPO**（A52 前沿）：序列级优化比 token 级更稳定。Dria 已成功使用。已写入 TRAINER.md F1
+- **KL 梯度审计**（A52 前沿）：开源库 KL estimator 普遍梯度不正确。已写入 TRAINER.md F2
 
 ## 审计日志
 
 （每次审计的结论摘要，最新在最上面。保持简洁，详细分析写 devlog/。）
+
+### 审计 A52（2026-03-10）— 前沿搜索 V4 + 训练者反馈（维度 C）
+
+**各线程状态**：无新远程提交。执行者/评测者/训练者均无活动（连续 3 轮）。
+
+**前沿搜索**：领域爆发——8+ 新 benchmark + 6+ RL 训练论文。详见 `devlog/2026-03-10-frontier-v4.md`。
+
+**3 个可行动发现**（已写入 TRAINER.md 战略反馈区 F1-F3）：
+
+| # | 发现 | 影响 | 行动 |
+|---|------|------|------|
+| F1 | GSPO 替代 GRPO | Dria mem-agent 已用 GSPO 成功，更稳定 | 训练者评估 |
+| F2 | KL estimator 梯度不正确 | 开源库普遍问题，影响 --kl-coeff | 训练者审计 |
+| F3 | 152 samples 即可泛化 | 不需要大量数据 | 鼓励直接进 GRPO |
+
+**竞品定位更新**：
+- AMemGym（ICLR 2026 poster）：对话个性化记忆
+- AMA-Bench：因果图 agent 记忆，57.22%
+- MEM1（ICLR 2026 poster）：固定内存 RL，7B 3.5x 提升
+- AgeMem：step-wise GRPO 渐进训练
+- **MemoryGym 独特定位不变**：预算约束 + 信息过载 + 反作弊 + 文件工具 + RL 环境
+
+**OpenClaw 生态确认**：200K+ stars，Markdown 记忆已成事实标准。我们的接口兼容。
+
+**检查清单**：
+- [x] 前沿搜索完成（距 A42 已 10 轮）
+- [x] 3 条训练者反馈已写入 TRAINER.md
+- [x] devlog 已保存
+- [x] 下一轮：Phase 62 + 批次 13 + 训练者反馈响应
 
 ### 审计 A51（2026-03-10）— MarkdownBackend 死代码路径发现（维度 B）
 

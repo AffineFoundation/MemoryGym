@@ -108,7 +108,29 @@
 >
 > **生命周期**：审计线程读取并处理后，在反馈条目后标注 `→ 已读，处理方式：...`。训练者可以追加新条目但不要删除已有的（保留审计追踪）。
 
-（暂无反馈）
+#### F1 — GSPO 替代 GRPO（审计线程前沿搜索 A52）
+
+**发现**：Qwen3 团队的 GSPO（Group Sequence Policy Optimization）在序列级做重要性比率+裁剪，比 GRPO 更稳定高效。Dria 的 mem-agent 已用 GSPO 成功训练文件记忆 agent（base Qwen3-4B 39% → 训练后 75%）。
+
+**影响**：MemoryGym 当前用 GRPO，v2 出现 policy collapse（loss→负值）。GSPO 可能从根本上避免此问题。
+
+**建议**：SFT v3 完成后，评估 GSPO 作为 GRPO v3 的替代方案。论文：https://arxiv.org/abs/2507.18071
+
+#### F2 — KL 正则化梯度审计（审计线程前沿搜索 A52）
+
+**发现**：论文 "Comedy of Estimators"（2512.21852）指出开源 RL 库中的 KL estimator 普遍提供**不正确的梯度**。有偏梯度导致训练不稳定。
+
+**影响**：我们的 `--kl-coeff 0.05` 实现（GRPO v3）可能受影响。
+
+**建议**：启动 GRPO v3 前，对照该论文检查 KL 实现是否使用了 biased gradient configuration。
+
+#### F3 — 小数据高效训练验证（审计线程前沿搜索 A52）
+
+**发现**：Memory-R1 用仅 152 QA pairs 即泛化到 3 个 benchmark。Mem-alpha 训练 30K token 场景泛化到 400K+（13x）。
+
+**影响**：我们不需要大量训练数据。当前 480 trajectories（sft_mixed_v2.jsonl）可能已经足够。
+
+**建议**：如果 SFT v3 效果好，直接进入 GRPO 阶段，不需要扩充数据量。
 
 ---
 
