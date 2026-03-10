@@ -123,7 +123,7 @@ class TestGetSystemPrompt:
     def test_contains_budget(self):
         prompt = get_system_prompt(15)
         assert "15" in prompt
-        assert "memory_store" in prompt
+        assert "Write" in prompt
 
 
 class TestRunEpisode:

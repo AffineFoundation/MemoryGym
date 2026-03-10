@@ -37,14 +37,13 @@ def create_memory_tools(
     mem_budget = MemoryBudget(total_writes=budget)
 
     @tool
-    def memory_store() -> Tool:
-        """Store or update a memory entry. Costs 1 write from your budget."""
-        async def execute(content: str, memory_id: str | None = None) -> str:
-            """Save information to memory, or update an existing entry by ID.
+    def write_memory() -> Tool:
+        """Write information to your memory file. Costs 1 write from budget."""
+        async def execute(content: str) -> str:
+            """Append information to your memory file.
 
             Args:
-                content: The information to store.
-                memory_id: Optional ID of an existing memory to update.
+                content: The information to write.
             """
             if len(content) > 2000:
                 raise ToolError("Content exceeds 2000 character limit.")
@@ -53,16 +52,81 @@ def create_memory_tools(
                     f"Write budget exhausted "
                     f"({mem_budget.writes_used}/{mem_budget.total_writes})."
                 )
-            if memory_id is not None:
-                existing = backend.get(memory_id)
-                if not existing:
-                    raise ToolError(f"Memory {memory_id} not found.")
             mem_budget.consume_write()
-            entry_id = backend.store(content, memory_id=memory_id)
+            if hasattr(backend, "write"):
+                line_range = backend.write(content)
+                return (
+                    f"Written ({line_range}). "
+                    f"Budget: {mem_budget.remaining()} writes remaining."
+                )
+            entry_id = backend.store(content)
             return (
                 f"Stored (id={entry_id}). "
                 f"Budget: {mem_budget.remaining()} writes remaining."
             )
+        return execute
+
+    @tool
+    def edit_memory() -> Tool:
+        """Edit existing content in your memory file. Costs 1 write."""
+        async def execute(old_text: str, new_text: str) -> str:
+            """Replace existing text in your memory file.
+
+            Args:
+                old_text: The text to find and replace.
+                new_text: The replacement text.
+            """
+            if not mem_budget.can_write():
+                raise ToolError(
+                    f"Write budget exhausted "
+                    f"({mem_budget.writes_used}/{mem_budget.total_writes})."
+                )
+            mem_budget.consume_write()
+            if hasattr(backend, "edit"):
+                ok = backend.edit(old_text, new_text)
+                if not ok:
+                    mem_budget.writes_used -= 1
+                    raise ToolError("Text not found in memory.")
+                return (
+                    f"Edited. "
+                    f"Budget: {mem_budget.remaining()} writes remaining."
+                )
+            # Fallback for ChromaDB
+            results = backend.search(old_text, top_k=1)
+            if results:
+                backend.forget(results[0]["id"])
+                content = results[0]["content"].replace(old_text, new_text, 1)
+                backend.store(content)
+                return (
+                    f"Edited. "
+                    f"Budget: {mem_budget.remaining()} writes remaining."
+                )
+            mem_budget.writes_used -= 1
+            raise ToolError("Text not found in memory.")
+        return execute
+
+    @tool
+    def read_memory() -> Tool:
+        """Read your memory file contents. Free operation."""
+        async def execute(start_line: int | None = None,
+                         num_lines: int | None = None) -> str:
+            """Read your memory file, optionally a specific line range.
+
+            Args:
+                start_line: Line number to start reading from (1-indexed).
+                num_lines: Number of lines to read.
+            """
+            if hasattr(backend, "read"):
+                content = backend.read(start_line=start_line,
+                                       num_lines=num_lines)
+                if not content:
+                    return "Memory is empty."
+                return content
+            entries = backend.list()
+            if not entries:
+                return "No memories stored yet."
+            parts = [f"[{e['id'][:8]}] {e['content']}" for e in entries]
+            return "\n".join(parts)
         return execute
 
     @tool
@@ -84,56 +148,11 @@ def create_memory_tools(
             return "\n---\n".join(parts)
         return execute
 
-    @tool
-    def memory_get() -> Tool:
-        """Retrieve a single memory by ID. Free operation."""
-        async def execute(memory_id: str) -> str:
-            """Get a specific memory entry by its ID.
-
-            Args:
-                memory_id: The ID of the memory to retrieve.
-            """
-            entry = backend.get(memory_id)
-            if not entry:
-                raise ToolError(f"Memory {memory_id} not found.")
-            return f"[{entry['id']}] {entry['content']}"
-        return execute
-
-    @tool
-    def memory_forget() -> Tool:
-        """Delete a memory. Free operation (does NOT refund write budget)."""
-        async def execute(memory_id: str) -> str:
-            """Remove a memory entry.
-
-            Args:
-                memory_id: The ID of the memory to delete.
-            """
-            success = backend.forget(memory_id)
-            if not success:
-                raise ToolError(f"Memory {memory_id} not found.")
-            return "Deleted."
-        return execute
-
-    @tool
-    def memory_list() -> Tool:
-        """List all stored memories. Free operation."""
-        async def execute() -> str:
-            """List all memories currently stored."""
-            entries = backend.list()
-            if not entries:
-                return "No memories stored yet."
-            parts = []
-            for e in entries:
-                parts.append(f"[{e['id'][:8]}] {e['content']}")
-            return "\n".join(parts)
-        return execute
-
     tools = [
-        memory_store(),
+        write_memory(),
+        edit_memory(),
+        read_memory(),
         memory_search(),
-        memory_get(),
-        memory_forget(),
-        memory_list(),
     ]
     return tools, mem_budget, backend
 

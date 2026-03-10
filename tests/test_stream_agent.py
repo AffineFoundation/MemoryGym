@@ -178,24 +178,23 @@ def test_system_prompt_budget():
     """System prompt formats budget correctly."""
     prompt = SYSTEM_PROMPT.format(budget=30)
     assert "30" in prompt
-    assert "memory_store" in prompt
+    assert "Write" in prompt
     assert "submit_answer" in prompt
 
 
-def test_store_with_memory_id_update():
-    """memory_store with memory_id updates existing entry."""
+def test_edit_updates_existing():
+    """Edit tool updates existing content in memory."""
     backend = _fresh_backend()
     budget = MemoryBudget(total_writes=5)
-    entry_id = backend.store("Alice | salary: 100k")
+    _execute_tool("Write", {"content": "Alice | salary: 100k"}, backend, budget)
     result, answer = _execute_tool(
-        "memory_store",
-        {"content": "Alice | salary: 120k", "memory_id": entry_id},
+        "Edit",
+        {"old_text": "salary: 100k", "new_text": "salary: 120k"},
         backend, budget,
     )
-    assert "Stored" in result
+    assert "Edited" in result
     entries = backend.list()
-    assert len(entries) == 1
-    assert "120k" in entries[0]["content"]
+    assert any("120k" in e["content"] for e in entries)
 
 
 def test_content_character_limit():

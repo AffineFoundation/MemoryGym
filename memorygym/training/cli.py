@@ -614,7 +614,7 @@ def cmd_smoke(args: argparse.Namespace) -> int:
     # 2. Tool parsing
     print("\n[2/3] Tool call parsing...")
     tests = [
-        ('<tool_call>{"name": "memory_store", "arguments": '
+        ('<tool_call>{"name": "Write", "arguments": '
          '{"content": "test"}}</tool_call>', 1),
         ('```json\n{"name": "memory_search", "arguments": '
          '{"query": "test"}}\n```', 1),

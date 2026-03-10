@@ -34,8 +34,8 @@ def generate_sft_trajectory(
     """Generate a complete tool-calling trajectory in OpenAI messages format.
 
     Replays the simulation strategy as explicit tool call sequences:
-    - ingest: memory_store calls for each stored entity
-    - correction: memory_search + memory_forget + memory_store
+    - ingest: Write calls for each stored entity
+    - correction: memory_search + Edit
     - question: memory_search + submit_answer(ground_truth)
 
     Args:
@@ -135,7 +135,7 @@ def generate_sft_trajectory(
                 mid = f"mem_{mem_id_counter:03d}"
                 entity_mem_ids[ename] = mid
                 tool_calls.append(
-                    f'<tool_call>{{"name": "memory_store", '
+                    f'<tool_call>{{"name": "Write", '
                     f'"arguments": {{"content": "{content}"}}}}</tool_call>'
                 )
 
@@ -147,7 +147,7 @@ def generate_sft_trajectory(
                 messages.append({
                     "role": "user",
                     "content": "\n".join(
-                        f"[memory_store] Stored (id={entity_mem_ids[n]}). "
+                        f"[Write] Written. "
                         f"Budget remaining."
                         for n in event.get("entity_names", [])
                         if n in stored_names and n in entity_mem_ids
@@ -170,29 +170,22 @@ def generate_sft_trajectory(
             messages.append({"role": "user", "content": user_msg})
 
             if ename in stored_names and ename in entity_mem_ids:
-                old_mid = entity_mem_ids[ename]
-                entity = world.get_entity(ename)
-                compact = tmpl._compact_document(entity, world.active_attrs)
-                content = f"{ename} | {compact}"
-                mem_id_counter += 1
-                new_mid = f"mem_{mem_id_counter:03d}"
-                entity_mem_ids[ename] = new_mid
+                old_val = str(event.get("old_val", ""))
+                new_val = str(event.get("new_val", ""))
 
                 assistant_content = (
                     f'<tool_call>{{"name": "memory_search", '
                     f'"arguments": {{"query": "{ename}"}}}}</tool_call>\n'
-                    f'<tool_call>{{"name": "memory_forget", '
-                    f'"arguments": {{"memory_id": "{old_mid}"}}}}</tool_call>\n'
-                    f'<tool_call>{{"name": "memory_store", '
-                    f'"arguments": {{"content": "{content}"}}}}</tool_call>'
+                    f'<tool_call>{{"name": "Edit", '
+                    f'"arguments": {{"old_text": "{old_val}", '
+                    f'"new_text": "{new_val}"}}}}</tool_call>'
                 )
                 messages.append({"role": "assistant", "content": assistant_content})
                 messages.append({
                     "role": "user",
                     "content": (
-                        f"[memory_search] [{old_mid}] {ename} | ...\n"
-                        f"[memory_forget] Deleted.\n"
-                        f"[memory_store] Stored (id={new_mid})."
+                        f"[memory_search] {ename} | ...\n"
+                        f"[Edit] Edited. Budget remaining."
                     ),
                 })
             else:
@@ -316,7 +309,7 @@ class MemoryEnv:
         reset(seed) → observation (text description of first event)
         step(action) → (observation, reward, done, info)
 
-    action = {"tool": "memory_store", "args": {"content": "..."}}
+    action = {"tool": "Write", "args": {"content": "..."}}
     reward = +1.0 for correct answer, 0.0 otherwise
     done = True when all events processed
 
@@ -498,11 +491,13 @@ class MemoryEnv:
         """Execute action, return (observation, reward, done, info).
 
         Actions:
-        - {"tool": "memory_store", "args": {"content": "..."}}
+        - {"tool": "Write", "args": {"content": "..."}}
+        - {"tool": "Edit", "args": {"old_text": "...", "new_text": "..."}}
+        - {"tool": "Read", "args": {}}
         - {"tool": "memory_search", "args": {"query": "..."}}
-        - {"tool": "memory_forget", "args": {"memory_id": "..."}}
         - {"tool": "submit_answer", "args": {"answer": "..."}}
         - {"tool": "next"} — advance to next event (for ingest/correction)
+        Legacy names (memory_store, memory_forget) accepted for compatibility.
         """
         tool = action.get("tool", "next")
         args = action.get("args", {})
@@ -513,7 +508,7 @@ class MemoryEnv:
                          if self._event_idx < len(self._stream) else None)
         event_type = current_event["type"] if current_event else None
 
-        if tool == "memory_store":
+        if tool in ("Write", "memory_store"):
             if self._writes_used >= self.write_budget:
                 info["error"] = "Budget exhausted"
                 if shaped:
@@ -545,12 +540,37 @@ class MemoryEnv:
                             else:
                                 reward = 0.3  # Good: stored new entity data
                             self._stored_entity_names.update(matched)
-                    elif event_type == "correction":
-                        # Storing during correction after search+forget = correction flow
-                        if self._correction_searched and self._correction_forgot:
-                            reward = 0.5  # Good: completed correction flow
-                            self._correction_searched = False
-                            self._correction_forgot = False
+
+        elif tool == "Edit":
+            old_text = args.get("old_text", "")
+            new_text = args.get("new_text", "")
+            if self._writes_used >= self.write_budget:
+                info["error"] = "Budget exhausted"
+                if shaped:
+                    reward = -0.05
+            else:
+                # Search for old_text, replace via forget+store
+                results = self._backend.search(old_text, top_k=1)
+                if results:
+                    self._backend.forget(results[0]["id"])
+                    updated = results[0]["content"].replace(
+                        old_text, new_text, 1)
+                    self._mem_counter += 1
+                    mid = f"mem_{self._mem_counter:03d}"
+                    self._backend.store(updated, memory_id=mid)
+                    self._writes_used += 1
+                    info["edited"] = True
+                    info["remaining"] = self.write_budget - self._writes_used
+                    if shaped and event_type == "correction":
+                        reward = 0.5  # Good: correction via Edit
+                else:
+                    info["edited"] = False
+                    info["error"] = "Text not found in memory"
+
+        elif tool == "Read":
+            entries = self._backend.list()
+            info["content"] = "\n".join(
+                e["content"] for e in entries) if entries else ""
 
         elif tool == "memory_search":
             query = args.get("query", "")

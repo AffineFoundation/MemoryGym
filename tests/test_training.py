@@ -51,11 +51,11 @@ class TestSFTTrajectory:
         strategic = generate_sft_trajectory("company", seed=0, strategy="strategic")
         # Perfect should have more store calls
         perfect_stores = sum(
-            m["content"].count("memory_store")
+            m["content"].count('"Write"')
             for m in perfect if m["role"] == "assistant"
         )
         strategic_stores = sum(
-            m["content"].count("memory_store")
+            m["content"].count('"Write"')
             for m in strategic if m["role"] == "assistant"
         )
         assert perfect_stores > strategic_stores
@@ -301,7 +301,7 @@ class TestMemoryEnv:
         assert "error" in info
 
     def test_shaped_reward_correction_flow(self):
-        """Shaped mode: search→forget→store during correction → +0.2."""
+        """Shaped mode: Edit during correction → +0.5."""
         env = MemoryEnv("company", seed=0, n_entities=30,
                         n_questions=5, reward_mode="shaped")
         env.reset()
@@ -312,21 +312,13 @@ class TestMemoryEnv:
             env.step({"tool": "next"})
         if env._event_idx >= len(env._stream):
             return  # No corrections in this stream
-        # Store something first so search has results
-        env.step({"tool": "memory_store",
+        # Store something first so Edit has content to find
+        env.step({"tool": "Write",
                   "args": {"content": "some entity data"}})
-        # Search (marks correction_searched)
-        env.step({"tool": "memory_search",
-                  "args": {"query": "entity"}})
-        assert env._correction_searched
-        # Forget (marks correction_forgot)
-        env.step({"tool": "memory_forget",
-                  "args": {"memory_id": "mem_001"}})
-        assert env._correction_forgot
-        # Store with correction flow complete → 0.2 reward
+        # Edit replaces old content → 0.5 correction reward
         _, reward, _, _ = env.step({
-            "tool": "memory_store",
-            "args": {"content": "corrected entity data"}
+            "tool": "Edit",
+            "args": {"old_text": "some entity", "new_text": "corrected entity"}
         })
         assert reward == 0.5
 

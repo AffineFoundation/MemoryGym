@@ -54,7 +54,7 @@ def _extract_action_chain(turns: list[dict]) -> str:
     for turn in turns:
         for call in turn.get("tool_calls", []):
             name = call.get("name", "")
-            short = name.replace("memory_", "").replace("submit_", "")
+            short = name.replace("memory_", "").replace("submit_", "").lower()
             if short and short not in actions[-1:]:
                 actions.append(short)
     return " → ".join(actions) if actions else "(no action)"
@@ -81,36 +81,35 @@ Write budget: {budget} total writes. Be selective — you'll see more entities t
 2. CORRECTIONS: Updated data. You MUST update stored memories.
 3. QUESTIONS: Answer from stored memories only.
 
-## Memory Tools
+## Tools
 
 Call tools by outputting JSON blocks:
 
-**memory_store** — Store info (costs 1 write, budget: {budget}):
-<tool_call>{{"name": "memory_store", "arguments": {{"content": "info to store"}}}}</tool_call>
+**Write** — Append to your memory file (costs 1 write, budget: {budget}):
+<tool_call>{{"name": "Write", "arguments": {{"content": "info to store"}}}}</tool_call>
 
-**memory_search** — Search stored memories (free, uses semantic search — best results with specific entity names or keywords):
+**Edit** — Edit existing content in your memory file (costs 1 write):
+<tool_call>{{"name": "Edit", "arguments": {{"old_text": "text to find", "new_text": "replacement text"}}}}</tool_call>
+
+**Read** — Read your memory file (free):
+<tool_call>{{"name": "Read", "arguments": {{}}}}</tool_call>
+
+**memory_search** — Semantic search over your memory (free):
 <tool_call>{{"name": "memory_search", "arguments": {{"query": "entity name"}}}}</tool_call>
-
-**memory_forget** — Delete entry by ID (free):
-<tool_call>{{"name": "memory_forget", "arguments": {{"memory_id": "id"}}}}</tool_call>
-
-**memory_list** — List all memories (free):
-<tool_call>{{"name": "memory_list", "arguments": {{}}}}</tool_call>
 
 **submit_answer** — Submit your final answer:
 <tool_call>{{"name": "submit_answer", "arguments": {{"answer": "your answer"}}}}</tool_call>
 
 ## Critical: Handling Corrections
 When you receive a CORRECTION:
-1. memory_search the entity name
-2. memory_forget the old entry
-3. memory_store the corrected data
+1. memory_search the entity name to find existing data
+2. Edit the old value to the corrected value
 This costs 1 write but ensures your answers reflect current data.
 Failing to update = wrong answers on update questions.
 
 ## Memory Budget
-- You have limited store operations — plan your usage carefully
-- Each memory_store or memory_update counts against your budget
+- You have limited write operations — plan your usage carefully
+- Each Write or Edit counts against your budget
 - Corrections will arrive later and each update costs 1 write
 
 ## Answering Questions
@@ -128,8 +127,9 @@ _TOOL_CALL_RE = re.compile(
 
 # Valid tool names for bare-JSON detection
 _KNOWN_TOOLS = {
-    "memory_store", "memory_search", "memory_get",
-    "memory_forget", "memory_list", "submit_answer",
+    "Write", "Edit", "Read", "memory_search", "submit_answer",
+    # Legacy names (backward compatibility during transition)
+    "memory_store", "memory_get", "memory_forget", "memory_list",
 }
 
 # Markdown code block: ```json\n{...}\n``` or ```\n{...}\n```
@@ -177,20 +177,65 @@ def _execute_tool(
     if name == "submit_answer":
         return f"ANSWER_SUBMITTED: {args.get('answer', '')}", args.get("answer", "")
 
-    if name == "memory_store":
+    # -- OpenClaw-compatible tools --
+    if name == "Write" or name == "memory_store":
         content = args.get("content", "")
         if len(content) > 2000:
             return "Content exceeds 2000 character limit.", None
         if not budget.can_write():
             return f"Budget exhausted ({budget.writes_used}/{budget.total_writes}).", None
-        memory_id = args.get("memory_id")
-        if memory_id:
-            existing = backend.get(memory_id)
-            if not existing:
-                return "Entry not found.", None
         budget.consume_write()
-        entry_id = backend.store(content, memory_id=memory_id)
+        if hasattr(backend, "write"):
+            line_range = backend.write(content)
+            return f"Written ({line_range}). {budget.remaining()} writes left.", None
+        entry_id = backend.store(content)
         return f"Stored (id={entry_id}). {budget.remaining()} writes left.", None
+
+    if name == "Edit":
+        old_text = args.get("old_text", "")
+        new_text = args.get("new_text", "")
+        if not old_text:
+            return "old_text is required.", None
+        if not budget.can_write():
+            return f"Budget exhausted ({budget.writes_used}/{budget.total_writes}).", None
+        budget.consume_write()
+        if hasattr(backend, "edit"):
+            ok = backend.edit(old_text, new_text)
+            if not ok:
+                budget.writes_used -= 1  # Refund on miss
+                return "Text not found in memory.", None
+            return f"Edited. {budget.remaining()} writes left.", None
+        # Fallback for ChromaDB: search + forget + store
+        results = backend.search(old_text, top_k=1)
+        if results:
+            backend.forget(results[0]["id"])
+            content = results[0]["content"].replace(old_text, new_text, 1)
+            backend.store(content)
+            return f"Edited. {budget.remaining()} writes left.", None
+        budget.writes_used -= 1  # Refund on miss
+        return "Text not found in memory.", None
+
+    if name == "Read" or name == "memory_get":
+        if hasattr(backend, "read"):
+            start = args.get("start_line")
+            n = args.get("num_lines")
+            content = backend.read(start_line=start, num_lines=n)
+            if not content:
+                return "Memory is empty.", None
+            return content, None
+        # Fallback: memory_get by ID
+        mid = args.get("memory_id", "")
+        if mid:
+            entry = backend.get(mid)
+            if not entry:
+                return "Entry not found.", None
+            return f"[{entry['id']}] {entry['content']}", None
+        # List all
+        entries = backend.list()
+        if not entries:
+            return "Memory is empty.", None
+        lines = [f"[{e['id']}] {e['content']}" for e in entries]
+        return "\n".join(lines), None
 
     if name == "memory_search":
         results = backend.search(args.get("query", ""), args.get("top_k", 5))
@@ -198,12 +243,6 @@ def _execute_tool(
             return "No results found.", None
         lines = [f"[{r['id']}] {r['content']}" for r in results]
         return "\n".join(lines), None
-
-    if name == "memory_get":
-        entry = backend.get(args.get("memory_id", ""))
-        if not entry:
-            return "Entry not found.", None
-        return f"[{entry['id']}] {entry['content']}", None
 
     if name == "memory_forget":
         ok = backend.forget(args.get("memory_id", ""))
