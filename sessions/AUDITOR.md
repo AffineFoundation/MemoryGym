@@ -153,10 +153,10 @@ sessions/AUDITOR.md（你，/loop 30m）— 调度中枢：审计、设计、方
 
 ## 当前任务
 
-### 审计 A63 — 下一轮
+### 审计 A64 — 下一轮
 
 - 各线程活动检查
-- 维度 C（前沿演进）审计
+- 维度 A（能力缺口）— MarkdownBackend eval 对比审计
 - 训练者反馈区检查
 
 ## 待跟进
@@ -173,10 +173,25 @@ sessions/AUDITOR.md（你，/loop 30m）— 调度中枢：审计、设计、方
 - **mem-agent 方向验证**：Dria 的 mem-agent 用 Obsidian 风格 Markdown 文件记忆 + RL 训练，4B 模型接近 235B 性能。与我们的 Write/Edit/Read + MarkdownBackend 方向一致。核心发现：reward shaping >> 算法选择
 - **GSPO 替代 GRPO**（A52 前沿）：序列级优化比 token 级更稳定。Dria 已成功使用。已写入 TRAINER.md F1
 - **KL 梯度审计**（A52 前沿）：开源库 KL estimator 普遍梯度不正确。已写入 TRAINER.md F2
+- **MemoryRewardBench**（A63 前沿）：评测 RM 对记忆管理的监督能力（arxiv 2601.11969）。与我们 shaped reward 相关，但需先跑通基础训练
+- **AMA-Bench 因果图**（A63 前沿）：AMA-Agent 用 causality graph + tool-augmented retrieval 达 57%。因果推理是我们未覆盖的维度
+- **NVIDIA NemoClaw pipeline**（A63 前沿）：seed → synthetic data → RLVR(GRPO) 在单 GPU 训练 CLI agent。方法论可迁移
 
 ## 审计日志
 
 （每次审计的结论摘要，最新在最上面。保持简洁，详细分析写 devlog/。）
+
+### 审计 A63（2026-03-10）— 前沿搜索 V5（维度 C）
+
+**4 项新发现**：
+1. **MemoryRewardBench**（2601.11969）：首个评测 RM 记忆监督能力的 benchmark。Type 1（结果）+ Type 2（过程）评估。所有 RM 在超长上下文下性能下降
+2. **AMA-Bench**（2602.22769）：Agent 记忆 benchmark，关键创新是因果图 + 工具增强检索。GPT-5.2 仅 72%。AMA-Agent 用 causality graph 超基线 11%
+3. **NVIDIA NemoClaw**：开源 agent 平台 + 单 GPU GRPO 训练 pipeline（seed→synthetic→RLVR）
+4. **MemAgents Workshop @ ICLR 2026**：记忆 agent 已成为学术共识方向
+
+**竞品对比**：AMA-Bench 测因果推理（我们没有），MemoryRewardBench 测 RM 质量（我们用手写 reward）。两者都不测 "预算下的存储决策"——这仍是我们的差异化定位。
+
+**无新 Phase**——前沿发现记入待跟进，等训练跑通再考虑 RM 集成。
 
 ### 审计 A62（2026-03-10）— 46 条 eval 数据深度分析（维度 E）
 
