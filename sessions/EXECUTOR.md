@@ -237,6 +237,57 @@ Phase 57-59 完成后 CLAUDE.md 有 3 处描述与代码不一致：
 提取 execute_tool + 5 个辅助函数到 `_tool_helpers.py`（159 行）。
 stream_agent.py 1017→884 行。340 passed, simulation ALL PASS。v0.6.4。
 
+### Phase 62 — MarkdownBackend 接入 bench.py + training env
+
+**依据**：Phase 59 构建了 MarkdownBackend（Markdown 文件 + 混合搜索），stream_agent.py 的 `_execute_tool`（_tool_helpers.py）已通过 hasattr 支持双后端。但系统的两个入口点都硬编码 ChromaDB：
+
+1. **bench.py L225-226**：`ChromaDBBackend()` 硬编码，无 `--backend` 参数（Phase 58 删除了）
+2. **training/env.py L374-377**：`_make_backend()` 只返回 ChromaDBBackend
+3. **training/env.py L523, L553-560**：使用旧 API（store/forget/list），不用新 write/edit/read
+
+MarkdownBackend 有旧 API 兼容层（store/get/forget/list wrapper），所以即使 training env 用旧 API 也能工作，但不是最优路径。
+
+#### Step 1 — bench.py 添加 `--backend` 参数
+
+```python
+parser.add_argument("--backend", choices=["chromadb", "markdown"], default="chromadb")
+```
+
+L225-226 根据 `args.backend` 选择：
+```python
+if args.backend == "markdown":
+    from memorygym.memory.backends.markdown_backend import MarkdownBackend
+    backend_obj = MarkdownBackend()
+else:
+    from memorygym.memory.backends.chromadb_backend import ChromaDBBackend
+    backend_obj = ChromaDBBackend()
+```
+
+L316 和 L462 使用 `args.backend` 替代硬编码 `"chromadb"`。
+
+#### Step 2 — training/env.py 支持 MarkdownBackend
+
+`_make_backend()` L374-377 根据 `self._backend_type` 选择：
+```python
+def _make_backend(self):
+    if self._backend_type == "markdown":
+        from memorygym.memory.backends.markdown_backend import MarkdownBackend
+        return MarkdownBackend()
+    from memorygym.memory.backends.chromadb_backend import ChromaDBBackend
+    return ChromaDBBackend(...)
+```
+
+#### Step 3 — 测试
+
+- 新增测试：MarkdownBackend 通过 bench.py `--backend markdown --seeds 3 --validate` ALL PASS
+- 新增测试：MemoryEnv 使用 MarkdownBackend 的 episode 完整执行
+- `python -m pytest tests/ -q` 全通过
+
+**验证标准**：
+- `python -m memorygym.bench --seeds 3 --validate --backend markdown` ALL PASS
+- `python -m memorygym.bench --seeds 3 --validate --backend chromadb` ALL PASS（回归）
+- 两种后端的 simulation 分数差异 < 2%
+
 ### 低优先级 Backlog
 
 - **用户体验修正**：删除 docs/Design.md、填充 LEADERBOARD.md、README 补充、API key 错误信息

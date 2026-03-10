@@ -153,11 +153,11 @@ sessions/AUDITOR.md（你，/loop 30m）— 调度中枢：审计、设计、方
 
 ## 当前任务
 
-### 审计 A51 — 下一轮
+### 审计 A52 — 下一轮
 
-- 批次 13 评测进度（是否已跑？Corrections >0？）
-- 训练者 SFT v3 / GRPO v3 进展（检查远程推送）
-- 执行者队列空——需要新 Phase 或确认进入维护模式
+- 批次 13 评测进度（连续 2 轮未执行）
+- 训练者新推送
+- Phase 62 执行进度
 
 ## 待跟进
 
@@ -175,6 +175,30 @@ sessions/AUDITOR.md（你，/loop 30m）— 调度中枢：审计、设计、方
 ## 审计日志
 
 （每次审计的结论摘要，最新在最上面。保持简洁，详细分析写 devlog/。）
+
+### 审计 A51（2026-03-10）— MarkdownBackend 死代码路径发现（维度 B）
+
+**审计维度**：实现完整性——Phase 59 的 MarkdownBackend 是否真的可用？
+
+**发现**：MarkdownBackend（Phase 59 核心交付物）是**死代码路径**。
+- bench.py L225-226：硬编码 `ChromaDBBackend()`，无 `--backend` 参数
+- training/env.py L374-377：`_make_backend()` 只返回 ChromaDB
+- training/env.py L523, L553-560：使用旧 API（store/forget），不是新 write/edit/read
+- MarkdownBackend 有旧 API 兼容层，技术上可以替换，但系统入口点没连通
+
+**影响**：Phase 59 声称"工具接口 OpenClaw 化"，stream_agent.py 的工具调用确实改了（Write/Edit/Read），但后端仍是 ChromaDB。真实 eval 从未用过 MarkdownBackend 的混合搜索（向量 70% + BM25 30%），无法验证其搜索质量是否优于 ChromaDB 的纯 embedding 搜索。
+
+**其他线程状态**：
+- **评测者**：批次 13 未执行（连续 2 轮无活动）
+- **训练者**：无新远程推送（最新仍 6dd38a7）
+- **执行者**：Phase 61 ✅ 后队列为空
+
+**已派发**：Phase 62（MarkdownBackend 接入 bench.py + training env）到 EXECUTOR.md。
+
+**检查清单**：
+- [x] 审计产出 Phase 62 任务
+- [x] EXECUTOR.md 待办区非空
+- [x] 下一轮方向：Phase 62 进度 + 批次 13 + 训练者活动
 
 ### 审计 A50（2026-03-10）— Phase 61 完成验证 + 状态同步（维度 B）
 
