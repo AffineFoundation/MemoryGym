@@ -201,6 +201,37 @@ def generate_sft_trajectory(
                     "content": "Entity not in my memory. No update needed.",
                 })
 
+        elif event_type == "noise":
+            user_msg = (
+                f"=== Event {event_idx+1}/{total_events} [INFO] ===\n\n"
+                f"{event['document']}\n\n"
+                "This is supplementary information. "
+                "Store only if relevant to your tasks."
+            )
+            messages.append({"role": "user", "content": user_msg})
+            messages.append({
+                "role": "assistant",
+                "content": "This is noise/supplementary info. Skipping.",
+            })
+
+        elif event_type == "session_break":
+            session_id = event.get("session_id", 2)
+            total_sess = event.get("total_sessions", 2)
+            user_msg = (
+                f"=== Event {event_idx+1}/{total_events} "
+                f"[SESSION BREAK] ===\n\n"
+                f"Session {session_id}/{total_sess} begins. "
+                f"Your conversation context has been reset. "
+                f"Your memory backend is preserved — use "
+                f"memory_search to recall stored data."
+            )
+            messages.append({"role": "user", "content": user_msg})
+            messages.append({
+                "role": "assistant",
+                "content": "New session started. "
+                "I'll use memory_search to recall data as needed.",
+            })
+
         elif event_type == "question":
             user_msg = (
                 f"=== Event {event_idx+1}/{total_events} [QUESTION] ===\n\n"
@@ -399,6 +430,13 @@ class MemoryEnv:
                 f"**Question:**\n{event.get('question', '')}\n\n"
                 "Search your memory and call submit_answer."
             )
+        elif etype == "noise":
+            return (
+                f"=== Event {idx}/{total} [INFO] ===\n\n"
+                f"{event.get('document', '')}\n\n"
+                "This is supplementary information. "
+                "Store only if relevant to your tasks."
+            )
         elif etype == "session_break":
             session_id = event.get("session_id", 2)
             total_sess = event.get("total_sessions", 2)
@@ -488,6 +526,9 @@ class MemoryEnv:
                 self._mem_counter += 1
                 mid = f"mem_{self._mem_counter:03d}"
                 content = args.get("content", "")
+                # Coerce to string — small models may produce lists or other types
+                if not isinstance(content, str):
+                    content = str(content)
                 self._backend.store(content, memory_id=mid)
                 self._writes_used += 1
                 info["memory_id"] = mid

@@ -146,26 +146,25 @@
 ### GPU 状态
 
 - GPU 开发机已解除阻塞，显存可用
-- 可直接用 7B 模型训练（无需先 3B 冒烟）
 - **仍需遵守共享规则**：使用前 `nvidia-smi` 确认空闲资源
 
 ### 端到端训练验证
 
 - **GPU 端到端训练验证**：代码完成但未在真实 GPU 上跑过
-- 推荐顺序：先 3B 快速冒烟验证管线 → 再 7B 正式训练
-- 成功标准（冒烟）：管线跑通，reward 曲线上升，不要求高分
+- 冒烟脚本已就绪：`python scripts/smoke_test_gpu.py` (dry-run 通过)
+- 推荐顺序：先 0.6B/3B 快速冒烟验证管线 → 再 7B 正式训练
+- 成功标准（冒烟）：管线跑通，模型能产出 tool calls，不要求高分
 - 成功标准（正式）：composite ≥ 45%, maintenance ≥ 30%
 
 ## 待办
 
-1. **端到端冒烟测试**（当前优先）
-   - 在 GPU 机上用 3B 模型跑通 SFT → GRPO 全流程
-   - 验证：数据生成 → 训练启动 → reward 计算 → 无报错
-2. **7B 模型正式训练**（冒烟通过后立即开始）
-3. 训练超参调优（基于正式训练结果）
+1. **SFT 数据生成 + 微调**（当前优先）
+   - 生成 SFT 轨迹 → 用 Qwen3-4B 微调，建立 tool-calling + 答题 baseline
+   - GPU 机模型路径：`/home/xmyf/slime_assets/models/Qwen3-4B`
+2. **GRPO 训练**（SFT baseline 后）
+3. 训练超参调优（基于训练结果）
 4. 更多 shaped reward 信号（如 search 精准度奖励）
 5. 多模板 curriculum 效果验证
-6. 训练指标可视化/分析工具
 
 ## 已完成
 
@@ -177,5 +176,13 @@
 - 共享工具解析（_common.py：4 种格式解析 + episode runner）
 - 训练数据生成脚本（单 tier / curriculum 混合 tier）
 - 训练配置（GRPO + curriculum YAML）
-- 完整测试覆盖（27 + 27 = 54 tests）
+- 完整测试覆盖（31 + 27 = 58 tests）
+- noise/session_break 事件支持（training.py: _format_event + generate_sft_trajectory）
+- GPU 冒烟测试脚本（scripts/smoke_test_gpu.py，dry-run 验证通过）
+- GPU 端到端冒烟测试通过 ✅
+  - Qwen3-4B: 143 tool calls, 15/15 writes, 0/10 correct (未训练), 管线全流程无 crash
+  - Qwen2.5-0.5B: 管线跑通但模型太小无 tool calls (WARN_NO_TOOLS)
+  - 修复: content 类型强制转换 (list→str), thinking mode 禁用, 上下文截断
+  - GPU 机环境: 8x A100-80GB, 模型在 `/home/xmyf/slime_assets/models/`
+  - 依赖已安装: torch 2.10, transformers 5.3, chromadb 1.5.4, sentence-transformers 5.2
 

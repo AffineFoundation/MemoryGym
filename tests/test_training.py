@@ -401,6 +401,33 @@ class TestMemoryEnv:
             assert found_after_break, (
                 "Memory backend did not persist across session break")
 
+    def test_noise_event_format(self):
+        """Noise events should render as [INFO] not [DONE]."""
+        env = MemoryEnv("company", tier="lite", seed=0)
+        env.reset()
+        # Find a noise event in the stream
+        for i, event in enumerate(env._stream):
+            if event["type"] == "noise":
+                env._event_idx = i
+                text = env._format_event(event)
+                assert "[INFO]" in text
+                assert "supplementary" in text.lower()
+                assert "[DONE]" not in text
+                return
+        # If no noise in this seed, try another
+        env2 = MemoryEnv("company", tier="standard", seed=0)
+        env2.reset()
+        noise_events = [e for e in env2._stream if e["type"] == "noise"]
+        assert len(noise_events) > 0, "No noise events found in stream"
+
+    def test_sft_trajectory_handles_noise_events(self):
+        """SFT trajectory includes noise events as user+assistant messages."""
+        messages = generate_sft_trajectory("company", seed=0)
+        # Check that noise info events appear in trajectory
+        info_msgs = [m for m in messages if m["role"] == "user"
+                     and "[INFO]" in m["content"]]
+        assert len(info_msgs) > 0, "SFT trajectory missing noise events"
+
     def test_reward_mode_validation(self):
         """Invalid reward_mode raises ValueError."""
         try:
