@@ -176,23 +176,46 @@ def test_comprehension_no_gt_self_validation():
 
 # -- mem0 mock tests (no API key needed) --
 
-def test_mem0_store_no_facts_raises():
-    """mem0 store() must raise when LLM extracts no facts."""
-    from unittest.mock import MagicMock, patch
+def test_mem0_store_retry_on_empty():
+    """mem0 store() retries with prefix when first add returns empty."""
+    from unittest.mock import MagicMock, call
 
-    with patch("memorygym.memory.backends.mem0_backend.Memory") as MockMem:
-        mock_m = MagicMock()
-        mock_m.add.return_value = {"results": []}
-        MockMem.return_value = mock_m
+    backend = object.__new__(
+        __import__("memorygym.memory.backends.mem0_backend",
+                   fromlist=["Mem0Backend"]).Mem0Backend)
+    mock_m = MagicMock()
+    # First call returns empty, retry succeeds
+    mock_m.add.side_effect = [
+        {"results": []},
+        {"results": [{"id": "retry-ok", "memory": "extracted"}]},
+    ]
+    backend._m = mock_m
+    backend._user_id = "test"
 
-        from memorygym.memory.backends.mem0_backend import Mem0Backend
-        backend = Mem0Backend.__new__(Mem0Backend)
-        backend._m = mock_m
-        backend._user_id = "test"
+    result = backend.store("some content")
+    assert result == "retry-ok"
+    assert mock_m.add.call_count == 2
+    # Second call should have "Remember: " prefix
+    second_call = mock_m.add.call_args_list[1]
+    assert second_call[0][0].startswith("Remember: ")
 
-        import pytest
-        with pytest.raises(RuntimeError, match="extracted no facts"):
-            backend.store("some content")
+
+def test_mem0_store_raises_after_retry():
+    """mem0 store() raises when both attempts return empty."""
+    from unittest.mock import MagicMock
+
+    backend = object.__new__(
+        __import__("memorygym.memory.backends.mem0_backend",
+                   fromlist=["Mem0Backend"]).Mem0Backend)
+    mock_m = MagicMock()
+    mock_m.add.return_value = {"results": []}
+    backend._m = mock_m
+    backend._user_id = "test"
+
+    import pytest
+    with pytest.raises(RuntimeError, match="extracted no facts"):
+        backend.store("some content")
+    assert mock_m.add.call_count == 2
 
 
 def test_mem0_store_returns_id():

@@ -23,8 +23,8 @@ from inspect_ai.model import ChatMessageAssistant, ChatMessageUser
 from inspect_ai.solver import Generate, Solver, TaskState, chain, solver, use_tools
 
 from memorygym.inspect_task.tools import create_memory_tools, submit_answer
-from memorygym.worlds import ALL_TEMPLATES
-from memorygym.worlds.base import World, WorldTemplate
+from . import ALL_TEMPLATES
+from .base import World, WorldTemplate
 
 _TEMPLATES = ALL_TEMPLATES
 
@@ -495,7 +495,7 @@ def worldbench(
     dataset = MemoryDataset([sample])
 
     from inspect_ai.solver import system_message as sys_msg
-    from memorygym.worlds.eval_scorer import worldbench_scorer
+    from .eval_scorer import worldbench_scorer
 
     n_total_events = len(stream_data["stream"])
 

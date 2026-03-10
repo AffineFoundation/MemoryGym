@@ -1,12 +1,12 @@
 """World templates for MemoryGym."""
 
-from memorygym.worlds.base import WorldTemplate, World, EntitySpec, GeneratedQA, Correction, Contradiction, Relationship
-from memorygym.worlds.company import CompanyWorld
-from memorygym.worlds.research import ResearchWorld
-from memorygym.worlds.city import CityWorld
-from memorygym.worlds.hospital import HospitalWorld
-from memorygym.worlds.sport import SportWorld
-from memorygym.worlds.movie import MovieWorld
+from .base import WorldTemplate, World, EntitySpec, GeneratedQA, Correction, Contradiction, Relationship
+from .company import CompanyWorld
+from .research import ResearchWorld
+from .city import CityWorld
+from .hospital import HospitalWorld
+from .sport import SportWorld
+from .movie import MovieWorld
 
 ALL_TEMPLATES: dict[str, type[WorldTemplate]] = {
     "company": CompanyWorld,

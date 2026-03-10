@@ -18,7 +18,7 @@ import json
 import re
 from typing import Any
 
-from memorygym.adapters._common import (
+from ._common import (
     format_tool_result,
     get_system_prompt,
     parse_tool_calls,

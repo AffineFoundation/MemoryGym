@@ -1,6 +1,6 @@
 # EXECUTOR — 执行线程
 
-> 启动方式：`/loop 30m 你是执行线程，读 sessions/EXECUTOR.md 执行当前任务`
+> 启动方式：`/loop 10m 你是执行线程，读 sessions/EXECUTOR.md 执行当前任务`
 >
 > 理解意图、设计方案、写代码、跑测试、提交。
 
@@ -54,7 +54,111 @@
 
 ## 当前任务
 
-（待审计线程写入新任务）
+### Phase 52 — mem0 后端评测跑通（端到端闭环修复）
+
+**状态**：代码修复完成（方案 A: retry with prefix），328 tests pass。eval 运行中。
+
+**已完成**：
+- mem0_backend.py store() 空结果时 retry with "Remember: " prefix
+- 测试更新：test_mem0_store_retry_on_empty + test_mem0_store_raises_after_retry
+- config.py 新增 9 个测试（test_config.py）
+- 等待 `--backend mem0` 真实评测结果确认
+
+### Phase 53 — RL 训练端到端冒烟验证（项目最大风险）
+
+**依据**：RL 训练是 MemoryGym 相对所有竞品的**唯一核心差异化**（确定性 RL 环境）。但 47 个 Phase 过去了，**从未跑过一次真实训练**。0 个 checkpoint，0 条训练日志。Phase 51 的 shaped reward 只有单元测试，从未在真实梯度更新中验证。
+
+这是项目最大的生存风险。如果训练管线跑不通，MemoryGym 就只是一个 benchmark，而不是"训练平台"。
+
+**目标**：用最小成本证明 SFT → RL (GRPO) 管线是通的。
+
+**执行流程**：
+
+#### Step 1 — 生成 SFT 训练数据
+
+```bash
+python scripts/generate_train_data.py --seeds 5 --template company --output /tmp/sft_data.jsonl
+```
+
+检查输出格式是否符合标准 SFT 格式（messages list with role/content）。如果有问题，修复 `generate_train_data.py`。
+
+#### Step 2 — MemoryEnv 交互式冒烟测试
+
+写一个最小脚本验证 MemoryEnv 的 step/reward/done 循环能跑通：
+
+```python
+from memorygym.training import MemoryEnv
+env = MemoryEnv(seed=0, template_name="company", tier="lite", reward_mode="shaped")
+obs = env.reset()
+print(f"Initial obs: {obs[:200]}...")
+# 模拟 agent 动作
+action = "memory_store|Company XYZ has revenue of $100M"
+obs, reward, done, info = env.step(action)
+print(f"Reward: {reward}, Done: {done}")
+# 跑到结束
+while not done:
+    action = "pass"  # 或 skip
+    obs, reward, done, info = env.step(action)
+print(f"Final reward: {env.get_verifiable_reward()}")
+```
+
+如果 MemoryEnv 接口有任何阻塞问题，修复它们。
+
+#### Step 3 — verl adapter 冒烟测试
+
+验证 verl adapter 能正确包装 MemoryEnv：
+
+```python
+from memorygym.adapters.verl_adapter import MemoryGymAgentLoop
+loop = MemoryGymAgentLoop(seed=0, template_name="company", tier="lite")
+# 验证 AgentLoopBase 接口完整性
+```
+
+如果 import 失败或接口不完整，修复。
+
+#### Step 4 — 记录发现
+
+在完成（或卡住）后，将发现写入 `devlog/` 文件，包括：
+- 哪些步骤通过/失败
+- SFT 数据格式是否正确
+- MemoryEnv step 循环是否完整
+- 阻塞问题（如果有）
+
+#### 验证标准
+
+1. `python -m pytest tests/ -q` 全部通过
+2. SFT 数据成功生成到 JSONL
+3. MemoryEnv 完整 episode（reset → step × N → done=True → get_verifiable_reward）无崩溃
+4. verl adapter 可 import、接口完整
+5. devlog 记录了所有发现
+
+---
+
+以下为代码质量清理任务，优先级低于 Phase 52-53。在核心管线跑通后再做。
+
+### Phase 54 — 导入风格修正 ✅（已完成，19 处同包导入改为相对导入）
+
+### Phase 55 — 静默异常处理修正（No Fallback 规则）
+
+**依据**：12 处 `except Exception` 静默吞异常，违反 "无 Fallback" 规则。
+
+**修复清单**：
+
+1. **`chromadb_backend.py` get/forget**（2 处）：`except Exception: return None/False` → `except (ValueError, KeyError)`
+2. **`evaluation/backend_bench.py`**（2 处）：`except Exception` → 具体异常类型
+3. **`evaluation/validators.py`**（2 处）：`except Exception` → 具体异常类型
+4. **`worlds/eval_scorer.py`**（1 处）：judge 失败应区分基础设施错误和答错
+
+#### 验证标准
+
+1. `python -m pytest tests/ -q` 全部通过
+2. `python -m memorygym.bench --seeds 3 --validate` 通过
+
+### 低优先级 Backlog（训练跑通后再考虑）
+
+- **用户体验修正**：删除 docs/Design.md、填充 LEADERBOARD.md、README 补充、API key 错误信息
+- **stream_agent.py 拆分**：972 行，提取事件处理函数降到 ~890 行
+- **Promise/Progress Reward**：等简单 shaped reward 在真实训练中验证后，再决定是否需要更复杂的 reward 模型
 
 ## 已完成
 

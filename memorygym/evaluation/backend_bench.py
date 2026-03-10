@@ -26,7 +26,7 @@ from dataclasses import dataclass, field
 from random import Random
 from typing import Any
 
-from memorygym.evaluation.validators import AnswerValidator
+from .validators import AnswerValidator
 from memorygym.worlds.base import WorldTemplate
 
 

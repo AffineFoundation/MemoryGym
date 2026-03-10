@@ -11,7 +11,7 @@ from __future__ import annotations
 from random import Random
 from typing import Any
 
-from memorygym.worlds.base import (
+from .base import (
     AttrDef, EntitySpec, SentenceTemplate, WorldTemplate,
     _possessive,
 )

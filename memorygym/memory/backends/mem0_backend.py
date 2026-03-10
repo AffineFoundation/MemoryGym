@@ -78,6 +78,12 @@ class Mem0Backend:
         # mem0 v1.0+ returns {"results": [{"id": ..., "memory": ...}, ...]}
         entries = result.get("results", [])
         if not entries:
+            # LLM fact extraction may fail on structured content.
+            # Retry with explicit prefix to nudge extraction.
+            result = self._m.add(
+                f"Remember: {content}", user_id=self._user_id)
+            entries = result.get("results", [])
+        if not entries:
             raise RuntimeError(
                 f"mem0 extracted no facts from content ({len(content)} chars)")
         return entries[0]["id"]

@@ -28,7 +28,7 @@ import os
 from typing import Any
 from uuid import uuid4
 
-from memorygym.adapters._common import (
+from ._common import (
     format_tool_result,
     get_system_prompt,
     parse_tool_calls,
