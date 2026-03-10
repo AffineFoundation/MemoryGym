@@ -153,11 +153,11 @@ sessions/AUDITOR.md（你，/loop 30m）— 调度中枢：审计、设计、方
 
 ## 当前任务
 
-### 审计 A59 — 下一轮
+### 审计 A60 — 下一轮
 
 - 各线程活动检查
-- 维度 A（能力缺口）或维度 E（数据驱动）审计
-- docs/Design.md 清理决策
+- Phase 65 进展跟踪
+- 维度 B（实现完整性）— 端到端集成测试审计
 
 ## 待跟进
 
@@ -177,6 +177,23 @@ sessions/AUDITOR.md（你，/loop 30m）— 调度中枢：审计、设计、方
 ## 审计日志
 
 （每次审计的结论摘要，最新在最上面。保持简洁，详细分析写 devlog/。）
+
+### 审计 A59（2026-03-10）— 能力缺口审计（维度 A）
+
+**关键发现**：training/env.py Edit 路径与 eval 路径行为不一致（Phase 63 遗漏）
+
+**Bug 详情**：env.py L551-578 的 Edit 处理不检查 `hasattr(backend, "edit")`，直接走 search+forget+store。MarkdownBackend.forget() 返回 False → 旧内容不删除 + 新内容重复追加 → Edit 标记成功但实际失败。_tool_helpers.py L103 正确使用 hasattr。
+
+**影响**：RL 训练用 MarkdownBackend 时，Edit 行为与 eval 不一致。训练出的策略在 eval 中行为不同——训练-评测 gap。
+
+**其他发现**：
+- stream_agent.py 返回类型标注不匹配（4→5 元素），无运行时影响
+- MemoryEnv markdown 后端无集成测试
+- docs/Design.md 311 行严重过时（14 question types vs 实际 20，Phase 7 vs 实际 64+）
+
+**派发**：Phase 65 → EXECUTOR.md（Edit hasattr 修复 + markdown 集成测试 + 类型标注修复）
+
+**各线程状态**：无远程活动。训练者反馈区无新内容。
 
 ### 审计 A58（2026-03-10）— 用户体验审计（维度 D）
 
