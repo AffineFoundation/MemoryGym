@@ -451,10 +451,36 @@ def _run_episode(model, tokenizer, template, tier, seed,
     turn = 0
     info = {}
     chat_kwargs = chat_kwargs or {}
+    last_event_idx = -1
+    turns_on_event = 0
+    max_turns_per_event = 5  # Auto-advance if stuck
 
     while not done and turn < max_turns:
         if len(context) > 24:
             context = context[:1] + context[-22:]
+
+        # Stuck detection: auto-advance if too many turns on same event
+        current_idx = env._event_idx
+        if current_idx == last_event_idx:
+            turns_on_event += 1
+        else:
+            turns_on_event = 0
+            last_event_idx = current_idx
+
+        if turns_on_event >= max_turns_per_event:
+            current_type = (env._stream[current_idx]["type"]
+                            if current_idx < len(env._stream) else None)
+            if current_type != "question":
+                # Auto-advance past non-question events
+                _, _, done, info = env.step({"tool": "next"})
+                turns_on_event = 0
+                if done:
+                    break
+                next_obs = env._format_event(env._stream[env._event_idx])
+                context.append({"role": "user", "content":
+                    "[System: Moving to next event.]\n\n" + next_obs})
+                turn += 1
+                continue
 
         input_text = tokenizer.apply_chat_template(
             context, tokenize=False, add_generation_prompt=True,

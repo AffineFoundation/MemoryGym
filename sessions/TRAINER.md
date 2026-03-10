@@ -114,27 +114,36 @@
 
 ## 训练 CLI
 
-统一入口 `python -m memorygym.training <command>`，一键完成数据生成→训练全流程。
+### 远程训练工具（推荐）
+
+`scripts/train.py` — 统一远程训练入口，自动同步代码 + GPU 检测 + 日志解析。
 
 ```bash
-# 冒烟测试（无 GPU）
+# 查看 GPU 状态和运行中的训练任务
+python scripts/train.py status --remote $GPU_SSH
+
+# 远程 SFT 训练（自动同步代码 + 选择空闲 GPU）
+python scripts/train.py sft --remote $GPU_SSH --model $MODEL_PATH --lora
+
+# 远程 GRPO 训练
+python scripts/train.py grpo --remote $GPU_SSH \
+    --model $MODEL_PATH --adapter checkpoints/sft \
+    --steps 10 --group-size 4
+
+# 监控运行中的训练
+python scripts/train.py monitor --remote $GPU_SSH --log /tmp/grpo.log
+```
+
+> **规则**：所有远程训练必须通过 `scripts/train.py` 启动，禁止直接 SSH 执行命令。
+
+### 本地工具（无 GPU）
+
+```bash
+# 冒烟测试
 python -m memorygym.training smoke
 
-# 生成 SFT 数据（6 模板 × 20 seeds = 120 轨迹）
+# 生成 SFT 数据
 python -m memorygym.training data --seeds 20 -o data/sft_train.jsonl
-
-# SFT 一键训练（自动生成数据 + 训练）
-python -m memorygym.training sft --model $MODEL_PATH --lora
-
-# SFT 用已有数据
-python -m memorygym.training sft --model $MODEL_PATH --data data/sft_train.jsonl --lora
-
-# GRPO 强化学习（从 SFT checkpoint 出发）
-python -m memorygym.training grpo --model $MODEL_PATH --adapter checkpoints/sft/final \
-    --steps 50 --group-size 4
-
-# 远程训练（SSH 到 GPU 机，见 .env 中 $GPU_SSH）
-python scripts/train.py --remote $GPU_SSH --sync --model $MODEL_PATH --lora
 ```
 
 ### 训练模块结构
