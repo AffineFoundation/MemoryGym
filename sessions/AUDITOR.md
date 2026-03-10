@@ -153,10 +153,11 @@ sessions/AUDITOR.md（你，/loop 30m）— 调度中枢：审计、设计、方
 
 ## 当前任务
 
-### 审计 A58 — 下一轮
+### 审计 A59 — 下一轮
 
 - 各线程活动检查
-- 维度 D（用户体验）或维度 A（能力缺口）审计
+- 维度 A（能力缺口）或维度 E（数据驱动）审计
+- docs/Design.md 清理决策
 
 ## 待跟进
 
@@ -176,6 +177,24 @@ sessions/AUDITOR.md（你，/loop 30m）— 调度中枢：审计、设计、方
 ## 审计日志
 
 （每次审计的结论摘要，最新在最上面。保持简洁，详细分析写 devlog/。）
+
+### 审计 A58（2026-03-10）— 用户体验审计（维度 D）
+
+**README.md 修复**（5 处）：
+1. L20: "8 simulation strategies" → "9"（被 linter 反复还原，用 replace_all 修复）
+2. L69: `--backend` 描述更新为包含 "markdown"
+3. L97-105: 排行榜从捏造分数（73%/39%/27%）修正为实际 eval 数据（30%/28%/18%/13%/8%）
+4. L111: `memory/` 描述加上 Markdown 后端
+5. L115-116: "8-strategy"→"9-strategy"，"training.py"→"training/"
+
+**LEADERBOARD.md**：从空 placeholder 更新为实际 eval 数据（`python scripts/leaderboard.py` 生成），5 模型 46 条评测结果。
+
+**发现**：
+- docs/Design.md（311 行）从未更新过（初始提交），严重过时。建议删除或重写。
+- LEADERBOARD.md 一直是空 placeholder，35+ eval 数据从未展示给用户。
+- README 排行榜分数是捏造的（与任何 eval 数据不匹配），严重误导。
+
+**各线程状态**：无远程活动。训练者反馈区无新内容。
 
 ### 审计 A57（2026-03-10）— Phase 62 发现 + 合入（维度 B）
 

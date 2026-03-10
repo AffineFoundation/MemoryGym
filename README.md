@@ -17,7 +17,7 @@ The agent receives a stream of entity documents (far more than its write budget 
 
 ## Key properties
 
-- **Anti-cheating**: 8 simulation strategies verify that no shortcut beats genuine memory management
+- **Anti-cheating**: 9 simulation strategies verify that no shortcut beats genuine memory management
 - **Deterministic**: Same seed produces identical scenarios and scores
 - **Realistic**: Information overload + limited budget + stale data updates
 - **Trainable**: Includes RL environment (MemoryEnv) for training agents
@@ -94,13 +94,15 @@ python -m memorygym.bench --model moonshotai/Kimi-K2.5-TEE --official -o results
 
 See [LEADERBOARD.md](LEADERBOARD.md) for current results.
 
-Top models (lite tier, averaged across templates):
+Top models (averaged across templates and seeds):
 
-| Model | Avg Score | Templates |
-|-------|-----------|-----------|
-| Qwen3.5-397B | 73% | 3 |
-| Kimi-K2.5 | 39% | 6 |
-| MiniMax-M2.5 | 27% | 5 |
+| Model | Avg Score | Evals |
+|-------|-----------|-------|
+| Qwen3.5-397B | 30% | 12 |
+| Kimi-K2.5 | 28% | 18 |
+| Qwen3-235B | 18% | 7 |
+| MiniMax-M2.5 | 13% | 7 |
+| GLM-5 | 8% | 2 |
 
 ## Architecture
 
@@ -108,12 +110,12 @@ Top models (lite tier, averaged across templates):
 memorygym/
 ├── worlds/          # 6 domain templates + scorer + Inspect AI integration
 ├── evaluation/      # Answer validation + LLM judge
-├── memory/          # Budget management + backends (ChromaDB)
+├── memory/          # Budget management + backends (ChromaDB, Markdown)
 ├── agents/          # Real LLM agent runner
 ├── adapters/        # RL framework adapters (verl/slime)
 ├── bench.py         # CLI entry point
-├── simulation.py    # 8-strategy system self-test
-├── training.py      # SFT trajectory generation + MemoryEnv
+├── simulation.py    # 9-strategy system self-test
+├── training/        # SFT trajectory generation + MemoryEnv
 ├── env.py           # OpenEnv (affinetes) interface
 └── protocol.py      # Tiers, weights, aggregation
 ```
