@@ -174,6 +174,96 @@ def test_comprehension_no_gt_self_validation():
                 f"with name-only backend — GT self-validation leak!")
 
 
+# -- mem0 mock tests (no API key needed) --
+
+def test_mem0_store_no_facts_raises():
+    """mem0 store() must raise when LLM extracts no facts."""
+    from unittest.mock import MagicMock, patch
+
+    with patch("memorygym.memory.backends.mem0_backend.Memory") as MockMem:
+        mock_m = MagicMock()
+        mock_m.add.return_value = {"results": []}
+        MockMem.return_value = mock_m
+
+        from memorygym.memory.backends.mem0_backend import Mem0Backend
+        backend = Mem0Backend.__new__(Mem0Backend)
+        backend._m = mock_m
+        backend._user_id = "test"
+
+        import pytest
+        with pytest.raises(RuntimeError, match="extracted no facts"):
+            backend.store("some content")
+
+
+def test_mem0_store_returns_id():
+    """mem0 store() returns the first extracted fact's ID."""
+    from unittest.mock import MagicMock
+
+    backend = object.__new__(
+        __import__("memorygym.memory.backends.mem0_backend",
+                   fromlist=["Mem0Backend"]).Mem0Backend)
+    mock_m = MagicMock()
+    mock_m.add.return_value = {
+        "results": [{"id": "fact-123", "memory": "extracted fact"}]}
+    backend._m = mock_m
+    backend._user_id = "test"
+
+    result = backend.store("raw content")
+    assert result == "fact-123"
+
+
+def test_mem0_get_not_found():
+    """mem0 get() returns None for missing ID (ValueError)."""
+    from unittest.mock import MagicMock
+
+    backend = object.__new__(
+        __import__("memorygym.memory.backends.mem0_backend",
+                   fromlist=["Mem0Backend"]).Mem0Backend)
+    mock_m = MagicMock()
+    mock_m.get.side_effect = ValueError("not found")
+    backend._m = mock_m
+    backend._user_id = "test"
+
+    assert backend.get("nonexistent") is None
+
+
+def test_mem0_forget_not_found():
+    """mem0 forget() returns False for missing ID."""
+    from unittest.mock import MagicMock
+
+    backend = object.__new__(
+        __import__("memorygym.memory.backends.mem0_backend",
+                   fromlist=["Mem0Backend"]).Mem0Backend)
+    mock_m = MagicMock()
+    mock_m.delete.side_effect = ValueError("not found")
+    backend._m = mock_m
+    backend._user_id = "test"
+
+    assert backend.forget("nonexistent") is False
+
+
+def test_mem0_search_returns_formatted():
+    """mem0 search() maps mem0 format to backend format."""
+    from unittest.mock import MagicMock
+
+    backend = object.__new__(
+        __import__("memorygym.memory.backends.mem0_backend",
+                   fromlist=["Mem0Backend"]).Mem0Backend)
+    mock_m = MagicMock()
+    mock_m.search.return_value = {"results": [
+        {"id": "a1", "memory": "fact about X", "created_at": "2026-01-01"},
+        {"id": "a2", "memory": "fact about Y", "created_at": "2026-01-02"},
+    ]}
+    backend._m = mock_m
+    backend._user_id = "test"
+
+    results = backend.search("X", top_k=5)
+    assert len(results) == 2
+    assert results[0]["id"] == "a1"
+    assert results[0]["content"] == "fact about X"
+    assert results[1]["id"] == "a2"
+
+
 if __name__ == "__main__":
     import sys
     tests = [

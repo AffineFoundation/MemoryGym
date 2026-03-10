@@ -408,3 +408,20 @@ class TestMemoryEnv:
             assert False, "Should have raised ValueError"
         except ValueError as e:
             assert "invalid" in str(e)
+
+    def test_backend_type_chromadb(self):
+        """MemoryEnv with backend_type='chromadb' works (default)."""
+        env = MemoryEnv("company", seed=0, n_entities=10,
+                        n_questions=3, backend_type="chromadb")
+        obs = env.reset()
+        assert "DOCUMENTS" in obs or "Event" in obs
+        _, _, _, info = env.step({
+            "tool": "memory_store",
+            "args": {"content": "test data"}
+        })
+        assert "memory_id" in info
+
+    def test_backend_type_attribute(self):
+        """MemoryEnv stores backend_type for inspection."""
+        env = MemoryEnv("company", seed=0, backend_type="chromadb")
+        assert env._backend_type == "chromadb"

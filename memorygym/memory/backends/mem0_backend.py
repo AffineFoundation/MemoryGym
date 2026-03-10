@@ -66,9 +66,10 @@ class Mem0Backend:
         result = self._m.add(content, user_id=self._user_id)
         # mem0 v1.0+ returns {"results": [{"id": ..., "memory": ...}, ...]}
         entries = result.get("results", [])
-        if entries:
-            return entries[0]["id"]
-        return "unknown"
+        if not entries:
+            raise RuntimeError(
+                f"mem0 extracted no facts from content ({len(content)} chars)")
+        return entries[0]["id"]
 
     def search(self, query: str, top_k: int = 5) -> list[dict]:
         result = self._m.search(query, user_id=self._user_id, limit=top_k)
@@ -87,21 +88,21 @@ class Mem0Backend:
         """Retrieve a single entry by ID."""
         try:
             r = self._m.get(memory_id)
-            if not r:
-                return None
-            return {
-                "id": r["id"],
-                "content": r.get("memory", ""),
-                "created_at": r.get("created_at", ""),
-            }
-        except Exception:
+        except (ValueError, KeyError):
             return None
+        if not r:
+            return None
+        return {
+            "id": r["id"],
+            "content": r.get("memory", ""),
+            "created_at": r.get("created_at", ""),
+        }
 
     def forget(self, memory_id: str) -> bool:
         try:
             self._m.delete(memory_id)
             return True
-        except Exception:
+        except (ValueError, KeyError):
             return False
 
     def list(self) -> list[dict]:

@@ -12,11 +12,6 @@ from pathlib import Path
 from random import Random
 from typing import Any
 
-import chromadb
-from chromadb.utils.embedding_functions import (
-    SentenceTransformerEmbeddingFunction,
-)
-
 from memorygym.protocol import TIERS
 from memorygym.simulation import (
     TEMPLATES,
@@ -308,6 +303,7 @@ class MemoryEnv:
         write_budget: int | None = None,
         eval_salt: int = 0,
         reward_mode: str = "binary",
+        backend_type: str = "chromadb",
     ):
         if reward_mode not in ("binary", "shaped"):
             raise ValueError(f"reward_mode must be 'binary' or 'shaped', got '{reward_mode}'")
@@ -347,16 +343,18 @@ class MemoryEnv:
         self._correction_searched: bool = False
         self._correction_forgot: bool = False
 
-        # ChromaDB embedding search (matches real eval backend)
-        self._ef = SentenceTransformerEmbeddingFunction(
-            model_name="all-MiniLM-L6-v2",
-        )
-        self._chroma_client = chromadb.Client()
-        self._collection_name = f"memenv_{uuid.uuid4().hex[:8]}"
-        self._collection = self._chroma_client.get_or_create_collection(
-            name=self._collection_name,
-            embedding_function=self._ef,
-        )
+        self._backend_type = backend_type
+        self._backend = self._make_backend()
+
+    def _make_backend(self):
+        """Create a fresh backend instance."""
+        if self._backend_type == "mem0":
+            from memorygym.memory.backends.mem0_backend import Mem0Backend
+            return Mem0Backend(
+                user_id=f"memenv_{uuid.uuid4().hex[:8]}")
+        from memorygym.memory.backends.chromadb_backend import ChromaDBBackend
+        return ChromaDBBackend(
+            collection_name=f"memenv_{uuid.uuid4().hex[:8]}")
 
     def _format_event(self, event: dict) -> str:
         """Format an event dict as human-readable text."""
@@ -430,12 +428,8 @@ class MemoryEnv:
         )
         self._event_idx = 0
         self._mem_counter = 0
-        # Reset ChromaDB collection
-        self._chroma_client.delete_collection(self._collection_name)
-        self._collection = self._chroma_client.get_or_create_collection(
-            name=self._collection_name,
-            embedding_function=self._ef,
-        )
+        # Reset backend
+        self._backend = self._make_backend()
         self._writes_used = 0
         self._questions_answered = 0
         self._correct_count = 0
@@ -483,10 +477,7 @@ class MemoryEnv:
                 self._mem_counter += 1
                 mid = f"mem_{self._mem_counter:03d}"
                 content = args.get("content", "")
-                self._collection.add(
-                    ids=[mid],
-                    documents=[content],
-                )
+                self._backend.store(content, memory_id=mid)
                 self._writes_used += 1
                 info["memory_id"] = mid
                 info["remaining"] = self.write_budget - self._writes_used
@@ -506,33 +497,20 @@ class MemoryEnv:
 
         elif tool == "memory_search":
             query = args.get("query", "")
-            count = self._collection.count()
-            if count == 0:
-                info["results"] = []
-            else:
-                top_k = min(5, count)
-                results = self._collection.query(
-                    query_texts=[query],
-                    n_results=top_k,
-                )
-                info["results"] = [
-                    {"id": results["ids"][0][i],
-                     "content": results["documents"][0][i]}
-                    for i in range(len(results["ids"][0]))
-                ]
+            results = self._backend.search(query, top_k=5)
+            info["results"] = [
+                {"id": r["id"], "content": r["content"]}
+                for r in results
+            ]
             if shaped and event_type == "correction" and info["results"]:
                 self._correction_searched = True
 
         elif tool == "memory_forget":
             mid = args.get("memory_id", "")
-            existing = self._collection.get(ids=[mid])
-            if existing["ids"]:
-                self._collection.delete(ids=[mid])
-                info["deleted"] = True
-                if shaped and event_type == "correction":
-                    self._correction_forgot = True
-            else:
-                info["deleted"] = False
+            deleted = self._backend.forget(mid)
+            info["deleted"] = deleted
+            if deleted and shaped and event_type == "correction":
+                self._correction_forgot = True
 
         elif tool == "submit_answer":
             answer = args.get("answer", "")
