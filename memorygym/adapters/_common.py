@@ -91,6 +91,8 @@ def format_tool_result(action: dict[str, Any], info: dict[str, Any]) -> str:
         return f"[{tool}] Stored (id={mem_id}). Budget remaining: {remaining}"
 
     if tool == "Edit":
+        if "error" in info:
+            return f"[Edit] Error: {info['error']}"
         if info.get("edited", info.get("deleted", False)):
             return f"[Edit] Updated. Budget remaining: {info.get('remaining', '?')}"
         return "[Edit] Text not found — no changes made."

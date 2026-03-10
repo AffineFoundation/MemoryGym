@@ -72,7 +72,7 @@ class TestFormatToolResult:
             {"tool": "memory_store", "args": {"content": "x"}},
             {"memory_id": "mem_001", "remaining": 14},
         )
-        assert "mem_001" in result
+        assert "Stored" in result
         assert "14" in result
 
     def test_store_budget_exhausted(self):

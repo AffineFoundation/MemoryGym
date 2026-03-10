@@ -95,18 +95,23 @@ def ssh_run(host: str, port: int, cmd: str, *,
         text=True, bufsize=1)
 
 
-def rsync_project(host: str, port: int, remote_dir: str) -> None:
-    """Sync project to remote, excluding data/checkpoints."""
+def rsync_project(host: str, port: int, remote_dir: str,
+                   include_data: bool = False) -> None:
+    """Sync project to remote, excluding heavy dirs."""
     print("Syncing project to remote...")
-    subprocess.run([
-        "rsync", "-az", "--delete",
+    excludes = [
         "--exclude", "__pycache__",
         "--exclude", ".git",
         "--exclude", "checkpoints/",
         "--exclude", "runs/",
-        "--exclude", "data/",
         "--exclude", "*.pyc",
         "--exclude", ".env",
+    ]
+    if not include_data:
+        excludes += ["--exclude", "data/"]
+    subprocess.run([
+        "rsync", "-az", "--delete",
+        *excludes,
         "-e", f"ssh -p {port}",
         ".", f"{host}:{remote_dir}/",
     ], check=True)
@@ -256,7 +261,7 @@ class GRPOLogParser:
     )
     # Match step summary lines: "Step 1: loss=0.2815 mean_r=0.388 ..."
     STEP_RE = re.compile(
-        r"Step\s+(\d+):\s+loss=([\d.]+)\s+mean_r=([\d.]+)"
+        r"Step\s+(\d+):\s+loss=(-?[\d.]+)\s+mean_r=([\d.]+)"
     )
 
     def __init__(self, verbose: bool = False):
@@ -482,8 +487,9 @@ def launch_training(args: argparse.Namespace, mode: str) -> int:
     print(f"Selected GPUs: {','.join(str(g) for g in available)} "
           f"({total_free/1024:.1f}GB free)")
 
-    # 2. Auto-sync code
-    rsync_project(host, port, args.remote_dir)
+    # 2. Auto-sync code (include data/ for SFT)
+    rsync_project(host, port, args.remote_dir,
+                  include_data=(mode == "sft"))
 
     # 3. Build remote command
     gpu_ids = ",".join(str(g) for g in available)
@@ -497,12 +503,19 @@ def launch_training(args: argparse.Namespace, mode: str) -> int:
         train_cmd = build_grpo_cmd(args)
         parser = GRPOLogParser(verbose=args.verbose)
 
-    cmd = f"{env_prefix}{train_cmd}"
+    # Save log file on remote — training writes to file, survives SSH drops
+    output_name = Path(args.output).name if args.output else mode
+    log_file = f"/tmp/{mode}_{output_name}.log"
+    # nohup + redirect: training runs independently of SSH session
+    cmd = (f"{env_prefix}nohup {train_cmd} > {shlex.quote(log_file)} 2>&1 &"
+           f" TRAIN_PID=$!; echo \"PID=$TRAIN_PID\";"
+           f" tail --pid=$TRAIN_PID -f {shlex.quote(log_file)}")
 
     # 4. Launch and stream
     print(f"\nLaunching {mode.upper()} training...")
     print(f"  Remote: {host}:{port}")
     print(f"  GPUs: {gpu_ids}")
+    print(f"  Log: {log_file}")
     print(f"  Command: {train_cmd}\n")
 
     proc = ssh_run(host, port, cmd)
@@ -513,9 +526,9 @@ def launch_training(args: argparse.Namespace, mode: str) -> int:
             parser.parse_line(line)
     except KeyboardInterrupt:
         proc.terminate()
-        print(f"\n\nInterrupted. Remote process may still be running.")
-        print(f"  To check: ssh -p {port} {host} "
-              f"'pgrep -f {script_name}'")
+        print(f"\n\nInterrupted. Remote training continues in background.")
+        print(f"  Log: {log_file}")
+        print(f"  To check: python3 scripts/train.py status --remote ...")
         print(f"  To kill:  ssh -p {port} {host} "
               f"'pkill -f {script_name}'")
         return 130
@@ -571,6 +584,23 @@ def cmd_status(args: argparse.Namespace) -> int:
     return 0
 
 
+def _detect_log_type(log_path: str) -> str:
+    """Detect whether a log file is from GRPO or SFT training."""
+    if "sft" in log_path.lower():
+        return "sft"
+    return "grpo"
+
+
+def _find_latest_log(host: str, port: int) -> str | None:
+    """Find the most recent training log on remote."""
+    result = ssh_run(host, port,
+                     "ls -t /tmp/grpo_*.log /tmp/sft_*.log 2>/dev/null | head -1",
+                     capture=True, timeout=10)
+    if result.returncode == 0 and result.stdout.strip():
+        return result.stdout.strip()
+    return None
+
+
 def cmd_logs(args: argparse.Namespace) -> int:
     """Show parsed training log (snapshot, not streaming)."""
     if not args.remote:
@@ -578,17 +608,35 @@ def cmd_logs(args: argparse.Namespace) -> int:
         return 1
     host, port = parse_remote(args.remote)
 
-    log_path = args.log or "/tmp/grpo_v2.log"
+    log_path = args.log
+    if not log_path:
+        log_path = _find_latest_log(host, port)
+        if not log_path:
+            print("ERROR: No training logs found on remote. "
+                  "Use --log to specify a path.")
+            return 1
+        print(f"Using latest log: {log_path}")
+
     result = ssh_run(host, port, f"cat {shlex.quote(log_path)}",
                      capture=True, timeout=30)
     if result.returncode != 0:
         print(f"ERROR: Cannot read {log_path}")
         return 1
 
-    parser = GRPOLogParser(verbose=args.verbose)
+    log_type = _detect_log_type(log_path)
+    if log_type == "sft":
+        parser = SFTLogParser(
+            total_epochs=getattr(args, "epochs", 8), verbose=args.verbose)
+    else:
+        parser = GRPOLogParser(verbose=args.verbose)
     for line in result.stdout.split("\n"):
         parser.parse_line(line)
-    parser.summary()
+    if isinstance(parser, GRPOLogParser):
+        parser.summary()
+    elif isinstance(parser, SFTLogParser) and parser.metrics:
+        print(f"\nSFT Summary: {len(parser.metrics)} checkpoints logged")
+        print(f"  Loss: {parser.metrics[0]['loss']:.4f} → "
+              f"{parser.metrics[-1]['loss']:.4f}")
     return 0
 
 
@@ -599,10 +647,22 @@ def cmd_monitor(args: argparse.Namespace) -> int:
         return 1
     host, port = parse_remote(args.remote)
 
-    log_path = args.log or "/tmp/grpo_v2.log"
+    log_path = args.log
+    if not log_path:
+        log_path = _find_latest_log(host, port)
+        if not log_path:
+            print("ERROR: No training logs found. Use --log to specify.")
+            return 1
+        print(f"Using latest log: {log_path}")
+
     print(f"Monitoring {log_path} on {host}...")
 
-    parser = GRPOLogParser(verbose=args.verbose)
+    log_type = _detect_log_type(log_path)
+    if log_type == "sft":
+        parser = SFTLogParser(
+            total_epochs=getattr(args, "epochs", 8), verbose=args.verbose)
+    else:
+        parser = GRPOLogParser(verbose=args.verbose)
     proc = ssh_run(host, port, f"tail -f {shlex.quote(log_path)}")
 
     try:

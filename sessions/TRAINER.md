@@ -168,14 +168,18 @@ memorygym/training/
 
 ## 待办
 
-1. **GRPO v3 实验：KL 正则化**（当前优先）
-   - v2 实验发现：loss 快速趋零（0.28→0.05）但 reward 下降（0.39→0.20），说明 policy collapse
-   - 根因：无 KL 惩罚，模型偏离 SFT reference 过远
+1. **SFT v3：新工具接口训练**（当前优先）
+   - v2b 完成：loss 1.785→0.674，smoke test 9 writes, 3/10 correct, reward=0.46
+   - 但 v2b 用旧工具名（memory_store/memory_forget），上游已改为 Write/Edit/Read
+   - 已生成新数据：`data/sft_mixed_v2.jsonl`（480 trajectories，Write/Edit/Read）
+   - 训练 v3：用新数据 + 相同超参（8ep, lr=3e-5, lora-rank=32）
+2. **GRPO v3：KL 正则化**
+   - v2 实验确认 policy collapse（loss→负值，reward 不增）详见 `devlog/grpo-v2.md`
    - 已实现：`--kl-coeff 0.05`，用 peft disable_adapter_layers() 零拷贝获取 ref logits
-   - 待 v2 完成后启动 v3 实验，对比效果
-   - v2 运行中（GPU 0，PID 2422892，step 4/10）
-2. 更多 shaped reward 信号（如 search 精准度奖励、correction 完成奖励）
-3. 多模板 curriculum 效果验证（lite → standard → multi）
+   - 用 SFT v2b（或 v3）作为 base，对比效果
+   - v2 运行中（GPU 0，step 8/10），完成后启动 v3
+3. 更多 shaped reward 信号（如 search 精准度奖励、correction 完成奖励）
+4. 多模板 curriculum 效果验证（lite → standard → multi）
 
 ## 已完成
 
@@ -208,4 +212,9 @@ memorygym/training/
   - stuck detection: 非 question 事件 5 turns 无进展自动 advance
   - `scripts/train.py` 统一 CLI（status/logs/monitor/sft/grpo）+ .env 自动加载
   - KL 正则化防止 policy collapse（disable_adapter_layers 零拷贝 ref）
+- SFT v2b 突破 — 8 epochs, loss 1.785→0.674, **首个能正确回答的模型**
+  - 9/15 writes, 3/10 correct, reward=0.46（vs v1: 0/10, v2: 0/10）
+  - 详见 `devlog/sft-v2b.md`
+- 工具接口适配（Write/Edit/Read）— _common.py 解析 + 格式化 + 新 SFT 数据
+- train.py 增强：远程日志 tee 保存 + 自动检测最新 log + 负值 loss regex 修复
 
