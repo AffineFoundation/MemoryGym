@@ -35,6 +35,7 @@
 5. **导入风格**：`memorygym/` 内用相对导入，跨包用绝对导入
 6. **提交**：描述 why 不是 what。**禁止** Co-Authored-By、Generated-by 等元数据行。**只在阶段性完成当前开发任务才能提交**。用 `git add <具体文件>`，不用 `git add -A`
 7. **先测试后提交**：新逻辑 → 先加测试
+8. **版本号**：每次 Phase 提交时更新 `memorygym/__init__.py` 的 `__version__`（patch 递增，如 0.4.0→0.4.1）。eval JSON extra 已自动包含版本号，用于区分不同迭代的评测数据
 
 ## 常用命令
 

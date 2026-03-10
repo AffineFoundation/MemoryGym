@@ -3,7 +3,7 @@
 > 项目状态、证据、优先级、架构、技术决策的权威文档。
 > 由自治演进协议持续维护。
 
-**最后更新**: 2026-03-09
+**最后更新**: 2026-03-10
 
 ---
 
@@ -11,19 +11,20 @@
 
 > 新 session 先看这里 + `AUTOPILOT.md`。上下文不足时可读最近的 devlog 文件。
 
-**当前焦点**: 待办空，等待战略推导
+**当前焦点**: 版本追踪提交（Phase 45） + eval 数据持续积累
 
-**最大差距**: RL 训练验证（需 GPU）+ v2 eval 数据（eval session 进行中）
+**最大差距**: RL 训练验证（需 GPU）
 
 **已完成**:
-- Phase 0-2: 多模板 eval + 跨模型兼容 + 任务复杂度升级 ✅
-- Phase 3: RL 训练闭环（代码完成，待 GPU 验证）
-- Phase 5-23: 评测质量迭代、模板增强、工具链、训练基础设施、模板差异化 ✅
-- Phase 24: affinetes SDK 端到端验证 ✅
-- Phase 25: 评分有效性修复（公式统一、效率轴重设计、maintenance gate 修复、distractor 去标记）✅
-- Phase 26-28: 红队审计、修复、缺陷修复 + 测试补全 ✅
-- 6 模板 × 22-23 attrs × 6 dtypes × 18 reasoning competencies
-- 265 tests, simulation ALL PASS（10 seeds; 3 seeds 偶尔 smart_guesser flaky 已知）
+- Phase 0-28: 基础系统、模板增强、评分统一、红队审计 ✅
+- Phase 29-33: V2 系统重设计 — 反事实/多约束题型、模板事件流差异化、实体重要性、噪声注入 ✅
+- Phase 34-38: 长上下文模式、ChromaDB keyword fallback、新题型采样率提升 ✅
+- Phase 39-40: 文档同步、base.py 拆分（1096→728 行） ✅
+- Phase 41-43: 多会话评测设计+实现（session_break + multi tier） ✅
+- Phase 44: RL shaped reward 修正 + 修正搜索 anti-gaming ✅
+- 6 模板 × 22-23 attrs × 6 dtypes × 20 reasoning competencies
+- 270 tests, 9 simulation strategies ALL PASS
+- 35 real evaluations, 5 models — Qwen3.5=23%, Kimi=20%, MiniMax=6%, GLM-5=0%
 - MemoryEnv shaped reward + verl/slime 适配器完整可用
 
 ---
@@ -83,7 +84,7 @@ memorygym/
 |----|------|--------|
 | breadth | 0.30 | 存储广度（retrieval 正确率）|
 | maintenance | 0.25 | 记忆维护（update 正确率 × coverage gate）|
-| reasoning | 0.25 | 推理能力（18 种 competency：9 基础 + 5 关系推理 + 4 新 dtype 题型）|
+| reasoning | 0.25 | 推理能力（20 种 competency：9 基础 + 2 修正 + 5 关系推理 + 4 新 dtype）|
 | efficiency | 0.20 | 效率（correct_count / write_budget）|
 
 abstention_diagnostic 单独报告，不计入 composite。
@@ -95,10 +96,11 @@ abstention_diagnostic 单独报告，不计入 composite。
 | lite | 30 | 10 | 3 | 15 | 2:1 |
 | standard | 60 | 20 | 5 | 30 | 2:1 |
 | hard | 120 | 40 | 10 | 30 | 4:1 |
+| multi | 60 | 20 | 5 | 30 | 2:1 (3 sessions) |
 
 ### 2.4 Simulation 策略与不变量
 
-8 种策略验证评分有效性：perfect=100%, guesser=0%, strategic>naive+10%, abstainer<15%, smart_guesser<5%。
+9 种策略验证评分有效性：perfect=100%, guesser=0%, strategic>naive+10%, abstainer<15%, smart_guesser<5%。
 
 ### 2.6 推理题型（20 types）
 
@@ -126,29 +128,32 @@ abstention_diagnostic 单独报告，不计入 composite。
 
 ## 3. 证据
 
-### 3.1 评测数据 (v2 — Phase 16 Enhanced Templates)
+### 3.1 评测数据 (v2 — Phase 16+ Enhanced Templates)
 
-> v1 数据（10 属性模板）已归档到 `eval/archive_v1/`。以下为 v2 数据（22-23 属性，6 dtype，18 reasoning types）。
+> v1 数据（10 属性模板）已归档到 `eval/archive_v1/`。以下为 v2 数据（22-23 属性，6 dtype，20 reasoning types）。
 
-**v2 评测进行中。** 批次 1 冒烟测试（3/6 模板完成）：
+**35 次真实评测，5 个模型，4 个厂商。** 多模型汇总：
 
-| 模型 | 模板 | Seed | Composite | Breadth | Maint. | Reasoning | Abstention |
-|------|------|------|-----------|---------|--------|-----------|------------|
-| Kimi-K2.5 | company | 0 | 30% | 17% | 20% | 33% | 100% |
-| Kimi-K2.5 | research | 0 | 15% | 0% | 33% | 0% | 100% |
-| Kimi-K2.5 | city | 0 | 20% | 33% | 31% | 0% | 100% |
-| Kimi-K2.5 | hospital | 0 | 17% | 11% | 26% | 20% | 100% |
+| 模型 | N | Composite | Breadth | Maint. | Reasoning | Efficiency | Abstention(diag) |
+|------|---|-----------|---------|--------|-----------|------------|------------------|
+| Qwen3.5-397B | 12 | **23%±12%** | 13% | 49% | 16% | 13% | 100% |
+| Kimi-K2.5 | 18 | **20%±13%** | 14% | 40% | 13% | 12% | 100% |
+| MiniMax-M2.5 | 3 | **6%±6%** | 8% | 11% | 0% | 3% | 50% |
+| Qwen3-235B | 1 | **14%** | 0% | 50% | 0% | 7% | 0% |
+| GLM-5 | 1 | **0%** | 0% | 0% | 0% | 0% | 50% |
 
-初步发现（4/6 模板）：v2 分数显著低于 v1（22-23 属性 vs 10，信息密度更高）。Reasoning 普遍弱（0-33%）。Maintenance 改善（20-33%，v1 多数 0%）。Abstention 100% 一致。
+**关键发现**：
+- Qwen3.5 ≈ Kimi-K2.5（差异在噪音范围内）→ 评测测的是真实能力，非模型特异性
+- 高方差是系统性的（双模型 CV≈60%），根因是 ChromaDB embedding search 不稳定
+- Maintenance 是最强轴（40-49%），Reasoning 最弱（13-16%）
+- GLM-5 存了 32 实体但搜索全空 → 模型级工具使用失败，非系统 bug
 
 ### 3.2 v1 历史数据摘要 [archived]
 
 v1 关键发现（仅供参考，分数不可与 v2 比较）：
 - Qwen3.5-397B 最强（73% avg），breadth/abstention 100%
-- Kimi-K2.5 中等（40% avg），maintenance 弱（多数 0%，提示改进后部分 33%）
-- MiniMax-M2.5 较弱（22% avg），空答案问题严重
-- Reasoning 普遍薄弱（多数 0%）
-- Abstention 普遍优秀（多数 100%）
+- Kimi-K2.5 中等（40% avg），maintenance 弱（多数 0%）
+- v2 分数显著低于 v1（22-23 属性 vs 10，信息密度更高）
 
 ### 3.3 数据索引
 
@@ -158,7 +163,8 @@ eval/archive_v1/  # v1 数据（Phase 16 前，10 属性模板）
 └── README.md
 
 eval/              # v2 数据（Phase 16 后，22-23 属性模板）
-└── (pending)
+├── 35 JSON results + 35 trajectory files
+└── 5 models × 6 templates × multiple seeds
 ```
 
 ---

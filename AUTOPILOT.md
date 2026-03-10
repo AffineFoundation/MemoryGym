@@ -41,6 +41,8 @@ eval 数据（ROADMAP.md §3）← 衡量差距
 
 **提交粒度**：每个 Phase 独立提交，一个 commit 对应一个 Phase。不合并多个 Phase 到一个 commit。
 
+**版本号**：每次 Phase 提交时更新 `memorygym/__init__.py` 的 `__version__`（patch 递增，如 0.5.0→0.5.1）。eval JSON extra 自动包含版本号。
+
 **文档同步**：每次 Phase 完成时检查 CLAUDE.md 是否与代码实际状态一致（模板数、评分权重、架构模块等）。如有漂移，立即修正。关键决策（框架选型、设计变更）必须同步到 ROADMAP.md §5。
 
 **长时间任务**：eval 可能耗时较长，一次 loop 只执行一个 eval 任务即可，不必赶进度。
@@ -66,37 +68,37 @@ eval 数据（ROADMAP.md §3）← 衡量差距
 
 ## 当前任务
 
-### Phase 44 — RL shaped reward 修正 + 修正搜索 tightening
+### Phase 45 — 版本追踪 + 提交未暂存变更
 
-**依据**：审计 A14 发现 MemoryEnv 两个训练质量问题。
+已完成的变更（由审计线程完成，需要执行线程验证和提交）：
 
-#### Step 1 — 修正搜索博弈漏洞
+#### Step 1 — 验证变更
+- `memorygym/__init__.py`: `__version__` 从 0.4.0→0.5.0
+- `memorygym/bench.py`: eval JSON extra 新增 `"version": __version__`
+- `CLAUDE.md`: 新增版本号规则（每次 Phase 提交时 patch 递增）
+- `AUTOPILOT.md`: 任务执行规范新增版本号条目
 
-training.py `step()` 中（约 507-524 行），当 tool=="memory_search" 且 event_type=="correction" 时：
-- 当前：`self._correction_searched = True`（无论搜索结果是否为空）
-- 修正：只在搜索返回非空结果时设置 `self._correction_searched = True`
-- 即加 `if results:` 条件
+#### Step 2 — 跑测试
+```bash
+python -m pytest tests/ -q
+python -m memorygym.bench --seeds 3 --validate
+```
 
-#### Step 2 — Shaped reward 比例调整
-
-training.py shaped reward 模式中：
-- 当前：store=0.1, correction_flow=0.2, answer=1.0（10:1 比例太大）
-- 调整：store=0.3, correction_flow=0.5, answer=1.0（更合理的 gradient signal）
-- 确保测试仍然通过（shaped reward 测试可能有具体数值断言）
-
-#### Step 3 — Multi-session MemoryEnv 测试
-
-tests/test_training.py 中新增：
-- `test_multi_session_episode`：MemoryEnv(tier="multi") 或 n_sessions=3，验证 reset()/step() 正常跑完
-- 验证 session_break 事件在 observation 中出现
-- 验证 memory backend 跨 session 持久化
+#### Step 3 — 提交
+提交以上 4 个文件的变更（注意：AUDIT.md 和 EVAL_QUEUE.md 的变更也需要一起提交）。
 
 #### 验证标准
-- `python -m pytest tests/test_training.py -q` 全量通过
-- `python -m pytest tests/ -q` 全量通过
-- shaped reward 0% 搜索不再触发 correction_searched
+- 所有测试通过
+- `python -c "from memorygym import __version__; print(__version__)"` 输出 `0.5.0`
+- simulation validation ALL PASS
 
 ## 已完成
+
+### Phase 44 — RL shaped reward 修正 + 修正搜索 tightening ✅
+- 空搜索结果不再触发 correction_searched（防博弈）
+- shaped reward: store 0.1→0.3, correction_flow 0.2→0.5（更强梯度信号）
+- test_multi_session_episode: 验证 multi tier 完整 episode + 跨 session 持久化
+- 270 tests pass
 
 ### Phase 43 — 跨 session 修正测试补全 ✅
 - test_cross_session_correction: 验证 n_sessions=3 时至少 1 个 correction 跨 session

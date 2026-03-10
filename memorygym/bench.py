@@ -22,6 +22,7 @@ from collections import defaultdict
 from pathlib import Path
 from random import Random
 
+from memorygym import __version__
 from memorygym.protocol import (
     OFFICIAL_SEEDS,
     TIERS,
@@ -317,6 +318,7 @@ def main(argv: list[str] | None = None) -> int:
                     "success": total > 0 and eval_error is None,
                     "time_taken": seed_elapsed,
                     "extra": {
+                        "version": __version__,
                         "model": args.model,
                         "backend": args.backend,
                         "seed": seed,

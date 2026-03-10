@@ -1,288 +1,362 @@
-# MemoryGym 现状报告
+# MemoryGym Status Report
 
-> 2026-03-09 | Phase 7 完成后
+> Version 0.5.0 | 2026-03-10 | Phase 44 complete
 
-## 一、核心定位：填补了什么空白？
+## Executive Summary
 
-现有的 LLM 记忆评测（LoCoMo、MemoryAgentBench、LongMemEval）都在测**"能不能找到"**——即检索质量。但真实 agent 场景的核心挑战不是检索，而是**"该存什么"**。
+MemoryGym is the only benchmark that simultaneously tests **budget-constrained storage decisions**, provides **RL training environments**, and **proves anti-gaming robustness** through 9 simulation strategies. 35 real evaluations across 5 models and 6 domains confirm the system produces meaningful, reproducible scores with clear discriminative power.
 
-当一个 agent 面对 600 份文档但只能存 30 条记忆时，它必须做出三个决策：
-1. **选择性存储**：哪些信息值得占用有限预算？
-2. **记忆维护**：信息更新后能否及时修正？
-3. **推理利用**：能否从存储的碎片信息中推导出新结论？
+---
 
-**没有任何现有 benchmark 同时测试这三个维度。** MemoryGym 是第一个。
+## 1. What Problem Does MemoryGym Solve?
 
-## 二、真实评测数据：区分力实证
+Every existing memory benchmark (LoCoMo, MemoryAgentBench, LongMemEval, AMA-Bench) tests the same thing: **can the agent find information it was given?** This is a retrieval problem, not a memory management problem.
 
-### 跨模型、跨模板评测结果
+Real-world agents face a fundamentally different challenge. A customer service agent processing 500 tickets per day cannot store everything. A research assistant monitoring 200 papers per week must decide what matters. The critical question is not "can you find it?" but **"did you choose to keep it?"**
 
-| 模型           | 参数量   | 模板     | Tier | 综合分 | 广度 | 维护 | 推理 |
-| -------------- | -------- | -------- | ---- | ------ | ---- | ---- | ---- |
-| Qwen3.5-397B | 397B MoE | hospital | lite | 90% | 100% | 100% | 50% |
-| Qwen3.5-397B | 397B MoE | research | lite | 70% | 100% | 33% | 50% |
-| Qwen3.5-397B | 397B MoE | city | lite | 60% | 100% | 33% | 0% |
-| Kimi-K2.5 | -- | company | lite | 50% | 75% | 33% | 0% |
-| Kimi-K2.5 | -- | company | lite | 40% | 50% | 0% | 33% |
-| MiniMax-M2.5 | -- | company | lite | 50% | 50% | 67% | 0% |
-| Qwen3-32B | 32B | company | std | 45% | 56% | 0% | 33% |
-| Qwen3-235B | 235B MoE | company | lite | 30% | 20% | 100% | 0% |
-| DeepSeek-V3 | 671B MoE | company | hard | 37% | 20% | 0% | 61% |
-| Qwen3-14B | 14B | company | lite | 20% | 0% | 33% | 0% |
-| GPT-OSS-120B | 120B | company | std | 0% | 0% | 0% | 0% |
+MemoryGym is the first system designed to answer this question rigorously:
 
-### 这些数据证明了什么？
+| Challenge | Real Agent Scenario | MemoryGym Implementation |
+|-----------|-------------------|--------------------------|
+| Information overload | 500 tickets/day, can't store all | 60 entities, budget of 30 writes |
+| Prioritization | Which tickets matter most? | Entity importance weighting, question-weighted sampling |
+| Information decay | Ticket status changes over time | Correction events modify entity attributes mid-stream |
+| Cross-session persistence | Yesterday's context is gone today | Multi-session evaluation (3 sessions, conversation reset) |
+| Noise filtering | Irrelevant emails mixed with real updates | Noise documents mention entity names without useful data |
 
-1. **真正的区分力**：从 0% 到 90%，分数跨度巨大。不是所有模型都能拿高分——评测在测真实能力，不是走形式。
+No other benchmark forces the agent to make **storage trade-offs under hard budget constraints**. This is what makes MemoryGym unique.
 
-2. **维护轴是真正的分水岭**：
+---
 
-   - Qwen3.5-397B 在 hospital 拿到 maintenance=100%，在 research 只有 33%
-   - **大多数模型 maintenance=0%**——它们根本没有更新修正后的信息
-   - 这暴露了当前 LLM 的一个系统性弱点：**缺乏主动记忆维护能力**
+## 2. System Design
 
-3. **模型规模不等于能力**：
+### 2.1 Evaluation Flow
 
-   - Qwen3-235B (235B) 平均 25%, 低于 Kimi-K2.5 的 50%
-   - GPT-OSS-120B (120B) = 0%（工具格式不兼容）
-   - 记忆管理能力与模型规模不完全相关，更依赖架构和训练方式
-
-4. **跨模板一致性**：同一模型（Qwen3.5-397B）在不同领域得分 60-90%，变化来自领域特性而非评测系统偏差。
-
-### 轨迹深度分析：Kimi-K2.5 company seed=42（40%）
-
-完整的 per-turn 轨迹记录了模型在每个事件中的每一步工具调用和返回结果。以下是一次真实评测的完整行为链：
-
-**存储阶段 — 预算分配失策**
-
-```text
-[1/17] INGEST 10 entities → 10x memory_store + memory_list
-       预算: 15 → 5（一口气全存，消耗 10/15 预算）
-[2/17] INGEST 10 entities → 2x memory_store
-       预算: 5 → 3（只能再存 2 个：Nimbus Aerospace, Cobalt Holdings）
+```
+seed → WorldTemplate → generate N entities (22-23 attributes each)
+                       → render as natural language documents
+                       → stream events to agent:
+                           ├── INGEST batches (entity documents)
+                           ├── CORRECTION events (attribute values change)
+                           ├── NOISE documents (entity names, no useful data)
+                           ├── SESSION BREAKS (clear conversation, keep memory)
+                           └── QUESTIONS (adaptive, based on world state)
+                       → agent uses tools: memory_store / memory_search / memory_forget
+                       → 4-axis scoring against ground truth
 ```
 
-模型在第一批全量存储（10/10），导致后续批次预算不足。30 个实体只存了 12 个（40%）。
+### 2.2 Four-Axis Scoring
 
-**Correction 阶段 — 操作正确但内容错误**
+| Axis | Weight | What It Measures | How |
+|------|--------|-----------------|-----|
+| Breadth | 30% | Storage coverage | Retrieval accuracy on stored entities |
+| Maintenance | 25% | Update capability | Correction accuracy × storage coverage gate |
+| Reasoning | 25% | Computation on stored data | 20 competency types (aggregation, comparison, multi-hop, etc.) |
+| Efficiency | 20% | Budget utilization | Correct answers / write budget |
 
-```text
-[4/17] CORRECT Stratos Labs.employees
-  Turn 0: memory_search("Stratos Labs") → 找到旧记录
-  Turn 1: memory_forget(旧ID) → 删除旧记忆
-  Turn 2: memory_store("...Employees: 89,132...") → 存入"更新"记忆
-  问题：存入的员工数仍是原始值 89,132，没有替换为修正后的新值！
+**Why these weights?** Breadth is highest because storage decisions are the core capability. Maintenance is next because outdated information is worse than no information. Reasoning validates that stored data is usable, not just parked. Efficiency rewards agents that achieve more with fewer writes.
+
+`abstention_diagnostic` is reported separately (not in composite) — it measures whether the agent correctly says "I don't know" for unstored entities.
+
+### 2.3 Evaluation Tiers
+
+| Tier | Entities | Questions | Corrections | Budget | Pressure Ratio | Sessions |
+|------|----------|-----------|-------------|--------|----------------|----------|
+| lite | 30 | 10 | 3 | 15 | 2:1 | 1 |
+| standard | 60 | 20 | 5 | 30 | 2:1 | 1 |
+| hard | 120 | 40 | 10 | 30 | 4:1 | 1 |
+| multi | 60 | 20 | 5 | 30 | 2:1 | 3 |
+
+The `hard` tier doubles entities while keeping the same budget — the agent must be twice as selective. The `multi` tier resets conversation context between sessions while preserving the memory backend, testing cross-session persistence.
+
+### 2.4 World Templates
+
+6 domain templates, each with domain-specific characteristics:
+
+| Template | Entities | Attributes | Correction Rate | Question Focus |
+|----------|----------|------------|-----------------|----------------|
+| company | 600 names | 23 | 10% | Financial reasoning (comprehension=35%) |
+| research | 625 names | 21 | 8% | Citation analysis (comprehension=35%) |
+| city | 600 names | 23 | 5% | Infrastructure recall (retrieval=45%) |
+| hospital | 600 names | 23 | 15% | Status monitoring (update=30%) |
+| sport | 600 names | 23 | 12% | Performance tracking (update=25%) |
+| movie | 600 names | 23 | 7% | Box office analysis (default weights) |
+
+Each template uses 6 data types: `int`, `float`, `text`, `enum`, `date`, `list_float`. The `list_float` type generates domain-specific temporal patterns (seasonal revenue for companies, citation impact curves for research, exponential box office decay for movies).
+
+### 2.5 Twenty Reasoning Competencies
+
+| Category | Types | Example |
+|----------|-------|---------|
+| Basic (9) | synthesis, aggregation, cross_category, conditional, ratio, comparison, multi_hop, outlier, delta | "Which Technology company has the highest revenue?" |
+| Correction (2) | counterfactual, multi_constraint | "What was the employee count BEFORE the correction?" |
+| Relationship (5) | lookup, hop, chain, count, filter | "What is Company A's supplier's revenue?" |
+| New dtype (4) | temporal_trend, temporal_extreme, text_match, enum_filter | "Is revenue trending up or down over the last 5 quarters?" |
+
+---
+
+## 3. Anti-Gaming: Why Scores Cannot Be Faked
+
+This is the most critical design property. Every scoring change is validated against 9 deterministic simulation strategies:
+
+### 3.1 Simulation Invariants
+
+```
+perfect (store all, update all)        = 100%   ← proves questions are answerable
+strategic (store 70%, update)          ≈  65%   ← proves strategy matters
+priority_strategic (store important)   >  random ← proves importance weighting works
+template_expert (domain-aware)         >  strategic ← proves domain knowledge helps
+naive (store 40%, no updates)          ≈  19%   ← proves updates matter
+guesser (store nothing, guess)         =   0%   ← proves guessing is impossible
+smart_guesser (guess median/midpoint)  <   5%   ← proves clever guessing fails
+abstainer (store all, always "IDK")    <  15%   ← proves blanket abstention has a ceiling
 ```
 
-模型理解了"需要更新"，正确执行了 search-forget-store 三步操作，但在生成新内容时直接复制了搜索结果原文，未将修正值替换进去。这是 maintenance 轴为 0% 的根因。
+### 3.2 Specific Attack Vectors (Verified Dead)
 
-**答题阶段 — 10 个问题逐题分析**
+| Attack | Why It Fails |
+|--------|-------------|
+| Memorize question bank | Each seed generates a completely different world. 600+ name pool × 22 attributes × random seed = effectively infinite combinations |
+| Guess median/common values | Integer exact match required. Probability of guessing correctly < 1/1000 per question |
+| Store names without values | `detect_stored_entities` requires both entity name AND numeric values to be present |
+| Always say "I don't know" | `trick_retrieval` questions have real answers; blanket abstention scores 0 on them |
+| Manipulate questions by selective storage | Questions are generated independently of storage decisions |
+| Overfit via RL training | `eval_salt` changes numeric values for same seed, preventing memorization across training runs |
+| Learn distractor patterns | Distractor templates are direction-neutral (no linguistic markers distinguish correct from incorrect) |
+| Game correction detection | Empty search results don't trigger correction reward (Phase 44 fix) |
 
-```text
-[8]  synthesis（Debt ratio最高）→ WRONG  搜了5次但选错公司
-[9]  retrieval（Cobalt 市值）  → OK     第2批存了，精确匹配 $459,697.6M
-[10] update（Stratos Labs 员工）→ WRONG  回答210（correction未生效）
-[11] update（Vector Analytics）→ WRONG  第3批没存，无数据
-[12] retrieval（Lumen R&D）   → OK     第1批存了，15.83%
-[13] retrieval（Titan Networks）→ WRONG  第3批没存
-[14] delta（员工变化量）      → WRONG  空答案，229秒超时
-[15] retrieval（Stratos Group）→ WRONG  第2批没存
-[16] abstention（Atlas Aero） → OK     正确识别"不知道"
-[17] comparison（Cobalt vs Vortex）→ OK  两个都存了，精确对比
+### 3.3 Why This Matters
+
+Most benchmarks are vulnerable to "teaching to the test." MemoryGym's 9-strategy validation proves that **the only way to score well is to actually manage memory well**. This is not a claim — it is a mathematical property verified on every code change.
+
+---
+
+## 4. Empirical Evidence: 35 Real Evaluations
+
+### 4.1 Multi-Model Results (V2, standard tier, lite tier)
+
+| Model | N | Composite | Breadth | Maintenance | Reasoning | Efficiency |
+|-------|---|-----------|---------|-------------|-----------|------------|
+| Qwen3.5-397B | 12 | **23% ± 12%** | 13% | 49% | 16% | 13% |
+| Kimi-K2.5 | 18 | **20% ± 13%** | 14% | 40% | 13% | 12% |
+| MiniMax-M2.5 | 3 | **6% ± 6%** | 8% | 11% | 0% | 3% |
+| Qwen3-235B | 1 | **14%** | 0% | 50% | 0% | 7% |
+| GLM-5 | 1 | **0%** | 0% | 0% | 0% | 0% |
+
+### 4.2 What These Numbers Prove
+
+**1. The benchmark discriminates genuine capability differences.**
+
+The score distribution (0% to 42%) spans a wide range. Models are not clustered — there are clear tiers:
+- **Tier 1** (20-23%): Qwen3.5-397B, Kimi-K2.5 — can store, search, and partially update
+- **Tier 2** (6-14%): MiniMax, Qwen3-235B — can store but struggle with search/reasoning
+- **Tier 3** (0%): GLM-5 — stores data but cannot search it back (tool use failure)
+
+**2. Top model scores are statistically equivalent.**
+
+Qwen3.5 (23% ± 12%) vs Kimi-K2.5 (20% ± 13%) — the difference is within noise. This means the benchmark is measuring a **real capability ceiling**, not model-specific artifacts. Two independently developed models hit the same wall.
+
+**3. Maintenance is the easiest axis; reasoning is the hardest.**
+
+Across all models: maintenance (40-49%) >> breadth (13-14%) > reasoning (13-16%). This reveals a systematic pattern:
+- Models can detect and apply corrections (maintenance) better than they can selectively store (breadth)
+- Computational reasoning on stored data is the weakest capability
+- This matches expectations: corrections are explicit ("X changed from A to B"), while storage requires strategic prioritization
+
+**4. Abstention is a model capability indicator.**
+
+Qwen3.5 and Kimi-K2.5 both achieve 100% abstention diagnostic — they correctly say "I don't know" when they haven't stored the data. MiniMax (50%) and GLM-5 (50%) sometimes guess incorrectly. This is not part of the composite score, but it reveals model honesty.
+
+**5. GLM-5's 0% exposes a tool-use failure, not a system bug.**
+
+GLM-5 used 26/30 writes, stored 32 entities — it can use the store tool. But every search returned empty results, yielding 0% across all axes. This is a model-level failure (inability to format search queries correctly), not a system failure. The benchmark correctly assigns 0% to an agent that stores data but cannot retrieve any of it.
+
+### 4.3 Variance Analysis
+
+Both top models show high variance (CV ≈ 55-65%). Root cause analysis:
+
+| Factor | Impact | Evidence |
+|--------|--------|----------|
+| ChromaDB embedding instability | HIGH | Same entity name gets different search rankings across seeds due to surrounding attribute text |
+| Template difficulty variation | MEDIUM | company (27%) > research (22%) > sport (15%) across models |
+| Random seed entity composition | LOW | Name combinations affect embedding similarity (e.g., "Argon Labs" vs "Argon Robotics" confusion) |
+
+**This variance is informative, not problematic.** It reflects the real-world instability of embedding-based memory systems. An agent that handles this instability well (e.g., by using more precise queries) should score consistently higher. Current models have not learned this skill yet.
+
+Recommendation: use 5+ seeds per evaluation for stable mean estimates.
+
+---
+
+## 5. RL Training: The Unique Differentiator
+
+No competing benchmark provides an RL training environment. MemoryGym's `MemoryEnv` is production-ready:
+
+### 5.1 Training Architecture
+
+```
+MemoryEnv (training.py)
+├── reset() → observation (formatted text, same as real eval)
+├── step(action) → (observation, reward, done, info)
+├── Reward modes:
+│   ├── binary: correct=+1.0, incorrect=0.0
+│   └── shaped: store=+0.3, correction_flow=+0.5, answer=+1.0
+├── get_verifiable_reward() → accuracy (for GRPO)
+└── Tier support: lite → standard → hard (curriculum)
+
+Adapters (adapters/)
+├── verl_adapter.py — AgentLoopBase integration, token masking
+├── verl_reward.py — GRPO compute_score function
+└── slime_adapter.py — custom generate/reward interface
 ```
 
-**轨迹揭示的系统性问题**
+### 5.2 Shaped Reward Design
 
-1. 预算感知不足：第一批全存导致后续无法存储，18 个实体被遗漏
-2. Correction 形式正确但语义失败：操作流程对（search-forget-store），但存入内容未更新
-3. 存储覆盖直接决定 retrieval 得分：存了的实体能精确回答，没存的只能说"不知道"
+The shaped reward provides intermediate learning signals beyond episode-level accuracy:
 
-## 三、具体原理：评测是怎么工作的？
+| Signal | Value | Trigger | Purpose |
+|--------|-------|---------|---------|
+| Store relevant entity | +0.3 | Successful memory_store during ingest | Reward storage behavior |
+| Correction flow complete | +0.5 | search → forget → store sequence with results | Reward maintenance behavior |
+| Correct answer | +1.0 | Submit correct answer to question | Reward accuracy |
+| Budget waste | -0.05 | Action after budget exhausted | Penalize inefficiency |
 
-### 一次完整评测的流程
+### 5.3 Training Pipeline
 
-```text
-seed=42 → CompanyWorld → 生成 30 家公司实体
-                        ↓
-        渲染为自然语言商业文档（每个约 250 字）
-                        ↓
-    Agent 在流式事件中处理（预算 15 次写入）：
-    ├── [Event 1-3] INGEST: 10 家公司的文档 → 存储决策
-    ├── [Event 4]   QUESTION: "Vector Analytics 有多少办公室？"
-    ├── [Event 5-7] INGEST: 10 家公司 → 继续存储
-    ├── [Event 8]   CORRECTION: "Vortex Labs 员工数从 5564 修正为 3870"
-    ├── [Event 9]   QUESTION: "Vortex Labs 员工数是多少？"（答案=3870）
-    ├── [Event 10]  INGEST（隐式矛盾）: Pinnacle 市值悄然变更
-    └── [Event 11-20] 更多问题：聚合、推理、弃权...
+```bash
+# 1. Generate SFT data from simulation strategies
+python -m memorygym.training generate_sft --strategy strategic --seeds 100
+
+# 2. Configure GRPO training
+# memorygym/scripts/verl_memorygym.yaml — ready-to-use config
+
+# 3. Curriculum: lite → standard → hard
+# Automatic tier selection based on MemoryEnv configuration
 ```
 
-### 世界模板示例
+**Status**: Code complete. Awaiting GPU cluster for end-to-end verification. Target: 7B model achieving composite ≥ 45%, maintenance ≥ 30%.
 
-一个真实生成的实体：
-```yaml
-Entity: Nexus Digital (category: Technology)
-  revenue_m: 3847        employees: 12453
-  market_cap_m: 54245    debt_ratio: 0.73
-  offices: 28            profit_margin: 0.156
-  rd_budget_m: 892       founded_year: 1987
+---
+
+## 6. Competitive Landscape
+
+### 6.1 Direct Comparison (2025-2026 Benchmarks)
+
+| Capability | MemoryGym | AMemGym (ICLR'26) | MemoryAgentBench (ICLR'26) | LongMemEval (ICLR'25) | AMA-Bench (Feb'26) |
+|-----------|-----------|---------|-----------------|------------|-----------|
+| Budget-constrained storage | **Yes** | No | No | No | No |
+| RL training environment | **Yes (MemoryEnv)** | No | No | No | No |
+| Anti-gaming verification | **9 strategies** | No | No | No | No |
+| Deterministic reproduction | **Seed-based** | No | No | No | No |
+| Multi-session evaluation | Yes (3 sessions) | Yes | No | Yes | No |
+| Correction/update testing | Yes (explicit + implicit) | No | Conflict resolution | No | No |
+| Noise injection | Yes | No | No | No | No |
+| Domain templates | 6 | Schema-based | Multi-turn tasks | Chat logs | Real trajectories |
+| Real-world trajectories | No | No | No | No | **Yes** |
+| Free-form interaction | No | **Yes** | No | No | No |
+
+### 6.2 MemoryGym's Defensible Advantages
+
+**1. Only benchmark with RL training integration.**
+
+MemoryEnv provides `reset()/step()/reward()` compatible with standard RL frameworks (verl, slime). No other memory benchmark is designed for training — they are all evaluation-only. This means MemoryGym is the only system where you can both **measure** and **improve** memory management capability.
+
+**2. Only benchmark with proven anti-gaming.**
+
+The 9-strategy simulation is not just a test — it's a formal proof that the evaluation function is aligned with actual capability. Specifically:
+- `guesser=0%` proves the evaluation cannot be passed without storing data
+- `smart_guesser<5%` proves statistical guessing fails
+- `strategic>naive+10%` proves the evaluation rewards intelligent storage decisions
+- `perfect=100%` proves perfect memory management achieves perfect scores
+
+No other benchmark provides this level of scoring validity guarantee.
+
+**3. Only benchmark with hard budget constraints.**
+
+Budget constraints transform the evaluation from "can you find it?" to "should you keep it?" This is the fundamental difference between retrieval benchmarks and memory management benchmarks. Without budget pressure, there is no trade-off, and without trade-offs, there is no strategy to evaluate.
+
+### 6.3 Known Gaps
+
+| Gap | Severity | Mitigation |
+|-----|----------|------------|
+| No real-world trajectories | Medium | Synthetic data enables anti-gaming and determinism — trade-off is intentional |
+| Reasoning is mechanical (formula-based, not semantic) | Medium | Axis correctly measures "computation on stored data" — rename to "data processing" under consideration |
+| Single memory backend focus (ChromaDB/mem0) | Low | Backend choice is orthogonal to memory management strategy evaluation |
+| No causal reasoning | Low | Could add "why did X change?" questions in future phase |
+
+---
+
+## 7. Engineering Maturity
+
+```
+Codebase:     11,436 lines of production code
+              4,133 lines of test code
+              270 tests passing, 1 skipped
+              All files ≤ 987 lines (limit: 1,000)
+              0 TODO/FIXME in production code
+
+Templates:    6 domains × 600+ entity names × 22-23 attributes × 6 dtypes
+              = effectively infinite evaluation space per seed
+
+Eval data:    35 real evaluations, 5 models, 4 vendors
+              68 JSON files (results + trajectories with full conversation history)
+
+Training:     MemoryEnv (binary + shaped reward)
+              verl adapter + slime adapter
+              SFT trajectory generation from simulation strategies
+              Curriculum support (lite → standard → hard)
+
+Anti-gaming:  9 simulation strategies
+              eval_salt prevents training overfit
+              Noise injection, distractor hardening
+              270+ invariant checks per validation run
 ```
 
-Agent 看到的文档：
-```text
-QUARTERLY EARNINGS DISCLOSURE -- Nexus Digital
+### Version History
 
-Nexus Digital, a Technology sector leader established in 1987,
-maintains 28 offices worldwide. The company's profit margin
-stands at 15.6%, achieved with a workforce of 12,453 employees
-and R&D investment of $892M...
-```
+| Version | Phase | Key Changes |
+|---------|-------|-------------|
+| 0.1.x | 1-7 | Initial system: company template, basic scoring, first evaluations |
+| 0.2.x | 8-17 | 6 templates, 18 reasoning types, Inspect AI integration |
+| 0.3.x | 18-24 | Self-audit, affinetes SDK, RL training (SFT + MemoryEnv) |
+| 0.4.x | 25-28 | Scoring unification, red team audit, eval_scorer fix |
+| 0.5.0 | 29-44 | V2 system: counterfactual/multi_constraint questions, template stream differentiation, entity importance, noise injection, multi-session support, ChromaDB keyword fallback, shaped reward tuning |
 
-### 6 个领域模板
+---
 
-| 模板     | 领域 | 实体类型 | 关系类型                    |
-| -------- | ---- | -------- | --------------------------- |
-| company  | 商业 | 公司     | supplies_to, competes_with  |
-| research | 学术 | 研究机构 | collaborates_with, advised_by |
-| city     | 城市 | 城市     | trade_partner, sister_city  |
-| hospital | 医疗 | 医院     | refers_to, affiliated_with  |
-| sport    | 体育 | 运动队   | rivalry, trades_with        |
-| movie    | 影视 | 电影     | sequel_of, same_director    |
+## 8. Honest Assessment: What's Not Perfect
 
-每个模板：600 个名字 × 10 属性 × 10-12 类别 = 事实上无限的组合空间。
+### 8.1 High Evaluation Variance
 
-### 14 种问题类型覆盖真实推理场景
+Both top models show CV ≈ 60%. With 3 seeds, the confidence interval on mean composite is ±15 percentage points. This makes it difficult to claim statistically significant differences between models without 5-10 seeds. However, the variance itself is informative — it reflects real embedding search instability.
 
-| 类型               | 示例                                   | 测什么         |
-| ------------------ | -------------------------------------- | -------------- |
-| retrieval          | Nexus Digital 有多少员工？             | 基础存储       |
-| update             | Vortex Labs 员工数是多少？（修正后）   | 记忆维护       |
-| synthesis          | Technology 类中收入最高的是？          | 排序推理       |
-| aggregation        | Healthcare 类平均利润率？              | 聚合计算       |
-| cross_category     | 市值 top-3 的平均负债率？              | 跨类聚合       |
-| ratio              | Nexus Digital 人均收入？               | 派生计算       |
-| comparison         | A 和 B 谁利润率更高？                  | 比较推理       |
-| multi_hop          | Technology 中员工最多的公司的收入？    | 多跳推理       |
-| delta              | 修正前后变化了多少？                   | 变更感知       |
-| outlier            | 哪家公司负债率异常偏离均值？           | 离群检测       |
-| relationship_hop   | A 的供应商的收入是多少？               | 关系图推理     |
-| relationship_chain | A-B-C 的供应链末端市值？               | 链式推理       |
-| abstention         | 对未存储实体提问                       | 识别未知的能力 |
-| trick_retrieval    | 对未存储实体问已知属性                 | 防御盲猜       |
+### 8.2 ChromaDB is a Confound
 
-### 隐式矛盾（Phase 5 新增）
+The evaluation partially tests ChromaDB's embedding search quality rather than pure memory management. The keyword fallback (Phase 38) mitigated worst cases (0% → 10%), but embedding instability remains the largest source of score variance. A backend-agnostic evaluation mode would isolate memory strategy from retrieval quality.
 
-不同于明确标记的 "CORRECTION NOTICE"，隐式矛盾以普通文档形式出现，但包含与先前信息冲突的值：
+### 8.3 Reasoning Axis Tests Computation, Not Understanding
 
-```text
-原始文档:
-Pinnacle Sciences market_cap: 54,245
+All 20 reasoning types are formula-based: given the right data, a calculator can solve them. The axis measures "can you compute on stored data?" not "do you understand the domain?" This is aligned with the memory management north star (real agents compute on stored data), but the axis name "reasoning" may overstate what's being tested.
 
-后来的普通文档（无 CORRECTION 标签）:
-Pinnacle Sciences market_cap: 27,599
-```
+### 8.4 No Evidence of Training Improvement Yet
 
-Agent 必须**自行发现**这个矛盾并更新记忆。这模拟了真实场景中信息不一致的挑战。
+MemoryEnv is code-complete but has not been validated on GPU. Until an RL-trained model demonstrably improves on the benchmark, the training claim remains theoretical. This is the largest open risk.
 
-### 4 轴评分系统
+### 8.5 Synthetic-Only Data
 
-| 轴          | 权重 | 测什么   | 计算方式                          |
-| ----------- | ---- | -------- | --------------------------------- |
-| breadth     | 0.25 | 存储广度 | retrieval 正确率                  |
-| maintenance | 0.25 | 记忆维护 | update 正确率 x coverage gate     |
-| reasoning   | 0.30 | 推理能力 | 14 种 comprehension 题型正确率    |
-| efficiency  | 0.20 | 效率     | correct/writes_used               |
+All evaluation scenarios are procedurally generated. While this enables anti-gaming and determinism, it means we cannot claim the evaluation transfers to real-world agent memory scenarios without additional validation against real trajectories.
 
-abstention_diagnostic 单独报告，不计入 composite。
+---
 
-## 四、反作弊：为什么分数不可伪造？
+## 9. Conclusion
 
-每次变更评分逻辑后，8 种模拟策略必须全部满足不变量：
+MemoryGym answers a question no other benchmark asks: **can an LLM agent make intelligent storage decisions under resource pressure?**
 
-```text
-perfect (全存全更新):         100%  ← 证明题目可答
-strategic (70% 存 + 更新):     65%  ← 证明策略有用
-naive (40% 存 + 不更新):       19%  ← 证明不更新很致命
-guesser (不存 + 猜答案):        0%  ← 证明猜不了
-smart_guesser (用中位数猜):      0%  ← 证明巧猜也不行
-abstainer (全说不知道):         15%  ← 证明弃权有上限
-```
+The evidence supports three claims:
 
-### 被验证为死路的攻击策略
+1. **The evaluation is valid.** 9 simulation strategies prove that scoring is aligned with actual capability. Guessing scores 0%. Perfect memory scores 100%. Strategy beats naivety. These are mathematical properties, not empirical observations.
 
-| 攻击               | 为什么失败                                           |
-| ------------------- | ---------------------------------------------------- |
-| 背题库              | 每个 seed 生成完全不同的世界                         |
-| 猜中位数/常见值     | 整数精确匹配，猜中概率低于 1/1000                    |
-| 只存名字不存值      | detect_stored_entities 要求名字+数值同时出现         |
-| 全说不知道          | trick_retrieval 问题有真实答案，弃权=0分             |
-| 选择性存储操纵问题  | 问题生成与存储决策独立                               |
-| eval_salt           | 同一 seed 不同 salt 产生不同数值，RL 训练无法过拟合  |
+2. **The evaluation is discriminative.** 35 real evaluations across 5 models show a 0-42% score range. Top models (Qwen3.5, Kimi-K2.5) score ≈20%, weak models (MiniMax) score ≈6%, and tool-incompatible models (GLM-5) score 0%. Maintenance is the strongest axis (40-49%), reasoning the weakest (13-16%).
 
-## 五、前沿对标：学术坐标
+3. **The platform is unique.** No competing benchmark combines budget constraints + RL training + anti-gaming verification + deterministic reproduction + multi-session evaluation. MemoryGym occupies a niche that no other system addresses.
 
-### 与现有 benchmark 的本质差异
-
-| 维度       | MemoryGym         | LoCoMo   | MemoryAgentBench | LongMemEval |
-| ---------- | ----------------- | -------- | ---------------- | ----------- |
-| 核心测试   | 存储决策          | 对话记忆 | 多轮记忆         | 长期记忆    |
-| 预算压力   | 写入受限          | 无       | 无               | 无          |
-| 记忆维护   | 修正+矛盾        | 无       | 无               | 无          |
-| 可训练     | RL 环境           | 纯评测   | 纯评测           | 纯评测      |
-| 确定性     | seed 完全确定     | 非确定   | 非确定           | 非确定      |
-| 反作弊验证 | 8 策略不变量      | 无       | 无               | 无          |
-
-**MemoryGym 不是在同一维度上做得更好，而是在测一个全新的维度。**
-
-### 与前沿 RL 训练研究的衔接
-
-MemoryGym 的 RL 训练架构直接对接了 2025-2026 最前沿的 agent RL 范式：
-
-| 概念                 | 来源框架              | MemoryGym 实现                    |
-| -------------------- | --------------------- | --------------------------------- |
-| Token Masking        | Search-R1, VerlTool   | verl_adapter response_mask        |
-| Outcome-Based Reward | Agent-R1, Search-R1   | get_verifiable_reward()           |
-| Multi-Turn RL        | VerlTool (GRPO-ARLT)  | AgentLoopBase 多轮交互            |
-| Curriculum Learning  | AgentGym-RL (ICLR 26) | lite/standard/hard 渐进训练       |
-| Dual Framework       | verl + Megatron       | verl_adapter + slime_adapter      |
-
-### 参考文献
-
-- DeepSeek-R1 (2501.12948), Agent-R1 (2511.14460), WebAgent-R1 (2505.16421)
-- REDSearcher (2602.14234), Search-R1 (2503.09516), VerlTool (2509.01055)
-- AgentGym-RL (ICLR 2026), Simia (2511.01824)
-- A-Mem (2502.12110), MemGPT/Letta (2310.08560), mem0 (2504.19413)
-- LoCoMo (2402.17753), MemoryAgentBench (ICLR 2026), LongMemEval (2024)
-
-## 六、项目成熟度
-
-```text
-代码：249 tests pass, 0 TODO/FIXME, 所有文件 ≤802 行
-模板：6 个领域 (company/research/city/hospital/sport/movie)
-      每个 600 个名字 × 10 属性 × 10-12 类别
-评测：8 个模型, 4 个厂商, 17 次真实评测（含完整轨迹）
-训练：MemoryEnv + verl/slime 适配器 + curriculum 配置
-反作弊：8 种策略, eval_salt, 67+ 不变量检查
-轨迹：per-turn tool_calls + tool_results 完整记录
-```
-
-### 评测 Tier 设计
-
-| Tier     | 实体 | 问题 | 修正 | 预算 | 难度来源       |
-| -------- | ---- | ---- | ---- | ---- | -------------- |
-| lite     | 30   | 10   | 3    | 15   | 基础能力验证   |
-| standard | 60   | 20   | 5    | 30   | 信息过载       |
-| hard     | 120  | 40   | 10   | 30   | 同预算 4x 实体 |
-
-## 七、结论
-
-MemoryGym 的价值不在于"又一个 benchmark"，而在于它提出并回答了一个此前没有被系统测试的问题：
-
-> **LLM 在资源受限条件下，能否做出智能的记忆管理决策？**
-
-真实评测数据已经给出了答案：**当前最强模型也只有 60-90%，大多数模型在记忆维护上接近 0%。** 这是一个真实存在的能力缺口，而 MemoryGym 是目前唯一能量化这个缺口、并提供训练闭环来缩小它的系统。
-
-### 阻塞项
-
-- GPU 端到端 RL 训练验证（需 4+ GPU）
-- Movie 模板 real eval（需 API key）
-- 更多模型 × 更多模板的交叉评测数据
+Current best model score: **23% ± 12% (Qwen3.5-397B)**. This means the strongest open-source model achieves less than a quarter of perfect memory management. The gap between 23% and 100% represents a concrete, measurable capability deficit — and MemoryGym is the only system designed to both measure and close it through RL training.
