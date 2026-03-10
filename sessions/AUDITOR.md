@@ -153,11 +153,11 @@ sessions/AUDITOR.md（你，/loop 30m）— 调度中枢：审计、设计、方
 
 ## 当前任务
 
-### 审计 A43 — 下一轮
+### 审计 A45 — 下一轮
 
-- Phase 60 执行进度检查
+- Phase 60 执行进度（执行者是否活跃？）
 - 训练者新推送检查
-- 前沿搜索发现的 reward hacking 风险是否需要 Phase 任务化
+- 如果仍无进展，考虑简化 Phase 60 或拆分为更小的任务
 
 ## 待跟进
 
@@ -169,12 +169,26 @@ sessions/AUDITOR.md（你，/loop 30m）— 调度中枢：审计、设计、方
 - **弱模型失败模式**：GLM-5 0%，MiniMax 6%。均为模型级工具使用能力不足
 - **stream_agent.py 972/1000 行**：Phase 56 已派发（提取 4 个事件处理函数→降到 ~890 行）
 - **GPU 已解除阻塞**：TRAINER.md 已更新，训练线程可开始端到端验证
-- **Reward hacking 风险**（前沿搜索 A42 发现）：mem-agent 项目实证发现 format reward 导致模型最大化 turn 数而非解决任务。我们的 shaped reward（检测 Write 调用）可能有类似风险。待训练数据验证后决定是否修正
+- **Reward hacking 风险**（A42 前沿 + A44 代码验证）：env.py L533 用 `n.lower() in content.lower()` 匹配实体名，存 `"Alice"` 即获 +0.3。无 per-turn 衰减。Edit +0.5 不验证 new_text 正确性。与 mem-agent 发现一致。**暂不修复**——训练尚未跑出数据，过早优化 reward 是 premature optimization
 - **mem-agent 方向验证**：Dria 的 mem-agent 用 Obsidian 风格 Markdown 文件记忆 + RL 训练，4B 模型接近 235B 性能。与我们的 Write/Edit/Read + MarkdownBackend 方向一致。核心发现：reward shaping >> 算法选择
 
 ## 审计日志
 
 （每次审计的结论摘要，最新在最上面。保持简洁，详细分析写 devlog/。）
+
+### 审计 A44（2026-03-10）— Reward hacking 风险深度验证（维度 A）
+
+**状态**：执行者/训练者仍无新提交（连续 5 轮）。Phase 60 session 文件已在远程但执行者 loop 未运行。
+
+**Shaped reward 代码审查**（env.py）确认 3 个 hacking 向量：
+
+| 风险 | 位置 | 机制 | 严重度 |
+|------|------|------|--------|
+| 空内容存储 | L533 | `n.lower() in content.lower()` 纯子串匹配，存 `"Alice"` 得 +0.3 | HIGH |
+| 无衰减 | 全局 | 无 per-turn 递减，无 step-count penalty | MEDIUM |
+| Edit 不验证 | L565 | +0.5 不验证 new_text 是否正确 | MEDIUM |
+
+**决策**：暂不任务化。训练线程尚未跑出 GRPO 数据（v2 在 GPU 上，v3 KL penalty 待启动）。如果训练出现 reward 异常再修。符合「先跑通再优化」原则和 A27 教训（避免 academic creep）。
 
 ### 审计 A42（2026-03-10）— 前沿搜索（维度 C）
 
