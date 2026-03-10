@@ -104,7 +104,7 @@ def benchmark_backend(
         try:
             mid = backend.store(content)
             entity_ids[e.name] = mid
-        except Exception:
+        except (RuntimeError, ValueError):
             store_failures += 1
 
     # Phase 2: Apply corrections (delete old, store new)
@@ -117,7 +117,7 @@ def benchmark_backend(
             old_id = entity_ids[c.entity_name]
             try:
                 backend.store(content, memory_id=old_id)
-            except Exception:
+            except (RuntimeError, ValueError):
                 store_failures += 1
 
     # Phase 3: Measure search recall

@@ -79,21 +79,7 @@
 
 ### Phase 54 — 导入风格修正 ✅（已完成，19 处同包导入改为相对导入）
 
-### Phase 55 — 静默异常处理修正（No Fallback 规则）
-
-**依据**：12 处 `except Exception` 静默吞异常，违反 "无 Fallback" 规则。
-
-**修复清单**：
-
-1. **`chromadb_backend.py` get/forget**（2 处）：`except Exception: return None/False` → `except (ValueError, KeyError)`
-2. **`evaluation/backend_bench.py`**（2 处）：`except Exception` → 具体异常类型
-3. **`evaluation/validators.py`**（2 处）：`except Exception` → 具体异常类型
-4. **`worlds/eval_scorer.py`**（1 处）：judge 失败应区分基础设施错误和答错
-
-#### 验证标准
-
-1. `python -m pytest tests/ -q` 全部通过
-2. `python -m memorygym.bench --seeds 3 --validate` 通过
+### Phase 55 — 静默异常处理修正 ✅（7 处 except Exception → 具体异常类型）
 
 ### Phase 56 — 测试套件精简提效
 

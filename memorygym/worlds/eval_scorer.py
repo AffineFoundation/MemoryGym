@@ -55,7 +55,7 @@ def worldbench_scorer(judge_model: str | None = None) -> Any:
                     return await llm_judge_validate(judge, q, gt_, ans, comp)
 
                 judge_fn = _async_judge
-            except Exception:
+            except (ImportError, ConnectionError, RuntimeError, ValueError):
                 log.warning("Failed to init judge model %s", judge_model)
 
         # Validate each answer

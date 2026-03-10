@@ -150,7 +150,7 @@ class ChromaDBBackend:
                 "content": results["documents"][0],
                 "created_at": results["metadatas"][0].get("created_at", ""),
             }
-        except Exception:
+        except (ValueError, KeyError, IndexError):
             return None
 
     def forget(self, memory_id: str) -> bool:
@@ -160,7 +160,7 @@ class ChromaDBBackend:
                 return False
             self._collection.delete(ids=[memory_id])
             return True
-        except Exception:
+        except (ValueError, KeyError):
             return False
 
     def list(self) -> list[dict]:

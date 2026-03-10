@@ -232,7 +232,7 @@ def validate_with_fallback(
         try:
             ok, reason = judge_fn(question, ground_truth, answer, competency)
             return ok, f"judge:{reason}"
-        except Exception as exc:
+        except (RuntimeError, ConnectionError, TimeoutError, ValueError) as exc:
             return False, f"judge:failed({exc})"
 
     return False, "rule:fail"
@@ -260,7 +260,7 @@ async def async_validate_with_fallback(
         try:
             ok, reason = await judge_fn(question, ground_truth, answer, competency)
             return ok, f"judge:{reason}"
-        except Exception as exc:
+        except (RuntimeError, ConnectionError, TimeoutError, ValueError) as exc:
             return False, f"judge:failed({exc})"
 
     return False, "rule:fail"
