@@ -168,10 +168,12 @@ memorygym/training/
 
 ## 待办
 
-1. **GRPO 超参调优**（当前优先）
-   - GRPO 管线已验证：1 step 2 episodes → loss=0.504, mean_r=0.350, correct=1.5/10
-   - 优化方向：增大 group_size 和 steps，减少 max_new_tokens
-   - 用更多 GPU 并行加速 rollout
+1. **GRPO v3 实验：KL 正则化**（当前优先）
+   - v2 实验发现：loss 快速趋零（0.28→0.05）但 reward 下降（0.39→0.20），说明 policy collapse
+   - 根因：无 KL 惩罚，模型偏离 SFT reference 过远
+   - 已实现：`--kl-coeff 0.05`，用 peft disable_adapter_layers() 零拷贝获取 ref logits
+   - 待 v2 完成后启动 v3 实验，对比效果
+   - v2 运行中（GPU 0，PID 2422892，step 4/10）
 2. 更多 shaped reward 信号（如 search 精准度奖励、correction 完成奖励）
 3. 多模板 curriculum 效果验证（lite → standard → multi）
 
@@ -201,4 +203,9 @@ memorygym/training/
 - GRPO 管线端到端验证 — loss=0.504, mean_r=0.350, correct=1.5/10
   - SFT checkpoint → merge → new LoRA → rollout → GRPO loss → update
   - 详见 `devlog/sft-baseline.md`
+- GRPO 训练基础设施
+  - gradient checkpointing + CUDA cache clearing 解决 OOM
+  - stuck detection: 非 question 事件 5 turns 无进展自动 advance
+  - `scripts/train.py` 统一 CLI（status/logs/monitor/sft/grpo）+ .env 自动加载
+  - KL 正则化防止 policy collapse（disable_adapter_layers 零拷贝 ref）
 
