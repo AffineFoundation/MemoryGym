@@ -59,30 +59,65 @@ class ChromaDBBackend:
         )
         return entry_id
 
+    @staticmethod
+    def _entity_name(content: str) -> str:
+        """Extract entity name prefix from stored content.
+
+        Storage format: ``"EntityName | attr1: val1, attr2: val2"``.
+        """
+        sep = content.find(" | ")
+        return (content[:sep].strip() if sep >= 0 else content.strip()).lower()
+
+    @staticmethod
+    def _match_priority(query_lower: str, content: str) -> int:
+        """Score how well *content* matches *query_lower* (lower=better).
+
+        0 = exact entity-name match
+        1 = query is a sub-/super-string of the entity name
+        2 = query appears somewhere in content (keyword hit)
+        3 = embedding similarity only (no textual overlap)
+        """
+        entity = ChromaDBBackend._entity_name(content)
+        if entity == query_lower:
+            return 0
+        if query_lower in entity or entity in query_lower:
+            return 1
+        if query_lower in content.lower():
+            return 2
+        return 3
+
     def search(self, query: str, top_k: int = 5) -> list[dict]:
         count = self._collection.count()
         if count == 0:
             return []
-        # Primary: embedding similarity search
+
+        query_lower = query.lower().strip()
+
+        # Expand embedding search to gather more reranking candidates.
+        expanded_k = min(top_k * 3, count)
         results = self._collection.query(
             query_texts=[query],
-            n_results=min(top_k, count),
+            n_results=expanded_k,
         )
-        entries = []
-        seen_ids = set()
+
+        # (priority, original_rank, entry_dict)
+        candidates: list[tuple[int, int, dict]] = []
+        seen_ids: set[str] = set()
+
         for i in range(len(results["ids"][0])):
             eid = results["ids"][0][i]
+            content = results["documents"][0][i]
             seen_ids.add(eid)
-            entries.append({
+            priority = self._match_priority(query_lower, content)
+            candidates.append((priority, i, {
                 "id": eid,
-                "content": results["documents"][0][i],
-                "created_at": results["metadatas"][0][i].get("created_at", ""),
-            })
+                "content": content,
+                "created_at": results["metadatas"][0][i].get(
+                    "created_at", ""),
+            }))
 
-        # Keyword fallback: substring match on all stored entries.
-        # Embedding search can miss exact entity names when content
-        # contains many attributes that dilute the entity name signal.
-        query_lower = query.lower()
+        # Keyword fallback: scan all entries for substring matches
+        # missed by embedding search.
         if query_lower:
             all_results = self._collection.get()
             for i in range(len(all_results["ids"])):
@@ -90,16 +125,19 @@ class ChromaDBBackend:
                 if eid in seen_ids:
                     continue
                 content = all_results["documents"][i]
-                if query_lower in content.lower():
-                    entries.append({
+                priority = self._match_priority(query_lower, content)
+                if priority <= 2:  # has textual overlap
+                    seen_ids.add(eid)
+                    candidates.append((priority, expanded_k + i, {
                         "id": eid,
                         "content": content,
                         "created_at": all_results["metadatas"][i].get(
                             "created_at", ""),
-                    })
-                    seen_ids.add(eid)
+                    }))
 
-        return entries
+        # Rerank: entity-name matches first, then embedding rank.
+        candidates.sort(key=lambda c: (c[0], c[1]))
+        return [c[2] for c in candidates[:top_k]]
 
     def get(self, memory_id: str) -> dict | None:
         """Retrieve a single entry by ID."""

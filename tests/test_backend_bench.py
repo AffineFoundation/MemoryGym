@@ -85,6 +85,38 @@ def test_chromadb_correction_applied():
             f"Correction value {new_val} not found in stored content")
 
 
+def test_chromadb_entity_name_reranking():
+    """Search must prefer exact entity-name matches over embedding similarity."""
+    backend = ChromaDBBackend(collection_name="test_rerank")
+    # Store two entities with similar names
+    backend.store("Nexus Energy | revenue: $120M, employees: 500")
+    backend.store("Nexus Tech | revenue: $80M, employees: 300")
+    backend.store("Atlas Systems | revenue: $200M, employees: 1000")
+
+    # Searching "Nexus Energy" must return Nexus Energy first,
+    # not Nexus Tech (which shares the "Nexus" prefix).
+    results = backend.search("Nexus Energy", top_k=2)
+    assert len(results) >= 1
+    assert "Nexus Energy" in results[0]["content"], (
+        f"Expected 'Nexus Energy' first, got: {results[0]['content'][:50]}")
+
+    # Searching "Atlas Systems" must return Atlas, not a Nexus entity.
+    results = backend.search("Atlas Systems", top_k=1)
+    assert len(results) == 1
+    assert "Atlas Systems" in results[0]["content"]
+
+
+def test_chromadb_rerank_top_k_limit():
+    """Reranked search must respect top_k limit."""
+    backend = ChromaDBBackend(collection_name="test_rerank_limit")
+    for i in range(10):
+        backend.store(f"Entity{i} | value: {i * 100}")
+    results = backend.search("Entity5", top_k=3)
+    assert len(results) == 3
+    # Entity5 must be the first result (exact name match)
+    assert "Entity5" in results[0]["content"]
+
+
 def test_city_negative_temps():
     """CityWorld with negative temps must work through backend."""
     backend = ChromaDBBackend(collection_name="test_city")

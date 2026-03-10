@@ -54,10 +54,223 @@
 
 ## 当前任务
 
-（待办空，等待新任务写入）
+### Phase 48 — mem0 后端完善集成
+
+**依据**：mem0 后端当前是名义存在但从未验证的空壳。具体缺口：
+
+1. **违反"无 fallback"原则**：
+   - `mem0_backend.py:71` — `return "unknown"` 当 LLM 未提取出 fact 时静默返回硬编码字符串
+   - `mem0_backend.py:97-98` — `except Exception: return None`（get）
+   - `mem0_backend.py:104-105` — `except Exception: return False`（forget）
+
+2. **零测试**：`test_backend_bench.py` 只测 ChromaDB，mem0 无任何测试
+
+3. **backend_bench 不支持**：`backend_bench.py:280` — `raise ValueError(f"Unsupported backend: {backend_type}")` 直接拒绝 mem0
+
+4. **RL 训练硬编码 ChromaDB**：`training.py:350-359` — MemoryEnv 直接 `import chromadb`，无法切换到 mem0
+
+5. **env.py 未传递 mem0 配置**：`env.py:246-248` — `Mem0Backend()` 无参数构造，默认需要 `OPENAI_API_KEY`，无法自定义 LLM/embedder
+
+#### Step 1 — 修复 mem0_backend.py 反模式
+
+```python
+# Line 71: "unknown" fallback → 显式异常
+def store(self, content: str, memory_id: str | None = None) -> str:
+    ...
+    entries = result.get("results", [])
+    if not entries:
+        raise RuntimeError(f"mem0 extracted no facts from content ({len(content)} chars)")
+    return entries[0]["id"]
+
+# Line 97-98, 104-105: 静默异常 → 只捕获 mem0 特定的 "not found" 类异常
+# get: 如果 ID 不存在返回 None 是合理的，但不应吞掉所有异常
+# forget: 同理
+```
+
+**原则**：ID 不存在 → 返回 None/False 是合理语义。但网络错误、SDK crash 等不应被吞掉。缩小 except 范围，只捕获 `ValueError`/`KeyError` 等预期异常。
+
+#### Step 2 — 添加 mem0 测试
+
+在 `tests/test_backend_bench.py` 中新增 mem0 测试，但 mem0 需要外部 LLM API。策略：
+
+**方案 A（推荐）**：用 `pytest.mark.skipif` 跳过无 API key 的环境
+```python
+import pytest
+HAS_MEM0_API = bool(os.environ.get("OPENAI_API_KEY") or os.environ.get("MEM0_API_KEY"))
+
+@pytest.mark.skipif(not HAS_MEM0_API, reason="mem0 requires LLM API key")
+def test_mem0_recall():
+    from memorygym.memory.backends.mem0_backend import Mem0Backend
+    backend = Mem0Backend()
+    # ... 与 chromadb 测试对称的测试逻辑
+```
+
+**方案 B（补充）**：单元测试 mock mem0 SDK，验证接口适配逻辑正确
+```python
+def test_mem0_store_no_facts_raises():
+    """mem0 store() must raise when no facts extracted."""
+    # Mock mem0 返回 {"results": []}
+    # 验证 RuntimeError 被抛出
+```
+
+两个方案都要做。方案 B 保证 CI 总能跑，方案 A 保证真实集成可验证。
+
+#### Step 3 — backend_bench 支持 mem0
+
+`backend_bench.py:273-280` — 加入 mem0 分支：
+
+```python
+elif backend_type == "mem0":
+    from memorygym.memory.backends.mem0_backend import Mem0Backend
+    backend = Mem0Backend(user_id=f"bench_{tname}_{seed}")
+```
+
+注意：每个 seed 用不同 user_id 隔离数据。
+
+#### Step 4 — MemoryEnv 后端抽象
+
+`training.py:350-359` — 将 ChromaDB 硬编码改为可配置：
+
+```python
+class MemoryEnv:
+    def __init__(self, ..., backend_type: str = "chromadb"):
+        self._backend_type = backend_type
+        ...
+
+    def reset(self, ...):
+        # 在 reset 时创建新后端实例
+        if self._backend_type == "mem0":
+            from memorygym.memory.backends.mem0_backend import Mem0Backend
+            self._backend = Mem0Backend(user_id=f"memenv_{uuid.uuid4().hex[:8]}")
+        else:
+            # 现有 ChromaDB 逻辑
+            ...
+```
+
+同时更新 `env.py:246-250`，让 Actor 传递 backend_type 到 MemoryEnv。
+
+#### Step 5 — mem0 配置传递
+
+`env.py` 和 `bench.py` 的 `--backend mem0` 路径需要支持自定义 mem0 config：
+- 从环境变量读 `MEM0_LLM_MODEL`、`MEM0_API_KEY` 等
+- 或接受 `--mem0-config <json>` 参数
+- 默认使用 `OPENAI_API_KEY`（mem0 SDK 默认行为）
+
+#### 验证标准
+
+1. `python -m pytest tests/ -q` 全部通过（mem0 集成测试在无 API key 时自动 skip）
+2. `python -m memorygym.bench --seeds 3 --validate` 通过
+3. `mem0_backend.py` 无 `return "unknown"`、无裸 `except Exception`
+4. `backend_bench.py --backend mem0` 可运行（有 API key 时）
+5. `training.py` MemoryEnv 支持 `backend_type="mem0"` 参数
+6. 新增至少 2 个 mem0 mock 测试 + 2 个 mem0 集成测试（skipif）
+
+#### 注意事项
+
+- **预算语义**：mem0 内部可能一个 store() 拆成多条 fact。预算计量以用户调用次数为准（1 次 store = 1 次写入），不管内部拆了几条。当前 MemoryBudget 已经是这个语义，不需要改。
+- **分数不可比**：CLAUDE.md 已声明 ChromaDB 和 mem0 分数不可直接比较。保留这个声明。
+- **不改评估协议**：scoring、question generation 等与后端无关的代码不动。
+
+---
+
+### Phase 49 — Inspect AI 完善 + 关键模块测试补全
+
+**依据**：审计发现 eval_task.py 不支持 tier 名称、env.py（Actor）零测试覆盖、eval_task.py 零测试。这些是部署和集成的关键路径。
+
+#### Step 1 — eval_task.py 支持 tier 名称
+
+当前（eval_task.py:405-409）只接受原始参数（n_entities, n_questions 等），不支持 `--tier lite`。
+
+```python
+# 当前：必须 inspect eval eval_task.py -T n_entities=30 -T n_corrections=3 ...
+# 目标：inspect eval eval_task.py -T tier=lite
+```
+
+从 `protocol.py` 导入 `TIERS`，在 `worldbench()` 函数开头解析 tier 参数：
+```python
+if tier is not None:
+    cfg = TIERS[tier]
+    n_entities = cfg["entities"]
+    n_questions = cfg["questions"]
+    # ...
+```
+
+保留原始参数作为 override（tier 设默认值，单独参数覆盖 tier 的值）。
+
+#### Step 2 — Actor 类（env.py）测试
+
+`memorygym/env.py` 的 Actor 类是 OpenEnv 容器化接口，329 行代码零测试。新建 `tests/test_env.py`：
+
+- `test_actor_init()` — 验证 Actor 构造，task_id 解析
+- `test_parse_task_id()` — seed/template/tier 从 task_id 正确提取
+- `test_actor_evaluate()` — 用 mock backend 跑一次完整 evaluate，验证返回 dict schema
+- `test_actor_reset_step()` — OpenEnv 接口的 reset → step 循环
+
+不需要真实 LLM 调用——mock `run_stream_agent` 返回预制结果即可。
+
+#### Step 3 — eval_task.py 基础测试
+
+在 `tests/test_worlds_features.py` 或新建 `tests/test_eval_task.py` 中：
+
+- `test_worldbench_tier_param()` — 验证 tier="lite" 正确映射到 TIERS["lite"] 的参数
+- `test_worldbench_all_tiers()` — lite/standard/hard/multi 都能成功创建 Task 对象
+- `test_worldbench_backend_param()` — 验证 backend="chromadb" 和 "mem0" 都被正确传递
+
+#### 验证标准
+
+1. `python -m pytest tests/ -q` 全部通过
+2. `inspect eval memorygym/worlds/eval_task.py -T tier=lite -T seed=0 -T template=company` 语法上可接受（不需要真实模型）
+3. 新增 ≥ 5 个测试
+
+---
+
+### Phase 50 — verl_adapter 私有 API 修复 + 适配器健壮性
+
+**依据**：verl_adapter.py:178-180 直接访问 MemoryEnv 私有属性 `env._stream[env._event_idx]` 和 `env._format_event()`。任何 MemoryEnv 内部重构都会导致训练管线静默崩溃。
+
+#### Step 1 — MemoryEnv 暴露公共接口
+
+在 `training.py` 的 MemoryEnv 中添加公共方法：
+
+```python
+def current_observation(self) -> str:
+    """Return the formatted text of the current event."""
+    if self._event_idx >= len(self._stream):
+        return ""
+    return self._format_event(self._stream[self._event_idx])
+```
+
+这比暴露 `_stream` 和 `_event_idx` 更安全——消费者不需要知道内部数据结构。
+
+#### Step 2 — verl_adapter 改用公共 API
+
+`memorygym/adapters/verl_adapter.py:178-180`：
+
+```python
+# Before:
+next_obs = env._format_event(env._stream[env._event_idx])
+
+# After:
+next_obs = env.current_observation()
+```
+
+#### Step 3 — slime_adapter 基础测试
+
+在 `tests/test_adapters.py` 中新增 slime 相关测试（不需要真实 slime 框架）：
+
+- `test_slime_generate_signature()` — 验证函数签名匹配 slime 约定
+- `test_slime_reward_func()` — 验证 reward 返回值格式
+- mock `args.post` 跑一个简化 episode
+
+#### 验证标准
+
+1. `python -m pytest tests/ -q` 全部通过
+2. verl_adapter.py 不再有 `env._stream` 或 `env._event_idx` 的直接访问
+3. 新增 ≥ 3 个测试
 
 ## 已完成
 
+### Phase 47 — ChromaDB 搜索精度提升 ✅
 ### Phase 46 — 矛盾问题 GT 格式修复 ✅
 ### Phase 45 — 版本追踪 + 提交 ✅
 ### Phase 44 — RL shaped reward 修正 + 修正搜索 tightening ✅

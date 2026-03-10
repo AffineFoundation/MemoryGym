@@ -11,7 +11,7 @@
 
 > 新 session 先看这里 + `sessions/EXECUTOR.md`。上下文不足时可读最近的 devlog 文件。
 
-**当前焦点**: 版本追踪提交（Phase 45） + eval 数据持续积累
+**当前焦点**: mem0 后端集成（Phase 48） + eval 数据持续积累
 
 **最大差距**: RL 训练验证（需 GPU）
 
@@ -22,8 +22,10 @@
 - Phase 39-40: 文档同步、base.py 拆分（1096→728 行） ✅
 - Phase 41-43: 多会话评测设计+实现（session_break + multi tier） ✅
 - Phase 44: RL shaped reward 修正 + 修正搜索 anti-gaming ✅
+- Phase 45-46: 版本追踪 + 矛盾问题 GT 格式修复 ✅
+- Phase 47: ChromaDB 搜索精度提升（entity name reranking + expanded search） ✅
 - 6 模板 × 22-23 attrs × 6 dtypes × 20 reasoning competencies
-- 270 tests, 9 simulation strategies ALL PASS
+- 272 tests, 9 simulation strategies ALL PASS
 - 35 real evaluations, 5 models — Qwen3.5=23%, Kimi=20%, MiniMax=6%, GLM-5=0%
 - MemoryEnv shaped reward + verl/slime 适配器完整可用
 
