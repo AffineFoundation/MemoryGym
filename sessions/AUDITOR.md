@@ -153,11 +153,11 @@ sessions/AUDITOR.md（你，/loop 30m）— 调度中枢：审计、设计、方
 
 ## 当前任务
 
-### 审计 A31 — 下一轮
+### 审计 A32 — 下一轮
 
-- Phase 52 mem0 最终状态？执行者是否终于在处理？
-- 训练者 GRPO 进展
-- 是否需要新 Phase？（当前执行者只剩 Phase 52 + backlog）
+- Phase 52 mem0 是否完成？
+- 训练者 GRPO 进展 + 反馈区
+- 远程新推送
 
 ## 待跟进
 
@@ -173,6 +173,39 @@ sessions/AUDITOR.md（你，/loop 30m）— 调度中枢：审计、设计、方
 ## 审计日志
 
 （每次审计的结论摘要，最新在最上面。保持简洁，详细分析写 devlog/。）
+
+### 审计 A31（2026-03-10）— 全量 competency 正确率分析（维度 E）
+
+**47 个 eval 文件，20 种 competency，883 道题的全量分析**：
+
+| Competency | Correct/Total | Rate | 判断 |
+|---|---|---|---|
+| abstention | 85/112 | 75.9% | ✅ 正常 |
+| update | 61/149 | 40.9% | ✅ 最强推理轴 |
+| retrieval | 41/357 | 11.5% | ⚠️ 搜索是瓶颈 |
+| synthesis | 6/67 | 9.0% | ⚠️ 需要多实体数据 |
+| delta/counterfactual | 6/66 | 9.1% | ⚠️ 修正前后对比难 |
+| outlier/comparison/cross_category/multi_hop/enum_filter/aggregation/text_match | 0/40 | 0% | 需判断 |
+
+**0% competency 是系统 bug 吗？** → **不是**。抽样检查 answer_details：
+- outlier: 需要比较 5 个实体找离群值，模型通常没存全 → 真实难度
+- comparison: 需要两实体同属性对比，存储覆盖不足 → 真实难度
+- cross_category/multi_hop: 多步推理依赖多实体数据 → 真实难度
+
+**但有两个问题值得关注**：
+1. **采样极不均匀**：7 种 0% competency 总共只有 40 道题（占 4.5%），统计意义弱
+2. **retrieval=11.5%** 是全局瓶颈：357 道检索题只答对 41 道，说明 ChromaDB 搜索精度仍是核心限制
+
+**结论**：评测系统正确工作，0% competency 反映真实预算压力下的难度梯度。不需要新 Phase 修复。但低采样 competency（<5 题）的分数统计不可靠，可能需要在未来增加采样或在评分报告中标注置信度。
+
+**Phase 52**：仍未完成（0 eval 结果），无远程新推送
+**训练者**：反馈区为空，无新推送
+
+**检查清单**：
+- [x] 全量 competency 分析完成，确认非系统 bug
+- [x] 识别了 retrieval=11.5% 作为全局瓶颈
+- [ ] Phase 52 仍阻塞
+- [x] 下一轮：Phase 52 + 训练者进展
 
 ### 审计 A30（2026-03-10）— 数据驱动分析 + 批次 11 结果（维度 E）
 
