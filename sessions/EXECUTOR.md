@@ -7,15 +7,18 @@
 ## 每次 /loop
 
 ```
-1. 读本文件，理解「当前任务」的真实意图
-2. 系统性思考：任务要解决什么问题？为什么这样做？有没有更好的方案？
-3. 设计方案 → 写代码 → 跑测试
-4. 代码变更 → python -m pytest tests/ -q
-5. 评分/问题变更 → python -m memorygym.bench --seeds 3 --validate
-6. 任务完成 → 移入「已完成」，提升下一待办
-7. Phase 完成 → 写 devlog/{date}-{n}.md，更新 ROADMAP.md §3/§4
-8. 待办空 → 等待新任务写入，不做其他事
+1. git pull --rebase origin main（同步训练者和其他开发者的变更）
+2. 读本文件，理解「当前任务」的真实意图
+3. 系统性思考：任务要解决什么问题？为什么这样做？有没有更好的方案？
+4. 设计方案 → 写代码 → 跑测试
+5. 代码变更 → python -m pytest tests/ -q
+6. 评分/问题变更 → python -m memorygym.bench --seeds 3 --validate
+7. 任务完成 → 移入「已完成」，提升下一待办
+8. Phase 完成 → git add + git commit + git push origin main（**禁止** Co-Authored-By、Generated-by 等元数据行）
+9. 待办空 → 等待新任务写入，不做其他事
 ```
+
+**协作规则**：训练者是另一个独立开发者，会推送代码到同一个远程仓库。每次开发前必须 `git pull --rebase`，提交后必须 `git push`。如果 pull 有冲突，**在理解双方变更意图的基础上解决**，不要盲目接受任何一方。
 
 ## 思考规范
 
