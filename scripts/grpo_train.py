@@ -194,15 +194,22 @@ def compute_grpo_loss(
     trajectories: list[tuple[list[dict], float]],
     max_length: int,
     chat_kwargs: dict | None = None,
+    kl_coeff: float = 0.05,
 ):
-    """Compute GRPO advantage-weighted policy gradient loss.
+    """Compute GRPO advantage-weighted policy gradient loss with KL penalty.
+
+    Loss = -advantage * mean_log_prob + kl_coeff * KL(policy || ref)
+
+    Uses peft's disable_adapter_layers() to get reference logits without
+    loading a separate model (reference = base + merged SFT, no GRPO LoRA).
 
     Args:
-        model: The trainable model.
+        model: The trainable peft model.
         tokenizer: Tokenizer.
         trajectories: List of (messages, advantage) tuples.
         max_length: Max sequence length for tokenization.
         chat_kwargs: Extra kwargs for apply_chat_template.
+        kl_coeff: KL penalty coefficient (0 to disable).
 
     Returns:
         Scalar loss tensor.
@@ -212,7 +219,9 @@ def compute_grpo_loss(
 
     chat_kwargs = chat_kwargs or {}
     total_loss = torch.tensor(0.0, device=model.device, requires_grad=True)
+    total_kl = 0.0
     n_valid = 0
+    use_kl = kl_coeff > 0 and hasattr(model, "disable_adapter_layers")
 
     for messages, advantage in trajectories:
         if abs(advantage) < 1e-6:
@@ -239,7 +248,7 @@ def compute_grpo_loss(
             tokenizer, input_ids.squeeze(0), full_text)
         labels = labels.unsqueeze(0).to(model.device)
 
-        # Forward pass
+        # Forward pass (with LoRA = current policy)
         outputs = model(
             input_ids=input_ids,
             attention_mask=attention_mask,
@@ -265,7 +274,29 @@ def compute_grpo_loss(
         mean_log_prob = (token_log_probs * mask).sum() / n_tokens
 
         # GRPO loss: -advantage * log_prob
-        total_loss = total_loss + (-advantage * mean_log_prob)
+        pg_loss = -advantage * mean_log_prob
+        total_loss = total_loss + pg_loss
+
+        # KL penalty: disable LoRA → get reference logits
+        if use_kl:
+            with torch.no_grad():
+                model.disable_adapter_layers()
+                ref_outputs = model(
+                    input_ids=input_ids,
+                    attention_mask=attention_mask,
+                )
+                model.enable_adapter_layers()
+                ref_log_probs = F.log_softmax(
+                    ref_outputs.logits[:, :-1, :], dim=-1)
+                ref_token_log_probs = ref_log_probs.gather(
+                    2, shift_labels.clamp(min=0).unsqueeze(-1)).squeeze(-1)
+
+            # KL ≈ mean(log_policy - log_ref) on assistant tokens
+            kl_per_token = (token_log_probs - ref_token_log_probs) * mask
+            kl = kl_per_token.sum() / n_tokens
+            total_loss = total_loss + kl_coeff * kl
+            total_kl += kl.item()
+
         n_valid += 1
 
     if n_valid > 0:
@@ -391,6 +422,9 @@ def main():
     parser.add_argument(
         "--save-every", type=int, default=10,
         help="Save checkpoint every N steps")
+    parser.add_argument(
+        "--kl-coeff", type=float, default=0.05,
+        help="KL penalty coefficient (0 to disable)")
     parser.add_argument(
         "--log-file", default=None,
         help="JSON log file path")
@@ -556,6 +590,7 @@ def main():
             model, tokenizer, all_trajectories,
             max_length=args.max_length,
             chat_kwargs=chat_kwargs,
+            kl_coeff=args.kl_coeff,
         )
 
         loss.backward()

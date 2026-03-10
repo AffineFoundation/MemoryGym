@@ -400,6 +400,7 @@ def build_grpo_cmd(args: argparse.Namespace) -> str:
         f"--lr {args.lr}",
         f"--tier {args.tier}",
         f"--lora-rank {args.lora_rank}",
+        f"--kl-coeff {args.kl_coeff}",
     ]
     if args.adapter:
         parts.append(f"--adapter {shlex.quote(args.adapter)}")
@@ -731,6 +732,8 @@ Examples:
                             help="Max sequence length for training")
     grpo_train.add_argument("--lr", type=float, default=5e-6,
                             help="Learning rate")
+    grpo_train.add_argument("--kl-coeff", type=float, default=0.05,
+                            help="KL penalty coefficient (0 to disable)")
 
     args = parser.parse_args()
 
