@@ -57,77 +57,15 @@
 
 ## 当前任务
 
-### ⚠️ Phase 52 — mem0 后端评测跑通（最高优先级，阻塞评测线程）
+### Phase 57 — 系统提示词中立化（当前最高优先级）
 
-**停下 Phase 56，先完成这个。** 评测者已连续 3 次失败并标记阻塞。
+**依据**：CLAUDE.md 新增"提示词中立"原则——系统提示词应描述任务和工具，不应规定存储策略。存储策略本身是被测能力的一部分。
 
-**评测者报告的真实错误**（2 个独立问题，都要解决）：
+**当前问题**：`stream_agent.py:111-116` 的 Storage Strategy 段落同时违反两个原则：
+1. 规定了存储格式（`"EntityName | attr1: val1, attr2: val2, ..."`）→ 剥夺了"存储组织"能力的测试
+2. 规定了存储策略（"Prioritize entities with extreme/distinctive values"、"Skip unremarkable entities"）→ 剥夺了"存储决策"能力的测试
 
-**错误 1 — `attempt to write a readonly database`**
-qdrant 本地 SQLite 在第一批 ingest 后变为只读。后续所有写入失败。这是单进程内的问题，不是并发。可能原因：
-- `/tmp/mem0_qdrant_memorygym/` 有上次运行的残留文件/锁
-- qdrant SQLite WAL 模式在 `/tmp` 下的行为异常
-
-**修复方向**：在 `Mem0Backend.__init__` 中清理旧数据目录（`shutil.rmtree` if exists），确保每次 eval 从干净状态开始。
-
-**错误 2 — `RuntimeError: mem0 extracted no facts from content`**
-retry with "Remember:" prefix 仍然不够，某些结构化文档 mem0 LLM 就是无法提取 facts。
-
-**修复方向**：在 `stream_agent.py` 的 `_execute_tool` memory_store 分支中捕获 RuntimeError，返回错误消息给 agent 而非崩溃：
-```python
-try:
-    entry_id = backend.store(content, memory_id=memory_id)
-except RuntimeError as e:
-    budget.writes_used -= 1  # Refund the write
-    return f"Store failed: {e}", None
-```
-这样 agent 会收到 "Store failed" 消息继续运行，而不是整个 eval 崩溃。
-
-**执行流程**：
-1. 修复两个错误
-2. `rm -rf /tmp/mem0_qdrant_*` 清理残留
-3. `python -m pytest tests/ -q` 通过
-4. **自己跑**：`python -m memorygym.bench --model moonshotai/Kimi-K2.5-TEE --seed 0 --template company --backend mem0`
-5. 确认 eval JSON `success: true` 才算完成
-
-### Phase 53 — RL 训练冒烟验证 ✅
-
-**已完成**（详见 devlog/2026-03-10-phase52-53.md）：
-- Step 1: SFT 数据生成 ✅（5 prompts, system+user messages, eval_salt varied）
-- Step 2: MemoryEnv 交互式 ✅（store +0.3, search found 1, episode done in 20 steps, reward=0.3）
-- Step 3: verl/slime adapter ✅（imports OK, compute_score OK, _VERL_AVAILABLE=False expected）
-- Step 4: devlog 记录 ✅
-- **剩余 gap**：无 GPU 端到端训练。组件代码完整但未在真实梯度更新中验证。
-
----
-
-以下为代码质量清理任务。
-
-### Phase 54 — 导入风格修正 ✅（已完成，19 处同包导入改为相对导入）
-
-### Phase 55 — 静默异常处理修正 ✅（7 处 except Exception → 具体异常类型）
-
-### Phase 56 — 测试套件精简提效 ✅
-
-10 个 >10s 测试标记 `@pytest.mark.slow`。
-- `pytest -m "not slow"`: 320 tests, 88s（3x 加速）
-- `pytest`: 330 tests, 250s（完整验证）
-
-### Phase 57 — 评测系统校准：属性覆盖率瓶颈修复
-
-**依据**：47 个 eval、883 道题全量分析发现，最强模型 retrieval 只有 11.5%，但根因不是搜索质量，而是模型只存 10/23 个属性。Coverage 题（问已存实体）只有 12% 正确率——因为 57% 的概率问到未存属性。
-
-**核心问题**：模型追求"存更多实体"（breadth），但评测要求"每个实体属性完整"（depth）。系统提示词说 "Store data compactly" 误导模型走了劣势策略。
-
-**数据证据**：
-- 模型存 34/60 实体但每个只 ~10 属性 → 有效覆盖 14.6 单位
-- 若存 30 实体但存全属性 → 有效覆盖 30 单位（2x）
-- 81% 的 retrieval 失败是模型说"没信息"（属性缺失），只 7.6% 是答错
-- `stream_agent.py:112` "Store data compactly: EntityName | attr1: val1, attr2: val2, ..." 没提到应存全属性
-
-**修复方案（3 步，互相独立）**：
-
-#### Step 1 — 系统提示词优化（stream_agent.py:111-116）
+#### Step 1 — 替换 Storage Strategy 为中立描述（stream_agent.py:111-116）
 
 当前：
 ```
@@ -135,43 +73,43 @@ except RuntimeError as e:
 - Store data compactly: "EntityName | attr1: val1, attr2: val2, ..."
 - Prioritize entities with extreme/distinctive values
 - Skip unremarkable entities when budget is tight
+- IMPORTANT: Reserve ~20% of your budget for corrections. ...
 ```
 
-改为更准确的引导（不是降低难度，是让模型做出更合理的决策）：
+改为（只描述约束，不规定策略）：
 ```
-## Storage Strategy
-- Store COMPLETE entity data: "EntityName | attr1: val1, attr2: val2, ..."
-- Include ALL attributes for each entity you store — partial records lose most of their value
-- Better to store fewer entities with full data than many entities with partial data
-- Prioritize entities with extreme/distinctive values
-- Skip unremarkable entities when budget is tight
+## Memory Budget
+- You have limited store operations — plan your usage carefully
+- Each memory_store or memory_update counts against your budget
+- Corrections will arrive later and each update costs 1 write
 ```
 
-#### Step 2 — 验证效果
+保留预算提示（这是任务描述），删除所有策略指导（格式、优先级、取舍策略）。
 
-修改后跑 simulation 确认不变量仍通过：
+#### Step 2 — 验证
 ```bash
-python -m memorygym.bench --seeds 5 --validate
+python -m pytest tests/ -q
+python -m memorygym.bench --seeds 3 --validate
 ```
-注意：提示词改变不影响 simulation（simulation 不用 LLM），但需确认无 import 错误。
 
-#### Step 3 — 跑一次对比 eval
-
-用改后提示词跑 1 个 eval 对比：
+#### Step 3 — 对比 eval
 ```bash
 python -m memorygym.bench --model moonshotai/Kimi-K2.5-TEE --seed 0 --template company
 ```
-对比 retrieval 正确率是否从 ~12% 提升。结果记入 devlog/。
+记录结果到 devlog/。不要求分数提升，只需记录中立提示词下模型的自主策略选择。
 
-**验证标准**：
-- `python -m pytest tests/ -q` 通过
-- `python -m memorygym.bench --seeds 3 --validate` 通过
-- 有 eval 对比数据（不要求分数提升，但需要记录）
+**验证标准**：测试通过 + simulation 通过 + 有 eval 对比数据
 
-**注意**：这不是降低难度。难度来自预算压力（30 writes / 60 entities），这不变。我们只是让模型知道正确的存储策略是什么。真实 agent 场景中，"存完整数据"也是更好的策略。
+---
 
-### 低优先级 Backlog（训练跑通后再考虑）
+### Phase 53 — RL 训练冒烟验证 ✅
+### Phase 54 — 导入风格修正 ✅
+### Phase 55 — 静默异常处理修正 ✅
+### Phase 56 — 测试套件精简提效 ✅
 
+### 低优先级 Backlog
+
+- **Phase 52 — mem0 后端评测跑通**：qdrant readonly database + RuntimeError 处理。辅助后端，不阻塞主线评测
 - **用户体验修正**：删除 docs/Design.md、填充 LEADERBOARD.md、README 补充、API key 错误信息
 - **stream_agent.py 拆分**：972 行，提取事件处理函数降到 ~890 行
 - **Promise/Progress Reward**：等简单 shaped reward 在真实训练中验证后，再决定是否需要更复杂的 reward 模型

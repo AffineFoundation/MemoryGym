@@ -153,11 +153,11 @@ sessions/AUDITOR.md（你，/loop 30m）— 调度中枢：审计、设计、方
 
 ## 当前任务
 
-### 审计 A33 — 下一轮
+### 审计 A36 — 下一轮
 
-- Phase 52 mem0 是否完成？
-- Phase 57 执行进度（提示词校准 + 对比 eval）
-- 训练者 GRPO 超参调优进展
+- Phase 57 提示词中立化执行进度
+- 训练者新推送检查
+- 推送待推送的提交（d3ca658 + 本轮 session 变更）
 
 ## 待跟进
 
@@ -173,6 +173,64 @@ sessions/AUDITOR.md（你，/loop 30m）— 调度中枢：审计、设计、方
 ## 审计日志
 
 （每次审计的结论摘要，最新在最上面。保持简洁，详细分析写 devlog/。）
+
+### 审计 A35（2026-03-10）— 优先级重排：Phase 57 升顶，Phase 52 降 backlog
+
+**决策**：Phase 52（mem0）连续 7 轮阻塞，执行者反复跳过。根因分析：
+- mem0 是辅助后端，47 个 eval 全用 ChromaDB
+- 修复需要 mem0 SDK + API + qdrant，环境依赖重
+- 不阻塞主线评测和训练
+
+Phase 57（提示词中立化）更有价值：
+- 直接落实 CLAUDE.md 新增的"提示词中立"原则
+- 影响所有未来 eval 的质量
+- 纯代码改动，无环境依赖
+
+**行动**：
+- EXECUTOR.md 重排：Phase 57 升为当前最高优先级
+- Phase 52 降为 backlog（保留任务描述）
+- 清理 EXECUTOR.md 中 Phase 53-56 ✅ 的冗余内容
+
+**检查清单**：
+- [x] EXECUTOR.md 优先级重排完成
+- [x] Phase 52 降级为 backlog
+- [x] 下一轮：Phase 57 执行进度
+
+### 审计 A34（2026-03-10）— 状态检查（无新进展）
+
+- CLAUDE.md ✅ 已提交 `d3ca658`（记忆能力定义 + 训练价值约束 + 提示词中立）
+- Phase 52 ❌ 连续 6 轮审计阻塞，0 个 mem0 eval 结果
+- Phase 57 — A33 刚重写，执行者未开始
+- 训练者 — 无新推送，反馈区空
+- 无新 Phase 可派发，瓶颈在执行不在计划
+
+### 审计 A33（2026-03-10）— Phase 57 中立化重写 + Phase 52 进度审查（维度 B+E）
+
+**CLAUDE.md 新约束审查**：
+用户在上次对话中确定了三个新原则（已写入 CLAUDE.md 但未提交）：
+1. **记忆能力定义**：7 环链条（信息摄入→存储决策→存储组织→检索定位→变更追踪→记忆推理→元认知）
+2. **训练价值约束**：训练得到的能力必须有现实迁移价值
+3. **提示词中立**：系统提示词不应规定存储策略
+
+**Phase 57 重写**：
+原 Phase 57 提议把 "Store data compactly" 改成 "Store COMPLETE entity data"——同样违反提示词中立。已重写为：
+- 删除整个 Storage Strategy 段的策略指导（格式、优先级、取舍）
+- 替换为中立的 Memory Budget 描述（只说约束，不说策略）
+- 让模型自主决定存储格式和策略，这本身是被测能力
+
+**Phase 52 进度审查**：
+- 错误 2 修复（RuntimeError catch）在 stream_agent.py 未提交 diff 中 ✅
+- 错误 1（readonly database）**未修复** — `Mem0Backend.__init__` 无 `shutil.rmtree` 清理逻辑
+- 0 个 mem0 eval 结果文件
+- **判断**：执行者做了一半停了。Phase 52 仍为最高优先级阻塞项
+
+**训练者**：无新推送（最新 cc88d47），反馈区空
+
+**检查清单**：
+- [x] Phase 57 重写完成（提示词中立化）
+- [ ] CLAUDE.md 变更待用户确认后提交
+- [ ] Phase 52 仍阻塞（执行者只修了 1/2 错误，未跑 eval）
+- [x] 下一轮：A34（Phase 52 完成度 + Phase 57 执行 + CLAUDE.md 提交）
 
 ### 审计 A32（2026-03-10）— 训练者推送 review + 评测校准任务派发（维度 A+B+E）
 
