@@ -153,11 +153,11 @@ sessions/AUDITOR.md（你，/loop 30m）— 调度中枢：审计、设计、方
 
 ## 当前任务
 
-### 审计 A54 — 下一轮
+### 审计 A55 — 下一轮
 
 - Phase 63 执行进度（HIGH，train-eval mismatch）
+- Phase 64 执行进度（eval_task.py 同步）
 - Phase 62 执行进度
-- 批次 13 评测进度
 - 训练者 F1-F3 响应
 
 ## 待跟进
@@ -178,6 +178,35 @@ sessions/AUDITOR.md（你，/loop 30m）— 调度中枢：审计、设计、方
 ## 审计日志
 
 （每次审计的结论摘要，最新在最上面。保持简洁，详细分析写 devlog/。）
+
+### 审计 A54（2026-03-10）— eval_task.py Phase 59 遗漏 + 适配器验证（维度 B）
+
+**各线程状态**：连续 5 轮无远程活动。
+
+**审计范围**：Phase 59 工具接口迁移的完整性扫描——检查所有入口点是否已更新。
+
+**扫描路径**：
+- adapters/_common.py ✅ — Write/Edit/Read 已在 _KNOWN_TOOLS + format_tool_result()
+- verl_adapter.py ✅ — 不直接引用工具名，通过 _common.py 间接处理
+- slime_adapter.py ✅ — 同上
+- SFT 数据生成 ✅ — generate_sft_trajectory() 使用 Write (L138) + Edit (L179) + memory_search (L177)
+
+**重大发现**：`eval_task.py`（Inspect AI 集成）**完全被 Phase 59 遗漏**。6 处旧工具名：
+1. SYSTEM_PROMPT L37-42：工具列表全是 memory_store/get/forget/list
+2. SYSTEM_PROMPT L46-48：修正流程 search→forget→store
+3. SYSTEM_PROMPT L52-57：Storage Strategy 段（Phase 57 已删除）
+4. CORRECTION_TEMPLATE L82-84：修正流程 search→forget→store
+5. _count_tool_calls L153：只统计 memory_store
+6. _count_tool_calls L155：不统计 Read
+
+**影响**：Inspect AI 和 bench.py 两个评测路径使用不同工具接口，结果不可比。
+
+**已派发**：Phase 64 到 EXECUTOR.md。
+
+**检查清单**：
+- [x] 审计产出 Phase 64
+- [x] 所有 Phase 59 相关模块扫描完成
+- [x] EXECUTOR.md 有 Phase 62+63+64（3 个待办）
 
 ### 审计 A53（2026-03-10）— train-eval 工具行为不一致（维度 A — 能力缺口）
 

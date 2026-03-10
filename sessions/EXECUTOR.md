@@ -374,6 +374,44 @@ else:
 - 新增测试：Edit miss → budget not consumed (refund)
 - 新增测试：Edit empty old_text → error
 
+### Phase 64 — eval_task.py 工具接口同步（Phase 59 遗漏）
+
+**依据**：审计 A54 发现 `memorygym/worlds/eval_task.py`（Inspect AI 集成）在 Phase 59 工具接口 OpenClaw 化时**完全被遗漏**。包含 6 处旧工具名和过时提示词。
+
+| # | 位置 | 问题 |
+|---|------|------|
+| 1 | SYSTEM_PROMPT L37-42 | 工具列表全是旧名（memory_store/get/forget/list），缺 Write/Edit/Read |
+| 2 | SYSTEM_PROMPT L46-48 | 修正流程说 search→forget→store，应改为 search→Edit |
+| 3 | SYSTEM_PROMPT L52-57 | Storage Strategy 段仍在（Phase 57 已在 stream_agent.py 删除） |
+| 4 | CORRECTION_TEMPLATE L82-84 | 修正流程说 search→forget→store |
+| 5 | _count_tool_calls L153 | 只统计 `memory_store`，不统计 Write/Edit |
+| 6 | _count_tool_calls L155 | 不统计 Read |
+
+**影响**：通过 `inspect eval eval_task.py` 运行的评测和通过 `bench.py` 的评测用**不同工具接口和提示词**，结果不可比。Inspect AI 用户会得到与 bench.py 用户完全不同的体验。
+
+**修复方案**：
+
+1. **SYSTEM_PROMPT**：复用 `stream_agent.py` 的 `SYSTEM_PROMPT`（`from memorygym.agents.stream_agent import SYSTEM_PROMPT`），与 SFT 和 bench.py 保持一致。如果 eval_task.py 需要 Inspect 特定的提示词格式，至少工具列表和修正流程必须一致。
+
+2. **CORRECTION_TEMPLATE L82-84**：改为：
+```
+1. memory_search "{entity_name}"
+2. Edit the old value to the corrected value
+```
+
+3. **_count_tool_calls L153-156**：
+```python
+if fn in ("Write", "Edit", "memory_store"):
+    n_writes += 1
+elif fn in ("memory_search", "memory_list", "memory_get", "Read"):
+    n_searches += 1
+```
+
+**验证标准**：
+- `python -m pytest tests/ -q` 全通过
+- eval_task.py 中无 `memory_store`/`memory_forget`/`memory_get` 引用（grep 验证）
+- SYSTEM_PROMPT 工具列表与 stream_agent.py 一致
+
 ### 低优先级 Backlog
 
 - **用户体验修正**：删除 docs/Design.md、填充 LEADERBOARD.md、README 补充、API key 错误信息
