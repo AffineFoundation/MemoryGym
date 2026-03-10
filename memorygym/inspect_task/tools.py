@@ -1,4 +1,4 @@
-"""Inspect AI tools for MemoryGym memory operations (mem0 interface)."""
+"""Inspect AI tools for MemoryGym memory operations."""
 
 from __future__ import annotations
 
@@ -18,27 +18,21 @@ def create_memory_tools(
     backend_type: str = "chromadb",
     collection_name: str = "memorygym",
     backend: MemoryBackend | None = None,
-    mem0_config: dict | None = None,
 ) -> tuple[list[Tool], MemoryBudget, MemoryBackend]:
     """Create all memory tools backed by a shared backend.
 
     Args:
         budget: Total write budget.
-        backend_type: "chromadb" (default) or "mem0".
+        backend_type: Backend type (currently only "chromadb").
         collection_name: Collection name for ChromaDB backend.
         backend: Pre-created backend (overrides backend_type).
-        mem0_config: Config dict for mem0 backend (only if backend_type="mem0").
 
     Returns:
         (list_of_tools, budget, backend) — budget and backend are returned
         for scorer / solver access.
     """
     if backend is None:
-        if backend_type == "mem0":
-            from memorygym.memory.backends.mem0_backend import Mem0Backend
-            backend = Mem0Backend(config=mem0_config)
-        else:
-            backend = ChromaDBBackend(collection_name=collection_name)
+        backend = ChromaDBBackend(collection_name=collection_name)
 
     mem_budget = MemoryBudget(total_writes=budget)
 

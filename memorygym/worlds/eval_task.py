@@ -5,9 +5,6 @@ Usage:
     inspect eval memorygym/worlds/eval_task.py -M openai/gpt-4o \
         -T seed=42 -T template=company
 
-    # Run with mem0 backend:
-    inspect eval memorygym/worlds/eval_task.py -M openai/gpt-4o \
-        -T seed=42 -T backend=mem0
 """
 
 from __future__ import annotations
@@ -428,7 +425,7 @@ def worldbench(
         n_corrections: Number of correction events.
         n_questions: Number of questions to generate.
         write_budget: Total memory writes allowed.
-        backend: Memory backend ("chromadb" or "mem0").
+        backend: Memory backend ("chromadb").
         entities_per_batch: Entities per ingest batch.
     """
     from memorygym.protocol import TIERS

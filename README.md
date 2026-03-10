@@ -27,9 +27,6 @@ The agent receives a stream of entity documents (far more than its write budget 
 ```bash
 pip install -e .
 
-# With mem0 backend support:
-pip install -e ".[mem0]"
-
 # With affinetes (containerized eval):
 pip install -e ".[affinetes]"
 ```
@@ -69,7 +66,7 @@ python -m memorygym.bench --model moonshotai/Kimi-K2.5-TEE --official -o results
 --seeds N            Number of seeds (default: 10)
 --template T         Template: company, research, city, hospital, sport, movie
 --tier TIER          Evaluation tier: lite (default), standard, hard
---backend BACKEND    Memory backend: chromadb (default), mem0
+--backend BACKEND    Memory backend: chromadb (default)
 --validate           Run invariant checks
 --official           Official mode: seeds 0-9, all templates
 ```
@@ -111,7 +108,7 @@ Top models (lite tier, averaged across templates):
 memorygym/
 ├── worlds/          # 6 domain templates + scorer + Inspect AI integration
 ├── evaluation/      # Answer validation + LLM judge
-├── memory/          # Budget management + backends (ChromaDB/mem0)
+├── memory/          # Budget management + backends (ChromaDB)
 ├── agents/          # Real LLM agent runner
 ├── adapters/        # RL framework adapters (verl/slime)
 ├── bench.py         # CLI entry point

@@ -182,7 +182,7 @@ def format_leaderboard_entry(
     Args:
         model: Model identifier.
         tier: Evaluation tier (lite/standard/hard).
-        backend: Backend type (chromadb/mem0).
+        backend: Backend type (chromadb).
         per_seed_results: List of per-seed result dicts with axis scores.
         config: Evaluation configuration dict.
         per_template: Optional per-template grouped results.

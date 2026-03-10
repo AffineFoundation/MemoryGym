@@ -380,10 +380,6 @@ class MemoryEnv:
 
     def _make_backend(self):
         """Create a fresh backend instance."""
-        if self._backend_type == "mem0":
-            from memorygym.memory.backends.mem0_backend import Mem0Backend
-            return Mem0Backend(
-                user_id=f"memenv_{uuid.uuid4().hex[:8]}")
         from memorygym.memory.backends.chromadb_backend import ChromaDBBackend
         return ChromaDBBackend(
             collection_name=f"memenv_{uuid.uuid4().hex[:8]}")

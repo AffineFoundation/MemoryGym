@@ -280,7 +280,7 @@ Budget constraints transform the evaluation from "can you find it?" to "should y
 |-----|----------|------------|
 | No real-world trajectories | Medium | Synthetic data enables anti-gaming and determinism — trade-off is intentional |
 | Reasoning is mechanical (formula-based, not semantic) | Medium | Axis correctly measures "computation on stored data" — rename to "data processing" under consideration |
-| Single memory backend focus (ChromaDB/mem0) | Low | Backend choice is orthogonal to memory management strategy evaluation |
+| Single memory backend focus (ChromaDB) | Low | Backend choice is orthogonal to memory management strategy evaluation |
 | No causal reasoning | Low | Could add "why did X change?" questions in future phase |
 
 ---

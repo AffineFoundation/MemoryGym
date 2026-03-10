@@ -276,12 +276,6 @@ def run_backend_bench(
                 )
                 backend = ChromaDBBackend(
                     collection_name=f"bench_{tname}_{seed}")
-            elif backend_type == "mem0":
-                from memorygym.memory.backends.mem0_backend import (
-                    Mem0Backend,
-                )
-                backend = Mem0Backend(
-                    user_id=f"bench_{tname}_{seed}")
             else:
                 raise ValueError(f"Unsupported backend: {backend_type}")
 

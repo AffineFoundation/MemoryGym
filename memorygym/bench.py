@@ -91,9 +91,6 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p.add_argument("--tier", choices=list(TIERS),
                    default=None, metavar="TIER",
                    help="evaluation tier (lite/standard/hard)")
-    p.add_argument("--backend", choices=["chromadb", "mem0"],
-                   default="chromadb", metavar="BACKEND",
-                   help="memory backend (default: chromadb)")
     p.add_argument("--official", action="store_true",
                    help="official mode: seeds 0-9, all templates, "
                         "standard JSON output")
@@ -225,12 +222,8 @@ def main(argv: list[str] | None = None) -> int:
                 print(f"  [{tmpl.name}] seed={seed} — Running agent "
                       f"({args.model}) ...")
                 # Create backend
-                if args.backend == "mem0":
-                    from memorygym.memory.backends.mem0_backend import Mem0Backend
-                    backend_obj = Mem0Backend()
-                else:
-                    from memorygym.memory.backends.chromadb_backend import ChromaDBBackend
-                    backend_obj = ChromaDBBackend()
+                from memorygym.memory.backends.chromadb_backend import ChromaDBBackend
+                backend_obj = ChromaDBBackend()
 
                 agent_results, writes_used, stored, eval_error, traj = run_stream_agent(
                     model=args.model,

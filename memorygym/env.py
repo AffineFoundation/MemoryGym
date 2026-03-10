@@ -61,7 +61,7 @@ class Actor:
             seed: Random seed for deterministic generation.
             template: World template name.
             tier: Evaluation tier (lite/standard/hard).
-            backend: Memory backend (chromadb/mem0).
+            backend: Memory backend.
             timeout: Wall-clock timeout in seconds.
             task_id: Optional task ID (overrides seed/template).
 
@@ -242,11 +242,7 @@ def _run_evaluation(
         contradictions=contradictions,
     )
 
-    if backend_type == "mem0":
-        from memorygym.memory.backends.mem0_backend import Mem0Backend
-        backend_obj = Mem0Backend()
-    else:
-        backend_obj = ChromaDBBackend()
+    backend_obj = ChromaDBBackend()
 
     agent_results, writes_used, stored, eval_error, traj = run_stream_agent(
         model=model,

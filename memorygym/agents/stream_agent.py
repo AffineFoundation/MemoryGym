@@ -108,12 +108,10 @@ When you receive a CORRECTION:
 This costs 1 write but ensures your answers reflect current data.
 Failing to update = wrong answers on update questions.
 
-## Storage Strategy
-- Store data compactly: "EntityName | attr1: val1, attr2: val2, ..."
-- Prioritize entities with extreme/distinctive values
-- Skip unremarkable entities when budget is tight
-- IMPORTANT: Reserve ~20% of your budget for corrections. \
-Corrections will arrive later and each costs 1 write to update.
+## Memory Budget
+- You have limited store operations — plan your usage carefully
+- Each memory_store or memory_update counts against your budget
+- Corrections will arrive later and each update costs 1 write
 
 ## Answering Questions
 - Search by entity name, then submit_answer with the value
@@ -457,8 +455,7 @@ def run_stream_agent(
         api_key: API key (default: from env).
         verbose: Print per-event details (legacy, superseded by default).
         quiet: Minimal output (old-style single-line per event).
-        backend: Memory backend (default: ChromaDBBackend). Pass a Mem0Backend
-            for mem0-based memory.
+        backend: Memory backend (default: ChromaDBBackend).
         world: World instance for adaptive comprehension questions.
         template: WorldTemplate instance for adaptive comprehension questions.
         seed: Random seed for replacement question generation.
