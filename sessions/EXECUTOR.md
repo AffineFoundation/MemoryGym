@@ -95,6 +95,50 @@
 1. `python -m pytest tests/ -q` 全部通过
 2. `python -m memorygym.bench --seeds 3 --validate` 通过
 
+### Phase 56 — 测试套件精简提效
+
+**依据**：`pytest tests/ -q` 耗时 ~5 分钟（330 tests），严重拖慢开发迭代速度。慢测试集中在少数文件。
+
+**耗时分析**（top 10，占总时间 ~60%）：
+
+| 测试 | 耗时 | 文件 |
+|------|------|------|
+| `test_stream_invariants` | **38s** | test_worlds_features.py |
+| `test_outlier_gt_correct` | **27s** | test_narrative.py |
+| `test_multi_hop_gt_correct` | **22s** | test_narrative.py |
+| `test_question_quality` | **16s** | test_worlds.py |
+| `test_abstraction_generality` | **16s** | test_worlds.py |
+| `test_priority_beats_random` | **15s** | test_narrative.py |
+| `test_comprehension_types_not_fingerprint_exploitable` | **11s** | test_narrative.py |
+| `test_comparison_gt_correct` | **11s** | test_narrative.py |
+| `test_ratio_gt_correct` | **11s** | test_narrative.py |
+| `test_full_validation_all_pass` | **11s** | test_bench.py |
+
+**文件级分布**（331 tests / 14 files）：
+
+| 文件 | 测试数 | 分析 |
+|------|--------|------|
+| test_validators.py | **81** | 最多，检查是否有冗余 |
+| test_training.py | 36 | 训练相关，保留 |
+| test_adapters.py | 33 | 适配器，保留 |
+| test_narrative.py | 15 | **慢（~95s 总计）**，GT 正确性测试用多 seed 暴力验证 |
+
+**优化方向**：
+
+1. **test_narrative.py（~95s）**：每个 GT 测试跑 5+ seeds × 6 templates = 30+ 世界构建。减少 seeds（3 → 1 for CI，保留 `--slow` 标记跑完整版）
+2. **test_stream_invariants（38s）**：单个测试最慢，检查是否可以减少 seed 数或模板数
+3. **test_validators.py（81 tests）**：检查是否有重复的等价测试（如多个测试只改输入格式）
+4. **引入 pytest marks**：`@pytest.mark.slow` 标记 >10s 的测试，CI 默认跑 `pytest -m "not slow"`，完整验证用 `pytest`
+
+**目标**：默认 `pytest tests/ -q` 在 **60 秒内**完成。慢测试用 `pytest tests/ -q -m "not slow"` 跳过。
+
+#### 验证标准
+
+1. `pytest tests/ -q -m "not slow"` < 60 秒，全部通过
+2. `pytest tests/ -q` 全部通过（包含慢测试，<180 秒）
+3. 无测试被删除，只是标记或减少 seed
+4. 总测试覆盖率不降低
+
 ### 低优先级 Backlog（训练跑通后再考虑）
 
 - **用户体验修正**：删除 docs/Design.md、填充 LEADERBOARD.md、README 补充、API key 错误信息
