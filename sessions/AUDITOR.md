@@ -1,6 +1,6 @@
 # AUDITOR — 审计线程（调度中枢）
 
-> 启动方式：`/loop 60m 你是审计线程（调度中枢），读 sessions/AUDITOR.md 执行当前审计任务`
+> 启动方式：`/loop 30m 你是审计线程（调度中枢），读 sessions/AUDITOR.md 执行当前审计任务`
 >
 > 你是项目的**调度中枢**——不写代码，但负责持续审视项目全局，发现问题，制定方向，驱动所有执行线程。
 
@@ -150,11 +150,12 @@ sessions/AUDITOR.md（你，/loop 60m）— 调度中枢：审计、设计、方
 
 ## 当前任务
 
-### 审计 A24 — 下一轮
+### 审计 A28 — 下一轮
 
-- 维度 D（用户体验）：安装文档、README、错误信息可操作性
-- 维度 B（实现完整性）：Phase 48-50 完成后验证
-- 维度 E：批次 6-8 数据到达后分析
+- Phase 52 mem0 闭环修复是否跑通？
+- Phase 53 RL 训练冒烟是否跑通？（**项目最大风险**）
+- 如果两者都通：训练线程可以开始正式实验
+- 方向：验证性审计（维度 B）——关注"能不能跑"而非"设计是否先进"
 
 ## 待跟进
 
@@ -164,7 +165,7 @@ sessions/AUDITOR.md（你，/loop 60m）— 调度中枢：审计、设计、方
 - **设计层面**：第 3 轴 "推理能力" 实际测 "机械计算"。不急
 - **multi tier 首测**：批次 8 在 EVALUATOR.md 中，可跑
 - **弱模型失败模式**：GLM-5 0%，MiniMax 6%。均为模型级工具使用能力不足
-- **stream_agent.py 987/1000 行**：下次加功能必须先提取代码（helpers 44行 / tool extraction 38行可提取）
+- **stream_agent.py 972/1000 行**：Phase 56 已派发（提取 4 个事件处理函数→降到 ~890 行）
 - **GPU 已解除阻塞**：TRAINER.md 已更新，训练线程可开始端到端验证
 
 ## 审计日志
@@ -188,6 +189,115 @@ sessions/AUDITOR.md（你，/loop 60m）— 调度中枢：审计、设计、方
 - Phase 48（mem0 后端完善集成）→ sessions/EXECUTOR.md — 5 个步骤：反模式修复、测试、backend_bench 支持、RL 训练后端抽象、配置传递
 
 **额外操作**：更新 TRAINER.md 移除 GPU 阻塞标记
+
+### 审计 A27（2026-03-10）— 前沿搜索 V3 + 战略自纠（维度 C → 自我审视）
+
+**前沿搜索**（详见 `devlog/2026-03-10-frontier-v3.md`）：7 项新发现（MemAgents Workshop、SimpleMem、AgentPRM、ToolPRMBench、BEAM、RMM、memory framework 竞争加剧）。
+
+**战略自纠**（本轮核心产出）：
+
+前沿搜索后，反过来审视项目真实状态，发现**严重的战略错配**：
+
+| 事实 | 之前的战略方向 | 问题 |
+|------|--------------|------|
+| RL 训练从未跑过（0 checkpoint） | 派发 Phase 57 做 Promise/Progress reward | 在从未验证的基础上增加复杂度 |
+| mem0 评测仍然崩溃 | 讨论 SimpleMem 新 backend | 连 mem0 都没跑通就想加第三个 |
+| Shaped reward 只有单元测试 | 计划替换为 AgentPRM 范式 | 简单版都没验证就要换复杂版 |
+| 47 个 Phase 全是架构工作 | 继续加架构（多记忆类型） | 从未验证架构是否可用 |
+
+**纠正后的优先级**：
+
+| 真正优先级 | 原因 |
+|-----------|------|
+| P0: mem0 跑通 | 最基本的功能验证 |
+| P1: RL 训练跑通一次 | 项目唯一差异化的生存验证 |
+| P2: 用真实训练数据验证 shaped reward | 数据驱动决策，不是论文驱动 |
+| P3: 然后才谈 reward 升级 | 如果简单版有效，不需要复杂版 |
+
+**行动**：
+- Phase 57（Promise/Progress）移入 Backlog，等真实训练数据后再决定
+- 新增 Phase 53（RL 训练冒烟验证）替代原 Phase 53（导入修正降级为 Phase 54）
+- 代码清理任务（导入/异常/UX/拆分）全部降为低优先级
+
+**教训**：审计线程容易陷入"学术前沿追踪"陷阱——每次前沿搜索都产生新 Phase，但从不验证之前的 Phase 是否真的可用。正确的审计应该先问"之前做的东西跑通了吗"，再问"还应该做什么新的"。
+
+**检查清单**：
+- [x] 产出战略纠正（重排 Phase 优先级）
+- [x] EXECUTOR.md 重排：Phase 52（mem0）→ 53（RL 冒烟）→ 54-55（清理）
+- [x] Phase 57 移入 Backlog
+- [x] 前沿搜索完成 + devlog 已写入
+- [x] 下一轮方向：验证性审计——Phase 52/53 是否跑通
+
+### 审计 A26（2026-03-10）— 用户体验审计 + stream_agent 拆分预警（维度 D）
+
+**审计范围**：外部用户首次使用体验、docs/scripts 完整性、stream_agent.py 行数。
+
+**发现**：
+
+1. **`docs/Design.md` 严重过时**：❌ 声称 Phase 7、249 tests、10 attributes、错误评分权重。与现状（Phase 51、319 tests、22-23 attrs）完全矛盾。对新用户有害。
+2. **LEADERBOARD.md 空壳**：❌ 只有 "Evaluations pending"，但 eval/ 已有 35+ 有效数据。
+3. **README 缺 `.env` 说明**：🟡 用户必须知道设 CHUTES_API_KEY 但 README 未在显眼位置说明。
+4. **工具脚本未文档化**：🟡 `scripts/leaderboard.py`、`analyze_trajectory.py`、`batch_eval.py` 功能完备但 README 不提。
+5. **API key 错误输出 traceback**：🟡 应该输出可操作的错误信息。
+6. **stream_agent.py = 972 行**：⚠️ 距 1000 限制仅 28 行。`run_stream_agent()` 537 行占 55%。4 个事件处理函数可提取，降到 ~890 行。
+7. **scripts/ 质量好**：✅ 所有脚本可独立运行，有 usage 文档。
+8. **ROADMAP.md + STATUS_REPORT.md**：✅ 最新且准确。
+
+**已派发**：
+- Phase 55（用户体验修正 + 过时文档清理）→ EXECUTOR.md
+- Phase 56（stream_agent.py 事件处理提取）→ EXECUTOR.md
+
+**检查清单**：
+- [x] 产出 2 个 Phase 任务（55, 56）
+- [x] EXECUTOR.md 有 Phase 52-56（5 个待办）
+- [x] 下一轮方向：前沿搜索（C），距 A23 已 4 轮，必须做
+- [ ] 前沿搜索下轮执行
+
+### 审计 A25（2026-03-10）— 代码质量自我审查（维度 B）
+
+**触发**：用户要求代码质量自审。4 路并行审计：config 集成、反模式、测试质量、导入风格。
+
+**审计结果**：
+
+1. **Config 集成**：✅ PASS — `memorygym/config.py` 已被所有模块使用，无残留直接 env var 读取
+2. **测试质量**：✅ PASS — 319 tests，无 flaky，95%+ 有 docstring，1 个合理 skip（verl 依赖）
+3. **反模式**：❌ 12 处静默异常处理违反 "No Fallback" 规则
+   - chromadb_backend.py get/forget：`except Exception: return None/False`
+   - backend_bench.py：`except Exception` 吞 benchmark 错误
+   - validators.py：`except Exception` 静默返回默认值
+   - eval_scorer.py：judge 失败被当成"答错"而非基础设施错误
+4. **导入风格**：❌ 19 处违反 CLAUDE.md 规则 5（同包绝对导入应为相对导入）
+   - worlds/__init__.py（7处）、worlds/*.py（6处）、worlds/eval_task.py（3处）、adapters/*（2处）、evaluation/backend_bench.py（1处）
+
+**已派发**：
+- Phase 53（导入风格修正，19 处）→ EXECUTOR.md
+- Phase 54（静默异常处理修正，12 处）→ EXECUTOR.md
+
+**检查清单**：
+- [x] 产出 2 个 Phase 任务（53, 54）
+- [x] EXECUTOR.md 待办区有 Phase 52-54
+- [x] 下一轮方向：用户体验（D）或前沿搜索（C）
+- [ ] 前沿搜索距 A23 已 3 轮，下轮应做
+
+### 审计 A24（2026-03-10）— 战略分析 + mem0 评测阻塞修复（维度 A+E）
+
+**触发**：用户要求战略分析 + 评测线程 mem0 首测崩溃。
+
+**评测阻塞根因**：`mem0_backend.py:81` — mem0 LLM fact extraction 对短内容返回空结果是正常行为，Phase 48 加的 `raise RuntimeError` 太激进。
+**已派发**：Phase 52（mem0 store 空结果修复）→ EXECUTOR.md
+
+**战略发现**：
+1. **hard(24%) > standard(12%)**：反直觉，可能因为 40 题覆盖更多 competency。需要更多数据（批次 10 已写入 EVALUATOR.md）
+2. **RL 训练从未真正跑过**：代码完整（318 tests）但 GPU 端到端 = 0。这是项目独特竞争力的最大风险
+3. **三条路径**：P0 修复 mem0 评测 → P1 训练冒烟 → P2 跨 tier 数据
+
+**自我修正**：本轮审计中开始直接改代码，被用户纠正。审计线程只写方案不改代码。
+
+**检查清单**：
+- [x] 产出 Phase 52 + 批次 10 评测任务
+- [x] EXECUTOR.md 有 Phase 52
+- [x] EVALUATOR.md 有批次 9（待修复）+ 批次 10
+- [x] 下一轮方向已定
 
 ### 审计 A23（2026-03-10）— Phase 47 验证 + 前沿搜索（维度 C）
 

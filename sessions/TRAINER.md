@@ -1,6 +1,6 @@
 # TRAINER — 训练线程
 
-> 启动方式：`/loop 30m 你是训练线程，读 sessions/TRAINER.md 执行当前训练任务`
+> 启动方式：`/loop 20m 你是训练线程，读 sessions/TRAINER.md 执行当前训练任务`
 >
 > 你是项目的**训练执行线程**——专注 RL 训练闭环的开发与验证，不碰评测核心代码。
 

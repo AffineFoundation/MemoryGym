@@ -11,6 +11,8 @@ ChromaDB which stores content verbatim.
 from __future__ import annotations
 
 import os
+import sqlite3
+import uuid
 from typing import Any
 
 from mem0 import Memory
@@ -18,11 +20,18 @@ from mem0 import Memory
 from memorygym.config import get_api_config
 
 
-def _default_config() -> dict[str, Any]:
-    """Build mem0 config from global API configuration."""
+def _default_config(user_id: str) -> dict[str, Any]:
+    """Build mem0 config from global API configuration.
+
+    Each instance gets a unique qdrant path to avoid SQLite lock
+    contention between concurrent eval processes.
+    """
     cfg = get_api_config()
     model = os.environ.get(
         "MEM0_LLM_MODEL", "Qwen/Qwen3-235B-A22B-Instruct-2507-TEE")
+
+    # Unique path per instance prevents sqlite3.OperationalError
+    qdrant_path = f"/tmp/mem0_qdrant_{user_id}"
 
     config: dict[str, Any] = {
         "llm": {"provider": "openai", "config": {
@@ -34,8 +43,8 @@ def _default_config() -> dict[str, Any]:
             "model": "all-MiniLM-L6-v2",
         }},
         "vector_store": {"provider": "qdrant", "config": {
-            "collection_name": "memorygym",
-            "path": "/tmp/mem0_qdrant",
+            "collection_name": f"memorygym_{user_id}",
+            "path": qdrant_path,
             "embedding_model_dims": 384,
         }},
     }
@@ -61,7 +70,7 @@ class Mem0Backend:
         user_id: str = "memorygym",
     ) -> None:
         if config is None:
-            config = _default_config()
+            config = _default_config(user_id)
         self._m = Memory.from_config(config)
         self._user_id = user_id
 
@@ -105,7 +114,7 @@ class Mem0Backend:
         """Retrieve a single entry by ID."""
         try:
             r = self._m.get(memory_id)
-        except (ValueError, KeyError):
+        except (ValueError, KeyError, sqlite3.OperationalError):
             return None
         if not r:
             return None
@@ -119,7 +128,7 @@ class Mem0Backend:
         try:
             self._m.delete(memory_id)
             return True
-        except (ValueError, KeyError):
+        except (ValueError, KeyError, sqlite3.OperationalError):
             return False
 
     def list(self) -> list[dict]:
