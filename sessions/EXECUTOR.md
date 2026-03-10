@@ -288,9 +288,12 @@ def _make_backend(self):
 - `python -m memorygym.bench --seeds 3 --validate --backend chromadb` ALL PASS（回归）
 - 两种后端的 simulation 分数差异 < 2%
 
-### Phase 63 — training/env.py 工具行为与 eval 对齐（HIGH — train-eval mismatch）
+### Phase 63 — training/env.py 工具行为与 eval 对齐 ✅
 
-**依据**：审计 A53 对比 `_tool_helpers.py`（eval 路径）和 `training/env.py`（RL 路径）发现 5 处工具行为不一致。RL 训练出的 agent 在 eval 环境中会遇到不同规则，导致策略不迁移。
+5 处 train-eval 不一致修复：Write 2000 字符限制、Edit 失败退款、Edit 空 old_text 检查、Read 行范围、Write native write()。
+340 passed, simulation ALL PASS。v0.6.5。
+
+~~**依据**~~：审计 A53 对比 `_tool_helpers.py`（eval 路径）和 `training/env.py`（RL 路径）发现 5 处工具行为不一致。
 
 | # | 不一致 | eval 行为 | training 行为 | 影响 |
 |---|--------|-----------|---------------|------|
@@ -374,9 +377,11 @@ else:
 - 新增测试：Edit miss → budget not consumed (refund)
 - 新增测试：Edit empty old_text → error
 
-### Phase 64 — eval_task.py 工具接口同步（Phase 59 遗漏）
+### Phase 64 — eval_task.py 工具接口同步 ✅
 
-**依据**：审计 A54 发现 `memorygym/worlds/eval_task.py`（Inspect AI 集成）在 Phase 59 工具接口 OpenClaw 化时**完全被遗漏**。包含 6 处旧工具名和过时提示词。
+SYSTEM_PROMPT 替换为 Write/Edit/Read 工具描述（与 stream_agent.py 一致），CORRECTION_TEMPLATE 改为 search→Edit，_count_tool_calls 加入新工具名。340 passed。v0.6.5。
+
+~~**依据**~~：审计 A54 发现 eval_task.py 在 Phase 59 工具接口 OpenClaw 化时被完全遗漏。
 
 | # | 位置 | 问题 |
 |---|------|------|

@@ -509,18 +509,22 @@ class MemoryEnv:
         event_type = current_event["type"] if current_event else None
 
         if tool in ("Write", "memory_store"):
-            if self._writes_used >= self.write_budget:
+            content = args.get("content", "")
+            if not isinstance(content, str):
+                content = str(content)
+            if len(content) > 2000:
+                info["error"] = "Content exceeds 2000 character limit"
+            elif self._writes_used >= self.write_budget:
                 info["error"] = "Budget exhausted"
                 if shaped:
                     reward = -0.05  # Penalty: wasted action on exhausted budget
             else:
                 self._mem_counter += 1
                 mid = f"mem_{self._mem_counter:03d}"
-                content = args.get("content", "")
-                # Coerce to string — small models may produce lists or other types
-                if not isinstance(content, str):
-                    content = str(content)
-                self._backend.store(content, memory_id=mid)
+                if hasattr(self._backend, "write"):
+                    self._backend.write(content)
+                else:
+                    self._backend.store(content, memory_id=mid)
                 self._writes_used += 1
                 info["memory_id"] = mid
                 info["remaining"] = self.write_budget - self._writes_used
@@ -544,7 +548,9 @@ class MemoryEnv:
         elif tool == "Edit":
             old_text = args.get("old_text", "")
             new_text = args.get("new_text", "")
-            if self._writes_used >= self.write_budget:
+            if not old_text:
+                info["error"] = "old_text is required"
+            elif self._writes_used >= self.write_budget:
                 info["error"] = "Budget exhausted"
                 if shaped:
                     reward = -0.05
@@ -564,13 +570,20 @@ class MemoryEnv:
                     if shaped and event_type == "correction":
                         reward = 0.5  # Good: correction via Edit
                 else:
+                    # No budget consumed on miss — match eval behavior
                     info["edited"] = False
                     info["error"] = "Text not found in memory"
 
         elif tool == "Read":
-            entries = self._backend.list()
-            info["content"] = "\n".join(
-                e["content"] for e in entries) if entries else ""
+            if hasattr(self._backend, "read"):
+                start = args.get("start_line")
+                n = args.get("num_lines")
+                content = self._backend.read(start_line=start, num_lines=n)
+                info["content"] = content if content else ""
+            else:
+                entries = self._backend.list()
+                info["content"] = "\n".join(
+                    e["content"] for e in entries) if entries else ""
 
         elif tool == "memory_search":
             query = args.get("query", "")

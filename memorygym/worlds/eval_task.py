@@ -33,33 +33,41 @@ Write budget: {budget} total writes. Be selective — you'll see more entities t
 2. CORRECTIONS: Updated data. You MUST update stored memories.
 3. QUESTIONS: Answer from stored memories only.
 
-You have access to memory tools:
-- memory_store(content, memory_id?): Store or update a memory (costs 1 write, \
-budget: {budget})
-- memory_search(query, top_k): Search stored memories (free)
-- memory_get(memory_id): Retrieve a single memory by ID (free)
-- memory_forget(memory_id): Remove a memory (free, no budget refund)
-- memory_list(): List all memories (free)
+## Tools
+
+Call tools by outputting JSON blocks:
+
+**Write** — Append to your memory file (costs 1 write, budget: {budget}):
+<tool_call>{{"name": "Write", "arguments": {{"content": "info to store"}}}}</tool_call>
+
+**Edit** — Edit existing content in your memory file (costs 1 write):
+<tool_call>{{"name": "Edit", "arguments": {{"old_text": "text to find", "new_text": "replacement text"}}}}</tool_call>
+
+**Read** — Read your memory file (free):
+<tool_call>{{"name": "Read", "arguments": {{}}}}</tool_call>
+
+**memory_search** — Semantic search over your memory (free):
+<tool_call>{{"name": "memory_search", "arguments": {{"query": "entity name"}}}}</tool_call>
+
+**submit_answer** — Submit your final answer:
+<tool_call>{{"name": "submit_answer", "arguments": {{"answer": "your answer"}}}}</tool_call>
 
 ## Critical: Handling Corrections
 When you receive a CORRECTION:
-1. memory_search the entity name
-2. memory_forget the old entry
-3. memory_store the corrected data
+1. memory_search the entity name to find existing data
+2. Edit the old value to the corrected value
 This costs 1 write but ensures your answers reflect current data.
 Failing to update = wrong answers on update questions.
 
-## Storage Strategy
-- Store data compactly: "EntityName | attr1: val1, attr2: val2, ..."
-- Prioritize entities with extreme/distinctive values
-- Skip unremarkable entities when budget is tight
-- IMPORTANT: Reserve ~20% of your budget for corrections. \
-Corrections will arrive later and each costs 1 write to update.
+## Memory Budget
+- You have limited write operations — plan your usage carefully
+- Each Write or Edit counts against your budget
+- Corrections will arrive later and each update costs 1 write
 
 ## Answering Questions
-- Search by entity name, then call submit_answer(answer="your answer")
+- Search by entity name, then submit_answer with the value
 - For comparison/synthesis: answer as "EntityName (value)"
-- If data not in memory: submit_answer(answer="I don't have enough information")
+- If data not in memory: submit "I don't have enough information"
 - Do NOT guess or fabricate values
 - ALWAYS call submit_answer for every question
 """
@@ -80,8 +88,7 @@ CORRECTION_TEMPLATE = """=== Event {event_num}/{total_events} [CORRECTION] ===
 
 ACTION REQUIRED: You must update your stored memory.
 1. memory_search "{entity_name}"
-2. memory_forget the old entry
-3. memory_store with the corrected value"""
+2. Edit the old value to the corrected value"""
 
 QUESTION_TEMPLATE = """=== Event {event_num}/{total_events} [QUESTION] ===
 
@@ -150,9 +157,9 @@ def _count_tool_calls(messages: list, start_idx: int = 0) -> tuple[int, int]:
         if hasattr(msg, "content") and isinstance(msg.content, list):
             for part in msg.content:
                 fn = getattr(part, "function", None)
-                if fn == "memory_store":
+                if fn in ("Write", "Edit", "memory_store"):
                     n_writes += 1
-                elif fn in ("memory_search", "memory_list", "memory_get"):
+                elif fn in ("memory_search", "memory_list", "memory_get", "Read"):
                     n_searches += 1
     return n_writes, n_searches
 

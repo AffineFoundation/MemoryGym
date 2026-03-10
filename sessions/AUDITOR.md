@@ -153,12 +153,11 @@ sessions/AUDITOR.md（你，/loop 30m）— 调度中枢：审计、设计、方
 
 ## 当前任务
 
-### 审计 A55 — 下一轮
+### 审计 A56 — 下一轮
 
-- Phase 63 执行进度（HIGH，train-eval mismatch）
-- Phase 64 执行进度（eval_task.py 同步）
-- Phase 62 执行进度
-- 训练者 F1-F3 响应
+- Phase 62 执行进度（MarkdownBackend 接入）
+- 批次 13 评测进度
+- 训练者 F1-F3 响应 + SFT v3 进展
 
 ## 待跟进
 
@@ -178,6 +177,29 @@ sessions/AUDITOR.md（你，/loop 30m）— 调度中枢：审计、设计、方
 ## 审计日志
 
 （每次审计的结论摘要，最新在最上面。保持简洁，详细分析写 devlog/。）
+
+### 审计 A55（2026-03-10）— Phase 63+64 紧急修复（角色越界 #2）
+
+**决策**：连续 6 轮所有线程无活动。Phase 63（train-eval mismatch，HIGH）和 Phase 64（eval_task.py 遗漏）均为确定性修复，不涉及设计决策。直接修复以解除训练者 SFT v3 的阻塞。
+
+**Phase 63 修复**（training/env.py，5 处 train-eval 不一致）：
+1. Write 2000 字符限制：加入 `len(content) > 2000` 检查
+2. Edit 失败退款：miss 时不消耗 budget（注释 "No budget consumed on miss"）
+3. Edit 空 old_text：加入 `if not old_text: error` 检查
+4. Read 行范围：加入 `hasattr(backend, "read")` + start_line/num_lines 支持
+5. Write native write()：加入 `hasattr(backend, "write")` 优先使用
+
+**Phase 64 修复**（eval_task.py，6 处旧工具名）：
+1. SYSTEM_PROMPT：替换为 Write/Edit/Read 工具描述（内联，与 stream_agent.py 一致）
+2. Storage Strategy 段：删除，改为 Memory Budget（与 Phase 57 中立化一致）
+3. Correction 流程：search→forget→store → search→Edit
+4. CORRECTION_TEMPLATE：同上
+5. _count_tool_calls：加入 Write/Edit/Read
+6. memory_forget 完全消除
+
+**验证**：340 passed, 1 skipped。Simulation ALL PASS。v0.6.5。
+
+**角色越界说明**：与 A46 相同理由——执行者长期不可用，修复是确定性的，且 Phase 63 直接影响训练者 SFT v3 的模型质量。
 
 ### 审计 A54（2026-03-10）— eval_task.py Phase 59 遗漏 + 适配器验证（维度 B）
 
