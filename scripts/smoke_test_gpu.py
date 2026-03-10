@@ -169,10 +169,18 @@ def run_dry_smoke(tier: str = "lite") -> dict:
     return {"status": "pass", "steps": step_count, "reward": episode_reward}
 
 
-def run_gpu_smoke(model_name: str, tier: str = "lite") -> dict:
+def _strip_think(text: str) -> str:
+    """Remove <think>...</think> blocks from model output."""
+    import re
+    return re.sub(r"<think>.*?</think>\s*", "", text, flags=re.DOTALL)
+
+
+def run_gpu_smoke(model_name: str, tier: str = "lite",
+                  adapter: str | None = None) -> dict:
     """Full GPU smoke test with a real LLM."""
     print("=" * 60)
-    print(f"GPU SMOKE TEST: {model_name}")
+    label = f"{model_name}" + (f" + {adapter}" if adapter else "")
+    print(f"GPU SMOKE TEST: {label}")
     print("=" * 60)
 
     # Import torch/transformers
@@ -204,6 +212,18 @@ def run_gpu_smoke(model_name: str, tier: str = "lite") -> dict:
         device_map="auto",
         trust_remote_code=True,
     )
+
+    if adapter:
+        print(f"Loading LoRA adapter from {adapter}...")
+        try:
+            from peft import PeftModel
+            model = PeftModel.from_pretrained(model, adapter)
+            model = model.merge_and_unload()
+            print("  LoRA merged successfully")
+        except ImportError:
+            print("ERROR: peft required for --adapter")
+            return {"status": "fail", "error": "missing peft"}
+
     load_time = time.time() - t0
     print(f"  Loaded in {load_time:.1f}s")
 
@@ -219,7 +239,7 @@ def run_gpu_smoke(model_name: str, tier: str = "lite") -> dict:
 
     done = False
     turn = 0
-    max_turns = 50  # Keep short for smoke test
+    max_turns = 200  # Full episode
     total_tool_calls = 0
     total_gen_time = 0.0
     max_ctx_tokens = 16384  # Truncate context to avoid OOM
@@ -247,13 +267,19 @@ def run_gpu_smoke(model_name: str, tier: str = "lite") -> dict:
         with torch.no_grad():
             outputs = model.generate(
                 **inputs,
-                max_new_tokens=512,
+                max_new_tokens=1024,
                 temperature=0.7,
                 do_sample=True,
                 top_p=0.95,
             )
         new_tokens = outputs[0][inputs["input_ids"].shape[1]:]
-        model_text = tokenizer.decode(new_tokens, skip_special_tokens=True)
+        # Decode with special tokens to preserve <tool_call> tags
+        raw_text = tokenizer.decode(new_tokens, skip_special_tokens=False)
+        # Strip <think> blocks and trailing special tokens
+        model_text = _strip_think(raw_text)
+        # Remove trailing special tokens like <|im_end|>
+        for tag in ("<|im_end|>", "<|endoftext|>"):
+            model_text = model_text.replace(tag, "")
         gen_time = time.time() - t0
         total_gen_time += gen_time
 
@@ -327,6 +353,9 @@ def main():
         "--model", default="Qwen/Qwen3-0.6B",
         help="HuggingFace model name (default: Qwen/Qwen3-0.6B)")
     parser.add_argument(
+        "--adapter", default=None,
+        help="LoRA adapter checkpoint path (optional)")
+    parser.add_argument(
         "--tier", default="lite", choices=["lite", "standard"],
         help="Evaluation tier")
     parser.add_argument(
@@ -337,7 +366,7 @@ def main():
     if args.dry_run:
         result = run_dry_smoke(args.tier)
     else:
-        result = run_gpu_smoke(args.model, args.tier)
+        result = run_gpu_smoke(args.model, args.tier, adapter=args.adapter)
 
     sys.exit(0 if result["status"] == "pass" else 1)
 
