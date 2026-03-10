@@ -153,33 +153,33 @@ sessions/AUDITOR.md（你，/loop 30m）— 调度中枢：审计、设计、方
 
 ## 当前任务
 
-### 审计 A65 — 下一轮
+### 审计 A66 — 下一轮
 
 - 各线程活动检查
-- 待跟进清理（移除已完成/过时条目）
-- 维度 B（实现完整性）— docs/Design.md 决策 + 其他文档审计
+- 维度 B（实现完整性）— ROADMAP.md §0 + §3 数据表更新审计
 
 ## 待跟进
 
 （审计中发现的、需要持续关注但不紧急的事项）
 
-- **高方差问题**：双模型均 CV~55-65%，根因 ChromaDB embedding 不稳定。建议 CLAUDE.md 加最低 5 seeds
-- **设计层面**：第 3 轴 "推理能力" 实际测 "机械计算"。不急
-- **multi tier 首测**：批次 8 在 EVALUATOR.md 中，可跑
-- **弱模型失败模式**：GLM-5 0%，MiniMax 6%。均为模型级工具使用能力不足
-- **stream_agent.py 884 行**：Phase 61 ✅ 已完成（提取到 _tool_helpers.py）
-- **GPU 已解除阻塞**：TRAINER.md 已更新，训练线程可开始端到端验证
-- **Reward hacking 风险**（A42 前沿 + A44 代码验证）：env.py L533 用 `n.lower() in content.lower()` 匹配实体名，存 `"Alice"` 即获 +0.3。无 per-turn 衰减。Edit +0.5 不验证 new_text 正确性。与 mem-agent 发现一致。**暂不修复**——训练尚未跑出数据，过早优化 reward 是 premature optimization
-- **mem-agent 方向验证**：Dria 的 mem-agent 用 Obsidian 风格 Markdown 文件记忆 + RL 训练，4B 模型接近 235B 性能。与我们的 Write/Edit/Read + MarkdownBackend 方向一致。核心发现：reward shaping >> 算法选择
-- **GSPO 替代 GRPO**（A52 前沿）：序列级优化比 token 级更稳定。Dria 已成功使用。已写入 TRAINER.md F1
-- **KL 梯度审计**（A52 前沿）：开源库 KL estimator 普遍梯度不正确。已写入 TRAINER.md F2
-- **MemoryRewardBench**（A63 前沿）：评测 RM 对记忆管理的监督能力（arxiv 2601.11969）。与我们 shaped reward 相关，但需先跑通基础训练
-- **AMA-Bench 因果图**（A63 前沿）：AMA-Agent 用 causality graph + tool-augmented retrieval 达 57%。因果推理是我们未覆盖的维度
-- **NVIDIA NemoClaw pipeline**（A63 前沿）：seed → synthetic data → RLVR(GRPO) 在单 GPU 训练 CLI agent。方法论可迁移
+- **Reward hacking 风险**（A42+A44）：env.py shaped reward 用 `n.lower() in content.lower()` 匹配实体名，Edit +0.5 不验证 new_text。**暂不修复**——等训练跑出数据再优化
+- **Retrieval 瓶颈**（A62 数据）：11% 正确率，60% 弃权。MarkdownBackend 对比 eval 已派发（批次 14）
+- **7 个推理类型 0%**（A62 数据）：outlier/comparison/cross_category 等系统性失败。非 bug，是模型能力天花板
+- **前沿方向**：GSPO（已写入 TRAINER.md F1）、MemoryRewardBench（RM 监督）、AMA-Bench（因果图）、NemoClaw（单 GPU GRPO pipeline）。均等训练跑通后再考虑
 
 ## 审计日志
 
 （每次审计的结论摘要，最新在最上面。保持简洁，详细分析写 devlog/。）
+
+### 审计 A65（2026-03-10）— 待跟进清理 + docs/Design.md 删除（维度 B）
+
+**待跟进清理**：13 条 → 4 条。移除已完成项（Phase 61、GPU 解阻塞）和已分析完毕的观察项（高方差/弱模型/设计层面/multi tier/mem-agent/KL 审计）。
+
+**docs/Design.md 删除**：311 行，初始提交后从未更新。内容严重过时（14 题型 vs 20、Phase 7 vs 65），与 README.md + CLAUDE.md 重叠。无代码引用。已 `git rm`。
+
+**docs/ 状态**：
+- ROADMAP.md（276 行）：§0 停在 Phase 51，§3 数据表过时（35→46 次 eval）。可更新但不紧急
+- STATUS_REPORT.md（362 行）：Phase 57+58 更新过，尚可
 
 ### 审计 A64（2026-03-10）— MarkdownBackend 对比审计 + 前沿搜索 V5（维度 A+C）
 

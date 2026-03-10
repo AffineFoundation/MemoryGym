@@ -488,7 +488,7 @@ elif tool == "Edit":
 
 ### 低优先级 Backlog
 
-- **用户体验修正**：删除 docs/Design.md（311 行，严重过时）、API key 错误信息
+- **用户体验修正**：API key 错误信息改善（docs/Design.md 已删除 A65，LEADERBOARD.md 已填充 A58）
 - **Promise/Progress Reward**：等简单 shaped reward 在真实训练中验证后，再决定是否需要更复杂的 reward 模型
 - **legacy 工具名清理**：移除 _KNOWN_TOOLS 中的 memory_store/memory_forget/memory_get/memory_list（等 v3 评测基线稳定后）
 
