@@ -54,74 +54,11 @@
 
 ## 当前任务
 
-### Phase 51 — MemoryEnv process-based reward 增强（前沿对齐）
-
-**依据**：前沿搜索发现 Memory-R1 (arxiv 2508.19828) 和 MemoryRewardBench (arxiv 2601.11969) 都表明 process-based reward（存储决策质量）比纯 outcome-based reward（答题正确率）更有效。当前 MemoryEnv 的 shaped reward 已有雏形但信号太弱。详见 `devlog/2026-03-10-frontier-alignment-v2.md`。
-
-**当前状态**（training.py:485-536）：
-- 存储实体名匹配：+0.3（line 490）
-- 修正流程完成（search→forget→store）：+0.5（line 494）
-- 答题正确：+1.0（line 522）
-- 无负向信号，无存储效率奖励
-
-#### Step 1 — 存储去重惩罚
-
-agent 重复存储同一实体应扣分。追踪已存储实体名：
-
-```python
-# MemoryEnv.__init__ 或 reset() 中:
-self._stored_entity_names: set[str] = set()
-
-# step() 的 memory_store 分支中:
-if shaped and event_type == "ingest":
-    names = current_event.get("entity_names", [])
-    matched = [n for n in names if n.lower() in content.lower()]
-    for n in matched:
-        if n in self._stored_entity_names:
-            reward = -0.1  # Penalty: duplicate storage wastes budget
-        else:
-            self._stored_entity_names.add(n)
-            reward = 0.3
-```
-
-#### Step 2 — 存储效率奖励
-
-episode 结束时，按"每次写入的信息密度"给额外奖励：
-
-```python
-# get_verifiable_reward() 或 episode 结束逻辑中:
-if self._writes_used > 0:
-    unique_stored = len(self._stored_entity_names)
-    efficiency_bonus = min(unique_stored / self._writes_used, 1.0) * 0.2
-```
-
-#### Step 3 — 修正响应速度奖励
-
-correction 事件后第一次操作就搜索 = 好习惯：
-
-```python
-# step() 的 memory_search 分支中:
-if shaped and event_type == "correction":
-    if not self._correction_searched:
-        reward = 0.1  # Good: immediately searched after correction
-    self._correction_searched = True
-```
-
-#### Step 4 — 测试
-
-在 `tests/test_training.py` 中新增：
-- `test_duplicate_store_penalty()` — 重复存储同一实体 reward < 0
-- `test_efficiency_bonus()` — 打包存储效率奖励更高
-- `test_correction_speed_reward()` — correction 后立即 search 有奖励
-
-#### 验证标准
-
-1. `python -m pytest tests/ -q` 全部通过
-2. 新增 ≥ 3 个 shaped reward 测试
-3. shaped reward 总值范围合理（intermediate reward 不主导 episode reward）
+（待审计线程写入新任务）
 
 ## 已完成
 
+### Phase 51 — MemoryEnv process-based reward 增强 ✅
 ### Phase 50 — verl_adapter 私有 API 修复 + 适配器健壮性 ✅
 ### Phase 49 — Inspect AI 完善 + 关键模块测试补全 ✅
 ### Phase 48 — mem0 后端完善集成 ✅
