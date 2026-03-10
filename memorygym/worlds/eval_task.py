@@ -403,10 +403,11 @@ def worldbench_solver(
 def worldbench(
     seed: int | None = None,
     template: str = "company",
-    n_entities: int = 200,
-    n_corrections: int = 10,
-    n_questions: int = 20,
-    write_budget: int = 30,
+    tier: str | None = None,
+    n_entities: int | None = None,
+    n_corrections: int | None = None,
+    n_questions: int | None = None,
+    write_budget: int | None = None,
     backend: str = "chromadb",
     entities_per_batch: int = 10,
 ) -> Task:
@@ -419,7 +420,10 @@ def worldbench(
 
     Args:
         seed: Random seed for deterministic generation (required).
-        template: World template ("company", "research", "city").
+        template: World template ("company", "research", "city", etc.).
+        tier: Evaluation tier (lite/standard/hard/multi). Sets defaults
+            for n_entities, n_corrections, n_questions, write_budget.
+            Individual params override tier values.
         n_entities: Number of entities to generate.
         n_corrections: Number of correction events.
         n_questions: Number of questions to generate.
@@ -427,6 +431,8 @@ def worldbench(
         backend: Memory backend ("chromadb" or "mem0").
         entities_per_batch: Entities per ingest batch.
     """
+    from memorygym.protocol import TIERS
+
     if seed is None:
         raise ValueError(
             "seed is required. Pass -T seed=<int> when running inspect eval.")
@@ -434,6 +440,23 @@ def worldbench(
         raise ValueError(
             f"Unknown template '{template}'. Choose from: "
             f"{', '.join(_TEMPLATES)}")
+
+    # Resolve tier → defaults, then override with explicit params
+    if tier is not None:
+        if tier not in TIERS:
+            raise ValueError(
+                f"Unknown tier '{tier}'. Choose from: "
+                f"{', '.join(TIERS)}")
+        tc = TIERS[tier]
+        n_entities = n_entities or tc["entities"]
+        n_corrections = n_corrections or tc["corrections"]
+        n_questions = n_questions or tc["questions"]
+        write_budget = write_budget or tc["write_budget"]
+    else:
+        n_entities = n_entities or 200
+        n_corrections = n_corrections or 10
+        n_questions = n_questions or 20
+        write_budget = write_budget or 30
 
     # V11: Use opaque hash for sample/task IDs — seed must not leak
     # to agent via sample.id or task.name

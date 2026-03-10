@@ -11,7 +11,7 @@
 
 > 新 session 先看这里 + `sessions/EXECUTOR.md`。上下文不足时可读最近的 devlog 文件。
 
-**当前焦点**: Inspect AI 完善 + 适配器健壮性（Phase 49-50）
+**当前焦点**: verl_adapter 修复 + RL reward 增强（Phase 50-51）
 
 **最大差距**: RL 训练验证（需 GPU）
 
@@ -25,8 +25,9 @@
 - Phase 45-46: 版本追踪 + 矛盾问题 GT 格式修复 ✅
 - Phase 47: ChromaDB 搜索精度提升（entity name reranking + expanded search） ✅
 - Phase 48: mem0 后端完善集成（反模式修复 + MemoryEnv 后端抽象 + 7 tests） ✅
+- Phase 49: Inspect AI tier 参数 + Actor/eval_task 测试补全（+30 tests） ✅
 - 6 模板 × 22-23 attrs × 6 dtypes × 20 reasoning competencies
-- 279 tests, 9 simulation strategies ALL PASS
+- 309 tests, 9 simulation strategies ALL PASS
 - 35 real evaluations, 5 models — Qwen3.5=23%, Kimi=20%, MiniMax=6%, GLM-5=0%
 - MemoryEnv shaped reward + verl/slime 适配器完整可用
 

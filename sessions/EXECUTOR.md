@@ -54,57 +54,6 @@
 
 ## 当前任务
 
-### Phase 49 — Inspect AI 完善 + 关键模块测试补全
-
-**依据**：审计发现 eval_task.py 不支持 tier 名称、env.py（Actor）零测试覆盖、eval_task.py 零测试。这些是部署和集成的关键路径。
-
-#### Step 1 — eval_task.py 支持 tier 名称
-
-当前（eval_task.py:405-409）只接受原始参数（n_entities, n_questions 等），不支持 `--tier lite`。
-
-```python
-# 当前：必须 inspect eval eval_task.py -T n_entities=30 -T n_corrections=3 ...
-# 目标：inspect eval eval_task.py -T tier=lite
-```
-
-从 `protocol.py` 导入 `TIERS`，在 `worldbench()` 函数开头解析 tier 参数：
-```python
-if tier is not None:
-    cfg = TIERS[tier]
-    n_entities = cfg["entities"]
-    n_questions = cfg["questions"]
-    # ...
-```
-
-保留原始参数作为 override（tier 设默认值，单独参数覆盖 tier 的值）。
-
-#### Step 2 — Actor 类（env.py）测试
-
-`memorygym/env.py` 的 Actor 类是 OpenEnv 容器化接口，329 行代码零测试。新建 `tests/test_env.py`：
-
-- `test_actor_init()` — 验证 Actor 构造，task_id 解析
-- `test_parse_task_id()` — seed/template/tier 从 task_id 正确提取
-- `test_actor_evaluate()` — 用 mock backend 跑一次完整 evaluate，验证返回 dict schema
-- `test_actor_reset_step()` — OpenEnv 接口的 reset → step 循环
-
-不需要真实 LLM 调用——mock `run_stream_agent` 返回预制结果即可。
-
-#### Step 3 — eval_task.py 基础测试
-
-在 `tests/test_worlds_features.py` 或新建 `tests/test_eval_task.py` 中：
-
-- `test_worldbench_tier_param()` — 验证 tier="lite" 正确映射到 TIERS["lite"] 的参数
-- `test_worldbench_all_tiers()` — lite/standard/hard/multi 都能成功创建 Task 对象
-- `test_worldbench_backend_param()` — 验证 backend="chromadb" 和 "mem0" 都被正确传递
-
-#### 验证标准
-
-1. `python -m pytest tests/ -q` 全部通过
-2. `inspect eval memorygym/worlds/eval_task.py -T tier=lite -T seed=0 -T template=company` 语法上可接受（不需要真实模型）
-3. 新增 ≥ 5 个测试
-
----
-
 ### Phase 50 — verl_adapter 私有 API 修复 + 适配器健壮性
 
 **依据**：verl_adapter.py:178-180 直接访问 MemoryEnv 私有属性 `env._stream[env._event_idx]` 和 `env._format_event()`。任何 MemoryEnv 内部重构都会导致训练管线静默崩溃。
@@ -149,8 +98,77 @@ next_obs = env.current_observation()
 2. verl_adapter.py 不再有 `env._stream` 或 `env._event_idx` 的直接访问
 3. 新增 ≥ 3 个测试
 
+---
+
+### Phase 51 — MemoryEnv process-based reward 增强（前沿对齐）
+
+**依据**：前沿搜索发现 Memory-R1 (arxiv 2508.19828) 和 MemoryRewardBench (arxiv 2601.11969) 都表明 process-based reward（存储决策质量）比纯 outcome-based reward（答题正确率）更有效。当前 MemoryEnv 的 shaped reward 已有雏形但信号太弱。详见 `devlog/2026-03-10-frontier-alignment-v2.md`。
+
+**当前状态**（training.py:485-536）：
+- 存储实体名匹配：+0.3（line 490）
+- 修正流程完成（search→forget→store）：+0.5（line 494）
+- 答题正确：+1.0（line 522）
+- 无负向信号，无存储效率奖励
+
+#### Step 1 — 存储去重惩罚
+
+agent 重复存储同一实体应扣分。追踪已存储实体名：
+
+```python
+# MemoryEnv.__init__ 或 reset() 中:
+self._stored_entity_names: set[str] = set()
+
+# step() 的 memory_store 分支中:
+if shaped and event_type == "ingest":
+    names = current_event.get("entity_names", [])
+    matched = [n for n in names if n.lower() in content.lower()]
+    for n in matched:
+        if n in self._stored_entity_names:
+            reward = -0.1  # Penalty: duplicate storage wastes budget
+        else:
+            self._stored_entity_names.add(n)
+            reward = 0.3
+```
+
+#### Step 2 — 存储效率奖励
+
+episode 结束时，按"每次写入的信息密度"给额外奖励：
+
+```python
+# get_verifiable_reward() 或 episode 结束逻辑中:
+if self._writes_used > 0:
+    unique_stored = len(self._stored_entity_names)
+    efficiency_bonus = min(unique_stored / self._writes_used, 1.0) * 0.2
+```
+
+#### Step 3 — 修正响应速度奖励
+
+correction 事件后第一次操作就搜索 = 好习惯：
+
+```python
+# step() 的 memory_search 分支中:
+if shaped and event_type == "correction":
+    if not self._correction_searched:
+        reward = 0.1  # Good: immediately searched after correction
+    self._correction_searched = True
+```
+
+#### Step 4 — 测试
+
+在 `tests/test_training.py` 中新增：
+- `test_duplicate_store_penalty()` — 重复存储同一实体 reward < 0
+- `test_efficiency_bonus()` — 打包存储效率奖励更高
+- `test_correction_speed_reward()` — correction 后立即 search 有奖励
+
+#### 验证标准
+
+1. `python -m pytest tests/ -q` 全部通过
+2. 新增 ≥ 3 个 shaped reward 测试
+3. shaped reward 总值范围合理（intermediate reward 不主导 episode reward）
+
 ## 已完成
 
+### Phase 49 — Inspect AI 完善 + 关键模块测试补全 ✅
 ### Phase 48 — mem0 后端完善集成 ✅
 ### Phase 47 — ChromaDB 搜索精度提升 ✅
 ### Phase 46 — 矛盾问题 GT 格式修复 ✅
