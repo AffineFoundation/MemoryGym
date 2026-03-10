@@ -153,11 +153,11 @@ sessions/AUDITOR.md（你，/loop 30m）— 调度中枢：审计、设计、方
 
 ## 当前任务
 
-### 审计 A64 — 下一轮
+### 审计 A65 — 下一轮
 
 - 各线程活动检查
-- 维度 A（能力缺口）— MarkdownBackend eval 对比审计
-- 训练者反馈区检查
+- 待跟进清理（移除已完成/过时条目）
+- 维度 B（实现完整性）— docs/Design.md 决策 + 其他文档审计
 
 ## 待跟进
 
@@ -180,6 +180,17 @@ sessions/AUDITOR.md（你，/loop 30m）— 调度中枢：审计、设计、方
 ## 审计日志
 
 （每次审计的结论摘要，最新在最上面。保持简洁，详细分析写 devlog/。）
+
+### 审计 A64（2026-03-10）— MarkdownBackend 对比审计 + 前沿搜索 V5（维度 A+C）
+
+**MarkdownBackend vs ChromaDB 对比**：
+- Simulation 分数完全一致（确定性规则匹配不走搜索——expected）
+- 小规模搜索精度测试两者均 6/6（差异在规模和 LLM 查询复杂度上）
+- **结论**：真正的对比需要真实 LLM eval。已派发批次 14 到 EVALUATOR.md
+
+**前沿搜索 V5**（4 项）：MemoryRewardBench（RM 记忆监督）、AMA-Bench（因果图 agent 记忆）、NVIDIA NemoClaw（单 GPU GRPO 训练）、MemAgents Workshop @ ICLR 2026。
+
+**派发**：批次 14 → EVALUATOR.md（Qwen3.5 × 3 模板 × markdown backend 对比）。
 
 ### 审计 A63（2026-03-10）— 前沿搜索 V5（维度 C）
 

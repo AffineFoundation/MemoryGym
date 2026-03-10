@@ -79,6 +79,27 @@ python -m memorygym.bench --model moonshotai/Kimi-K2.5-TEE --seed 0 --template h
 - JSON 是否正确保存（Bug 4 修复验证）
 - 与批次 12 stdout 数据的对比
 
+### 批次 14 — MarkdownBackend 对比（Phase 65 后首测）
+
+**目的**：对比 ChromaDB vs MarkdownBackend 在真实 LLM eval 中的搜索精度差异。A62 数据分析发现 retrieval 11%（60% 弃权）是 ChromaDB 搜索精度瓶颈。MarkdownBackend 用 BM25+向量混合搜索，理论上对精确实体名匹配更强。
+
+**任务**：最强模型 × 3 模板 × seed 0，`--backend markdown`，共 3 次评测。与批次 13 ChromaDB 结果直接对比。
+
+```bash
+python -m memorygym.bench --model Qwen/Qwen3.5-397B-A17B-TEE --seed 0 --template company --backend markdown
+python -m memorygym.bench --model Qwen/Qwen3.5-397B-A17B-TEE --seed 0 --template research --backend markdown
+python -m memorygym.bench --model Qwen/Qwen3.5-397B-A17B-TEE --seed 0 --template hospital --backend markdown
+```
+
+**重点关注**：
+- Retrieval 正确率 vs ChromaDB 同配置
+- 弃权率是否下降（ChromaDB 弃权 60%）
+- Maintenance 是否受影响（Edit 走 native edit() 而非 search+forget+store）
+
+**优先级**：批次 13 完成后再做。
+
+---
+
 ### 批次 12 — v3 基线（⚠️ JSON 未保存，需重跑）
 
 6/6 评测均完成计算但在保存 JSON 时 crash（`AttributeError: 'Namespace' object has no attribute 'backend'` at bench.py:316）。分数从 stdout 手动记录：
