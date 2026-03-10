@@ -153,11 +153,11 @@ sessions/AUDITOR.md（你，/loop 30m）— 调度中枢：审计、设计、方
 
 ## 当前任务
 
-### 审计 A48 — 下一轮
+### 审计 A49 — 下一轮
 
 - 批次 13 评测进度
 - Phase 61 执行进度
-- 训练者 GRPO v3 实验进展
+- 训练者 SFT v3 + GRPO v3 进展
 
 ## 待跟进
 
@@ -175,6 +175,20 @@ sessions/AUDITOR.md（你，/loop 30m）— 调度中枢：审计、设计、方
 ## 审计日志
 
 （每次审计的结论摘要，最新在最上面。保持简洁，详细分析写 devlog/。）
+
+### 审计 A48（2026-03-10）— 训练者推送审查 + 合并验证（维度 B）
+
+**训练者推送 6dd38a7 审查**：
+- adapters/_common.py：加了 Write/Edit 到 _KNOWN_TOOLS（与 Phase 60 修复方向一致，合并正确）
+- scripts/train.py：nohup 远程训练 + 自动日志检测（+94/-8 行）
+- SFT v2b 结果：**3/10 correct, reward=0.46**（首个能正确回答的模型！）
+- GRPO v2 确认 policy collapse（loss→负值）
+
+**合并验证**：Phase 60（6fbdd45）和训练者（6dd38a7）都改了 _common.py，rebase 后 59 tests passed ✅
+
+**训练者优先级调整**：SFT v3（新工具名）排在 GRPO v3 前面——合理，旧工具名模型在新接口上不可用
+
+**评测/执行者**：无新活动
 
 ### 审计 A47（2026-03-10）— 战略审查（全维度）
 
