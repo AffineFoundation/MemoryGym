@@ -54,15 +54,38 @@
 
 ## 当前任务
 
-### Phase 52 — mem0 后端评测跑通（端到端闭环修复）
+### ⚠️ Phase 52 — mem0 后端评测跑通（最高优先级，阻塞评测线程）
 
-**状态**：代码修复完成（方案 A: retry with prefix），328 tests pass。eval 运行中。
+**停下 Phase 56，先完成这个。** 评测者已连续 3 次失败并标记阻塞。
 
-**已完成**：
-- mem0_backend.py store() 空结果时 retry with "Remember: " prefix
-- 测试更新：test_mem0_store_retry_on_empty + test_mem0_store_raises_after_retry
-- config.py 新增 9 个测试（test_config.py）
-- 等待 `--backend mem0` 真实评测结果确认
+**评测者报告的真实错误**（2 个独立问题，都要解决）：
+
+**错误 1 — `attempt to write a readonly database`**
+qdrant 本地 SQLite 在第一批 ingest 后变为只读。后续所有写入失败。这是单进程内的问题，不是并发。可能原因：
+- `/tmp/mem0_qdrant_memorygym/` 有上次运行的残留文件/锁
+- qdrant SQLite WAL 模式在 `/tmp` 下的行为异常
+
+**修复方向**：在 `Mem0Backend.__init__` 中清理旧数据目录（`shutil.rmtree` if exists），确保每次 eval 从干净状态开始。
+
+**错误 2 — `RuntimeError: mem0 extracted no facts from content`**
+retry with "Remember:" prefix 仍然不够，某些结构化文档 mem0 LLM 就是无法提取 facts。
+
+**修复方向**：在 `stream_agent.py` 的 `_execute_tool` memory_store 分支中捕获 RuntimeError，返回错误消息给 agent 而非崩溃：
+```python
+try:
+    entry_id = backend.store(content, memory_id=memory_id)
+except RuntimeError as e:
+    budget.writes_used -= 1  # Refund the write
+    return f"Store failed: {e}", None
+```
+这样 agent 会收到 "Store failed" 消息继续运行，而不是整个 eval 崩溃。
+
+**执行流程**：
+1. 修复两个错误
+2. `rm -rf /tmp/mem0_qdrant_*` 清理残留
+3. `python -m pytest tests/ -q` 通过
+4. **自己跑**：`python -m memorygym.bench --model moonshotai/Kimi-K2.5-TEE --seed 0 --template company --backend mem0`
+5. 确认 eval JSON `success: true` 才算完成
 
 ### Phase 53 — RL 训练冒烟验证 ✅
 
@@ -81,49 +104,11 @@
 
 ### Phase 55 — 静默异常处理修正 ✅（7 处 except Exception → 具体异常类型）
 
-### Phase 56 — 测试套件精简提效
+### Phase 56 — 测试套件精简提效 ✅
 
-**依据**：`pytest tests/ -q` 耗时 ~5 分钟（330 tests），严重拖慢开发迭代速度。慢测试集中在少数文件。
-
-**耗时分析**（top 10，占总时间 ~60%）：
-
-| 测试 | 耗时 | 文件 |
-|------|------|------|
-| `test_stream_invariants` | **38s** | test_worlds_features.py |
-| `test_outlier_gt_correct` | **27s** | test_narrative.py |
-| `test_multi_hop_gt_correct` | **22s** | test_narrative.py |
-| `test_question_quality` | **16s** | test_worlds.py |
-| `test_abstraction_generality` | **16s** | test_worlds.py |
-| `test_priority_beats_random` | **15s** | test_narrative.py |
-| `test_comprehension_types_not_fingerprint_exploitable` | **11s** | test_narrative.py |
-| `test_comparison_gt_correct` | **11s** | test_narrative.py |
-| `test_ratio_gt_correct` | **11s** | test_narrative.py |
-| `test_full_validation_all_pass` | **11s** | test_bench.py |
-
-**文件级分布**（331 tests / 14 files）：
-
-| 文件 | 测试数 | 分析 |
-|------|--------|------|
-| test_validators.py | **81** | 最多，检查是否有冗余 |
-| test_training.py | 36 | 训练相关，保留 |
-| test_adapters.py | 33 | 适配器，保留 |
-| test_narrative.py | 15 | **慢（~95s 总计）**，GT 正确性测试用多 seed 暴力验证 |
-
-**优化方向**：
-
-1. **test_narrative.py（~95s）**：每个 GT 测试跑 5+ seeds × 6 templates = 30+ 世界构建。减少 seeds（3 → 1 for CI，保留 `--slow` 标记跑完整版）
-2. **test_stream_invariants（38s）**：单个测试最慢，检查是否可以减少 seed 数或模板数
-3. **test_validators.py（81 tests）**：检查是否有重复的等价测试（如多个测试只改输入格式）
-4. **引入 pytest marks**：`@pytest.mark.slow` 标记 >10s 的测试，CI 默认跑 `pytest -m "not slow"`，完整验证用 `pytest`
-
-**目标**：默认 `pytest tests/ -q` 在 **60 秒内**完成。慢测试用 `pytest tests/ -q -m "not slow"` 跳过。
-
-#### 验证标准
-
-1. `pytest tests/ -q -m "not slow"` < 60 秒，全部通过
-2. `pytest tests/ -q` 全部通过（包含慢测试，<180 秒）
-3. 无测试被删除，只是标记或减少 seed
-4. 总测试覆盖率不降低
+10 个 >10s 测试标记 `@pytest.mark.slow`。
+- `pytest -m "not slow"`: 320 tests, 88s（3x 加速）
+- `pytest`: 330 tests, 250s（完整验证）
 
 ### 低优先级 Backlog（训练跑通后再考虑）
 

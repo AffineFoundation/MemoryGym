@@ -5,6 +5,7 @@ Tests narrative rendering (Layer 1) and ratio/comparison/delta questions (Layer 
 
 from __future__ import annotations
 
+import pytest
 from random import Random
 
 from memorygym.evaluation.validators import AnswerValidator
@@ -141,6 +142,7 @@ def test_compact_still_works():
                 f"{tmpl.name}: compact mode broken, no pipe found")
 
 
+@pytest.mark.slow
 def test_ratio_gt_correct():
     """Ratio question GT must match attr1/attr2 from world state."""
     v = AnswerValidator()
@@ -170,6 +172,7 @@ def test_ratio_gt_correct():
             f"{tmpl.name}: no ratio questions across 10 seeds")
 
 
+@pytest.mark.slow
 def test_comparison_gt_correct():
     """Comparison GT must name a real entity with correct difference."""
     v = AnswerValidator()
@@ -278,6 +281,7 @@ def test_smart_guesser_new_types():
                 f"{acc:.0%} >= 15%")
 
 
+@pytest.mark.slow
 def test_multi_hop_gt_correct():
     """Multi-hop GT must name an entity from the correct category."""
     v = AnswerValidator()
@@ -304,6 +308,7 @@ def test_multi_hop_gt_correct():
             f"{tmpl.name}: no multi_hop questions across 20 seeds")
 
 
+@pytest.mark.slow
 def test_outlier_gt_correct():
     """Outlier GT must name the entity with max deviation from mean."""
     v = AnswerValidator()
@@ -329,6 +334,7 @@ def test_outlier_gt_correct():
             f"{tmpl.name}: no outlier questions across 20 seeds")
 
 
+@pytest.mark.slow
 def test_comprehension_types_not_fingerprint_exploitable():
     """Even if question type is detectable, type detection must not help score.
 

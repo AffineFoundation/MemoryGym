@@ -7,6 +7,7 @@ the standard evaluation protocol.
 
 from __future__ import annotations
 
+import pytest
 from memorygym.bench import (
     STRATEGIES,
     TEMPLATES,
@@ -125,6 +126,7 @@ class TestRunValidation:
         checks = run_validation({}, ["company"])
         assert checks["[company] determinism"] is True
 
+    @pytest.mark.slow
     def test_full_validation_all_pass(self):
         """Run minimal validation with all strategies on one template."""
         from collections import defaultdict

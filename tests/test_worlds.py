@@ -13,6 +13,7 @@ have applied the correction.
 
 from __future__ import annotations
 
+import pytest
 from collections import Counter, defaultdict
 from dataclasses import dataclass, field
 from random import Random
@@ -372,6 +373,7 @@ def test_corrections_mutate_world():
             f"Correction for {c.entity_name}.{c.attr} didn't change value")
 
 
+@pytest.mark.slow
 def test_abstraction_generality():
     """All WorldTemplate implementations must produce consistent evaluation."""
     for TmplClass in [CompanyWorld, ResearchWorld, CityWorld, HospitalWorld, SportWorld, MovieWorld]:
@@ -405,6 +407,7 @@ def test_monotonicity():
             prev = r.accuracy
 
 
+@pytest.mark.slow
 def test_question_quality():
     """Questions must test genuine memory ability.
 

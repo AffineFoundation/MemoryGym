@@ -8,6 +8,7 @@ Split from test_worlds.py to keep files under 1000 lines.
 
 from __future__ import annotations
 
+import pytest
 from collections import Counter
 from random import Random
 
@@ -93,6 +94,7 @@ def test_stream_interleave():
                 f"{tmpl.name} seed={seed}: no mid-stream questions")
 
 
+@pytest.mark.slow
 def test_stream_invariants():
     """Stream mode must preserve core invariants: perfect=100%, guesser=0%."""
     from memorygym.bench import simulate_one_stream, STRATEGIES
@@ -359,6 +361,7 @@ def test_detect_stored_numeric_variants():
         f"Raw-format docs detected only {len(stored)} entities, expected ≥8")
 
 
+@pytest.mark.slow
 def test_priority_beats_random():
     """Priority storage (WHAT you store) must outperform random storage.
 
