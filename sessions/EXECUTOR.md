@@ -57,48 +57,172 @@
 
 ## 当前任务
 
-### Phase 57 — 系统提示词中立化（当前最高优先级）
+### Phase 57 — 系统提示词中立化 ✅
 
-**依据**：CLAUDE.md 新增"提示词中立"原则——系统提示词应描述任务和工具，不应规定存储策略。存储策略本身是被测能力的一部分。
+Storage Strategy → Memory Budget（只描述约束，不规定策略）。
+测试 314 passed, simulation ALL PASS。eval 待 API 恢复后记录。
 
-**当前问题**：`stream_agent.py:111-116` 的 Storage Strategy 段落同时违反两个原则：
-1. 规定了存储格式（`"EntityName | attr1: val1, attr2: val2, ..."`）→ 剥夺了"存储组织"能力的测试
-2. 规定了存储策略（"Prioritize entities with extreme/distinctive values"、"Skip unremarkable entities"）→ 剥夺了"存储决策"能力的测试
+### Phase 58 — 移除 mem0 后端 ✅
 
-#### Step 1 — 替换 Storage Strategy 为中立描述（stream_agent.py:111-116）
+删除 mem0_backend.py + 18 处引用 + 6 个 mock 测试。
+`grep -r "mem0\|Mem0" --include="*.py" memorygym/` = 0 结果。
+测试 314 passed, simulation ALL PASS。
 
-当前：
+---
+
+### Phase 59 — 工具接口 OpenClaw 化（训练迁移核心）
+
+**依据**：红队论证确认，MemoryGym 当前工具接口（memory_store/memory_forget）与 OpenClaw 的记忆接口（Write/Edit 文件 + memory_search）不兼容。训练出的模型在 OpenClaw 上存储执行层完全不迁移。将工具接口改为 OpenClaw 兼容，使 RL 训练出的 action pattern 直接可用于 OpenClaw。
+
+**核心变更**：工具接口从"记忆 API 模式"改为"文件操作模式"
+
 ```
-## Storage Strategy
-- Store data compactly: "EntityName | attr1: val1, attr2: val2, ..."
-- Prioritize entities with extreme/distinctive values
-- Skip unremarkable entities when budget is tight
-- IMPORTANT: Reserve ~20% of your budget for corrections. ...
-```
-
-改为（只描述约束，不规定策略）：
-```
-## Memory Budget
-- You have limited store operations — plan your usage carefully
-- Each memory_store or memory_update counts against your budget
-- Corrections will arrive later and each update costs 1 write
-```
-
-保留预算提示（这是任务描述），删除所有策略指导（格式、优先级、取舍策略）。
-
-#### Step 2 — 验证
-```bash
-python -m pytest tests/ -q
-python -m memorygym.bench --seeds 3 --validate
+当前工具                          改为（= OpenClaw 原生语义）
+───────                          ──────────────────────
+memory_store(content)      →     Write(content)         追加到 MEMORY.md
+memory_forget(id)+store    →     Edit(old_text, new_text) 原地编辑 MEMORY.md
+memory_get(id)             →     Read(start_line?, n?)   读取 MEMORY.md
+memory_search(query)       →     memory_search(query)    不变
+submit_answer(answer)      →     submit_answer(answer)   不变（评测专用）
 ```
 
-#### Step 3 — 对比 eval
-```bash
-python -m memorygym.bench --model moonshotai/Kimi-K2.5-TEE --seed 0 --template company
-```
-记录结果到 devlog/。不要求分数提升，只需记录中立提示词下模型的自主策略选择。
+#### Step 1 — 新增 MarkdownBackend（`memorygym/memory/backends/markdown_backend.py`）
 
-**验证标准**：测试通过 + simulation 通过 + 有 eval 对比数据
+```python
+class MarkdownBackend:
+    """OpenClaw-compatible: Markdown file + hybrid search."""
+
+    def __init__(self, memory_dir):
+        self.memory_file = Path(memory_dir) / "MEMORY.md"
+        # 向量索引（复用 all-MiniLM-L6-v2）+ BM25 索引
+        # Markdown 按 ~400 token chunk，80 token overlap（与 OpenClaw QMD 一致）
+
+    def write(self, content: str) -> str:
+        """追加到 MEMORY.md，触发重索引，返回行范围"""
+
+    def edit(self, old_text: str, new_text: str) -> bool:
+        """原地编辑 MEMORY.md，触发重索引"""
+
+    def read(self, start_line=None, num_lines=None) -> str:
+        """读取 MEMORY.md 内容"""
+
+    def search(self, query: str, top_k=5) -> list[dict]:
+        """混合搜索：向量(70%) + BM25(30%) + RRF rerank"""
+```
+
+搜索实现：用 `sentence_transformers`（已有依赖）+ `rank_bm25`（新依赖，轻量）做混合搜索，与 OpenClaw QMD 逻辑一致。
+
+#### Step 2 — stream_agent.py 工具接口改造
+
+1. SYSTEM_PROMPT 中的工具描述改为 Write/Edit/Read/memory_search 语义
+2. `_KNOWN_TOOLS` 更新为新工具名
+3. `_execute_tool` 中各分支适配新工具语义：
+   - `Write`：调 `backend.write(content)`，消耗 1 write budget
+   - `Edit`：调 `backend.edit(old, new)`，消耗 1 write budget
+   - `Read`：调 `backend.read()`，不消耗预算
+   - `memory_search`：不变
+   - `submit_answer`：不变
+
+#### Step 3 — simulation.py 适配
+
+策略核心逻辑（决定存什么）不变，只改接口调用：
+- `backend.store(content)` → `backend.write(content)`
+- `backend.forget(id) + backend.store(new)` → `backend.edit(old, new)`
+- 9 种策略的选择逻辑保持不变
+
+#### Step 4 — training/env.py 适配
+
+MemoryEnv 的工具接口和 reward 信号适配：
+- 工具名映射
+- shaped reward：检测 Write 调用（而非 memory_store）
+- episode 结束后读 MEMORY.md 评估存储质量
+
+#### Step 5 — bench.py 适配
+
+`--tool-mode` 参数暂不需要。直接用新接口作为默认。ChromaDB 后端仍可用（ChromaDBBackend 实现同样的 write/edit/read/search 接口），但 MarkdownBackend 为默认。
+
+#### Step 6 — 测试
+
+- 新增 MarkdownBackend 单元测试（write/edit/read/search 基本功能）
+- 修改现有 simulation 测试适配新接口
+- 确认 `python -m memorygym.bench --seeds 3 --validate` 通过
+
+**验证标准**：
+- MarkdownBackend 通过 write → search 闭环测试
+- 混合搜索（向量 + BM25）recall >= 90%
+- simulation 9 种策略不变量全部通过
+- `python -m pytest tests/ -q` 全通过
+
+**注意**：这是一个大改动，建议分 2-3 个子 commit：
+1. MarkdownBackend 实现 + 测试
+2. stream_agent.py + simulation.py 工具接口改造
+3. training/env.py + bench.py 适配
+
+---
+
+### Phase 60 — Phase 59 遗留 bug 修复（审计 A40 发现）
+
+**背景**：审计 A40 代码审查发现 Phase 59.2 的工具接口改造有 5 个遗留 bug。simulation.py 无需改动（不调用 backend），training/env.py 已正确适配。
+
+#### Bug 1（HIGH）— stream_agent.py 工具调用计数遗漏
+
+`_parse_and_execute()`（L313-316）和 `_run_tool_loop()`（L414-417）只统计 `memory_store`，不统计 `Write` 和 `Edit`。导致 trajectory stats 中 write 计数为 0。
+
+修复：
+```python
+# L313-316
+if name in ("Write", "Edit", "memory_store"):
+    n_writes += 1
+elif name in ("memory_search", "memory_list", "memory_get", "Read"):
+    n_searches += 1
+
+# L414-417 同上
+```
+
+#### Bug 2（HIGH）— stream_agent.py 修正事件消息仍用旧工具名
+
+L668-675 修正事件的 ACTION REQUIRED 仍说 `memory_search → memory_forget → memory_store`，与 SYSTEM_PROMPT 中的 `search → Edit` 矛盾。模型收到冲突指令。
+
+修复：
+```python
+f"ACTION REQUIRED: You must update your stored memory.\n"
+f"1. memory_search \"{entity_name}\"\n"
+f"2. Edit the old value to the corrected value\n"
+```
+
+#### Bug 3（HIGH）— adapters/_common.py 缺少新工具名
+
+`_KNOWN_TOOLS`（L24-27）只有旧名（memory_store/forget/get/list），缺 Write/Edit/Read。`format_tool_result()`（L81-112）也没有新工具名分支。RL 训练时 verl/slime adapter 会**静默丢弃**模型的 Write/Edit/Read 调用。
+
+修复：
+- L24-27：`_KNOWN_TOOLS` 加入 `"Write", "Edit", "Read"`
+- L81-112：`format_tool_result()` 加入 Write/Edit/Read 分支
+
+#### Bug 4（MEDIUM）— bench.py args.backend 未定义
+
+L316 引用 `args.backend`，但 `--backend` 参数已在 Phase 58 删除。运行 `bench.py --model` 会 crash。
+
+修复：L316 改为 `"backend": "chromadb"`（硬编码，或改为检测实际后端类型）
+
+#### Bug 5（LOW）— stream_agent.py 修正检测逻辑
+
+修正成功检测（~L683-698）只检查 `memory_store` 调用，不检查 `Edit` 调用。Edit-based 修正不会被标记为成功。
+
+修复：修正检测增加对 Edit 调用的检查。
+
+#### Bug 6（LOW）— CLAUDE.md 文档漂移（3 处）
+
+Phase 57-59 完成后 CLAUDE.md 有 3 处描述与代码不一致：
+
+1. **L96**："8 种确定性策略" → 实际 9 种（Phase 31 加了 template_expert）
+2. **L98**："记忆接口：mem0 兼容（store/search/get/forget/list）。ChromaDB 和 mem0 后端的分数不可直接比较" → mem0 已删除（Phase 58），工具接口改为 Write/Edit/Read（Phase 59）。改为描述当前接口：Write/Edit/Read/memory_search，后端 ChromaDB + MarkdownBackend
+3. **L106**："后端（ChromaDB/mem0）" → 改为 "后端（ChromaDB/MarkdownBackend）"
+
+#### 验证标准
+- `python -m pytest tests/ -q` 全通过
+- `python -m memorygym.bench --seeds 3 --validate` ALL PASS
+- `python -m memorygym.bench --model Qwen/Qwen3.5-397B-A17B-TEE --seed 0 --template company` 不 crash（验证 Bug 4 修复）
+- CLAUDE.md 中无 mem0 引用、策略数量正确
 
 ---
 
@@ -109,7 +233,6 @@ python -m memorygym.bench --model moonshotai/Kimi-K2.5-TEE --seed 0 --template c
 
 ### 低优先级 Backlog
 
-- **Phase 52 — mem0 后端评测跑通**：qdrant readonly database + RuntimeError 处理。辅助后端，不阻塞主线评测
 - **用户体验修正**：删除 docs/Design.md、填充 LEADERBOARD.md、README 补充、API key 错误信息
 - **stream_agent.py 拆分**：972 行，提取事件处理函数降到 ~890 行
 - **Promise/Progress Reward**：等简单 shaped reward 在真实训练中验证后，再决定是否需要更复杂的 reward 模型

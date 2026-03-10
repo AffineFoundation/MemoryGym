@@ -153,11 +153,11 @@ sessions/AUDITOR.md（你，/loop 30m）— 调度中枢：审计、设计、方
 
 ## 当前任务
 
-### 审计 A36 — 下一轮
+### 审计 A43 — 下一轮
 
-- Phase 57 提示词中立化执行进度
+- Phase 60 执行进度检查
 - 训练者新推送检查
-- 推送待推送的提交（d3ca658 + 本轮 session 变更）
+- 前沿搜索发现的 reward hacking 风险是否需要 Phase 任务化
 
 ## 待跟进
 
@@ -169,10 +169,155 @@ sessions/AUDITOR.md（你，/loop 30m）— 调度中枢：审计、设计、方
 - **弱模型失败模式**：GLM-5 0%，MiniMax 6%。均为模型级工具使用能力不足
 - **stream_agent.py 972/1000 行**：Phase 56 已派发（提取 4 个事件处理函数→降到 ~890 行）
 - **GPU 已解除阻塞**：TRAINER.md 已更新，训练线程可开始端到端验证
+- **Reward hacking 风险**（前沿搜索 A42 发现）：mem-agent 项目实证发现 format reward 导致模型最大化 turn 数而非解决任务。我们的 shaped reward（检测 Write 调用）可能有类似风险。待训练数据验证后决定是否修正
+- **mem-agent 方向验证**：Dria 的 mem-agent 用 Obsidian 风格 Markdown 文件记忆 + RL 训练，4B 模型接近 235B 性能。与我们的 Write/Edit/Read + MarkdownBackend 方向一致。核心发现：reward shaping >> 算法选择
 
 ## 审计日志
 
 （每次审计的结论摘要，最新在最上面。保持简洁，详细分析写 devlog/。）
+
+### 审计 A42（2026-03-10）— 前沿搜索（维度 C）
+
+**Phase 60 进度**：执行者仍未启动（无新提交）。训练者无新推送。
+
+**前沿搜索**：搜索 LLM 记忆 benchmark + RL 训练最新进展。三个关键发现：
+
+**1. mem-agent（Dria/HuggingFace, 2026）— 直接验证我们的方向**
+- Obsidian 风格 Markdown 文件记忆：create_file/update_file/read_file ≈ 我们的 Write/Edit/Read
+- GSPO（GRPO 变体）训练 4B 模型，记忆任务上接近 235B 模型
+- **核心发现**：reward shaping 比算法选择重要得多。format reward 导致严重 reward hacking（模型最大化 turn 数）
+- per-turn 递减 reward 解决了 hacking 问题
+- 56 手工样本，4 种任务类型（retrieval/update/clarification/filter）
+
+**2. Memory-R1（2025）— RL 记忆管理先驱**
+- ADD/UPDATE/DELETE/NOOP 四操作 + GRPO/PPO
+- 双 agent 架构（memory manager + retriever）
+- 仅 152 QA pairs 训练即泛化到 3 个 benchmark
+- 3B-14B 模型规模
+
+**3. AMemGym（2026-03）— 最新竞品 benchmark**
+- 结构化数据采样预定义用户画像 + 状态演化轨迹
+- 评估 RAG vs 长上下文 vs agentic memory
+- 支持 on-policy 评估和优化
+
+**对 MemoryGym 的影响**：
+- ✅ 方向正确：文件记忆 + RL 训练是行业趋势，mem-agent 独立验证了相同方向
+- ⚠️ Reward hacking 风险：shaped reward（检测 Write 调用）可能被利用。记入待跟进
+- 💡 竞品差异化：AMemGym 偏对话场景；AMA-Bench 偏 agent 轨迹；MemoryGym 偏信息过载 + 预算管理 + 更新追踪。定位不冲突
+
+### 审计 A41（2026-03-10）— CLAUDE.md 文档漂移检查（维度 B）
+
+**状态**：执行者尚未开始 Phase 60（无新提交）。训练者无新推送、无战略反馈。
+
+**CLAUDE.md 审计发现 3 处文档漂移**，已追加为 Phase 60 Bug 6：
+1. L96："8 种策略" → 实际 9 种（template_expert，Phase 31）
+2. L98：仍写 mem0 兼容接口 → mem0 已删除，接口已改为 Write/Edit/Read
+3. L106：后端写 "ChromaDB/mem0" → 应为 "ChromaDB/MarkdownBackend"
+
+**Phase 60 现有 6 个修复项**（3 HIGH + 1 MEDIUM + 2 LOW）。
+
+**检查清单**：
+- [x] Phase 60 进度：执行者未启动
+- [x] 训练者推送：无
+- [x] CLAUDE.md 漂移：3 处已追加到 Phase 60
+- [x] 下一轮应做前沿搜索（距上次 >4 轮）
+
+### 审计 A40（2026-03-10）— Phase 59.2 代码审查（维度 B）
+
+**验证结果**：simulation ALL PASS ✅，Phase 59.2 不影响 simulation（simulation 不调用 backend）。
+
+**代码审查发现 5 个 bug**，已写入 EXECUTOR.md Phase 60：
+
+| # | 严重度 | 位置 | 问题 |
+|---|--------|------|------|
+| 1 | HIGH | stream_agent.py L313-316, L414-417 | 工具调用计数只统计 memory_store，不统计 Write/Edit |
+| 2 | HIGH | stream_agent.py L668-675 | 修正事件消息仍说 search→forget→store，与 SYSTEM_PROMPT 矛盾 |
+| 3 | HIGH | adapters/_common.py L24-27 | _KNOWN_TOOLS 缺 Write/Edit/Read，RL adapter 静默丢弃新工具调用 |
+| 4 | MEDIUM | bench.py L316 | 引用已删除的 args.backend，运行真实评测会 crash |
+| 5 | LOW | stream_agent.py ~L683-698 | 修正成功检测不检查 Edit 调用 |
+
+**正确的部分**：
+- MarkdownBackend 实现质量好（搜索、索引、兼容层）
+- SYSTEM_PROMPT 策略中立 ✅
+- _execute_tool 的 Write/Edit/Read 分支 budget 逻辑正确 ✅
+- training/env.py 已正确适配（Write + Edit + legacy 兼容）✅
+- simulation.py 无需改动（不调用 backend）✅
+
+**Phase 60 已派发**：修复上述 5 个 bug，优先级 Bug 1-3（HIGH）> Bug 4（MEDIUM）> Bug 5（LOW）。
+
+### 审计 A39（2026-03-10）— Phase 60 + 批次 12 派发
+
+派发 Phase 60（代码审查 + OpenClaw 验证）和批次 12（v3 基线评测）。后续 A40 代码审查发现 Phase 60 需聚焦 bug 修复，已重写任务描述。
+
+### 审计 A38（2026-03-10）— Phase 57-59 快速推进验证（维度 B）
+
+**执行者爆发式推进**：3 个 Phase 在短时间内完成/推进中。
+
+**Phase 57+58**（commit b05e88c）✅ 已提交并推送：
+- 系统提示词中立化（Storage Strategy → Memory Budget）
+- mem0 完全移除（148 行删除 + 18 处引用清理 + 6 测试删除）
+- 15 文件变更，-316 行净减
+
+**Phase 59.1**（commit e7891a3）✅ 已提交并推送：
+- MarkdownBackend 实现（160 行）：MEMORY.md 文件 + 段落级混合搜索
+- 向量 70% + BM25 30% + RRF rerank（与 OpenClaw QMD 一致）
+- 兼容旧接口（store/search/get/forget/list wrapper）
+- rank_bm25 新依赖加入 pyproject.toml
+
+**Phase 59.2**（未提交，进行中）：
+- stream_agent.py：工具名 Write/Edit/Read 替换 memory_store/memory_forget/memory_get ✅
+- SYSTEM_PROMPT 更新为 OpenClaw 兼容工具描述 ✅
+- _execute_tool 新增 Edit（find-replace + budget refund on miss）和 Read 分支 ✅
+- ChromaDB fallback 保留（hasattr 检查）✅
+- 修正流程从 search→forget→store 改为 search→Edit（1 步代替 3 步）
+- training/env.py、inspect_task/tools.py、test_adapters.py、test_stream_agent.py 也在改
+
+**代码审查**：
+- MarkdownBackend 实现质量好：段落级 chunk、RRF rerank、_reindex 自动触发
+- Edit refund 逻辑正确（old_text not found → writes_used -= 1）
+- 向后兼容考虑周到（hasattr 检查 + legacy tool names）
+
+**检查清单**：
+- [x] Phase 57+58 已提交验证
+- [x] Phase 59.1 MarkdownBackend 代码审查通过
+- [x] Phase 59.2 stream_agent.py 改造进行中，方向正确
+- [x] 下一轮：Phase 59.2 提交验证 + simulation 不变量
+
+### 审计 A37（2026-03-10）— Phase 59 派发 + 训练者推送 review（维度 A）
+
+**战略决策落地**：用户确认两个方向：
+1. 移除 mem0（Phase 58）— 执行者已完成代码变更（grep 确认 0 引用），待提交
+2. 工具接口 OpenClaw 化（Phase 59）— 本轮派发
+
+**Phase 59 核心**：将 MemoryGym 的工具接口从 memory_store/memory_forget 改为 Write/Edit/Read（= OpenClaw 原生工具语义），使 RL 训练的 action pattern 直接可迁移。新增 MarkdownBackend（Markdown 文件 + 混合搜索）。
+
+**红队论证结果**：0 个致命攻击，2 个部分成立（预算负面迁移 + 领域窄化，均不阻塞）。
+
+**训练者新推送**（e5464a7）：
+- GRPO OOM 修复（gradient checkpointing + CUDA cache clearing）
+- 卡住检测（correction 事件循环 5 轮后自动跳过）
+- scripts/train.py 重写为子命令 CLI
+- 4 文件 +554/-168 行
+
+**检查清单**：
+- [x] Phase 59 已派发
+- [x] 训练者推送已审查
+- [x] Phase 58 代码验证 clean（0 mem0 引用）
+- [x] 下一轮：Phase 58 提交 + Phase 59 启动 + 训练进展
+
+### 审计 A36（2026-03-10）— 停滞 + mem0 根因分析
+
+无新提交。执行端持续停滞。
+
+**mem0 阻塞根因分析**（用户要求深度分析）：
+1. **readonly database**：`__init__` 无清理逻辑，qdrant 路径固定（user_id="memorygym"），残留文件导致只读
+2. **store 空结果**：mem0 LLM fact extraction 对结构化内容失败，raise RuntimeError
+3. **验证链太长**：代码修复 → qdrant 正常 → LLM API → 完整 eval，10 分钟 loop 不够
+4. **零测试覆盖**：无法单元测试验证修复
+
+**未提交 diff 问题**：执行者在 stream_agent.py 写了 3 次重试 + 30s sleep + 429/503 检测的过度工程，与任务描述的简单 catch 不符。此 diff 不应合入。
+
+修复本身只需 2 行代码，但验证需要真实 API 调用——这是环境限制不是代码限制。
 
 ### 审计 A35（2026-03-10）— 优先级重排：Phase 57 升顶，Phase 52 降 backlog
 
