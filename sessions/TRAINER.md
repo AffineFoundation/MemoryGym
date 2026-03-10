@@ -48,6 +48,7 @@
 - **训练实验**：记录完整配置（模型、tier、seed、超参） + 结果（分数、曲线）到 `devlog/`
 - **完成判定**：有明确产出（测试通过 / 训练结果 / 代码合入）才算完成
 - **提交粒度**：每个功能点独立提交，描述 why 不是 what
+- **禁止提交敏感信息**：IP 地址、SSH 地址、`/home/xmyf/` 等硬编码路径只能出现在 `.env` 中，代码和文档用 `$GPU_SSH`、`$MODEL_PATH` 等变量引用
 
 ## 战略推导
 
@@ -169,25 +170,28 @@
 
 ## 当前任务
 
-### GPU 状态
+### 训练 CLI
 
-- GPU 开发机已解除阻塞，显存可用
-- **仍需遵守共享规则**：使用前 `nvidia-smi` 确认空闲资源
+```bash
+# 远程训练（自动检测 GPU、流式日志）
+# SSH 地址和模型路径见 .env 文件
+python scripts/train.py --remote $GPU_SSH \
+    --model $MODEL_PATH --data data/sft_short.jsonl --lora --epochs 5 --max-length 8192
 
-### 端到端训练验证
+# 仅查看 GPU 状态
+python scripts/train.py --remote $GPU_SSH --check-gpu
 
-- **GPU 端到端训练验证**：代码完成但未在真实 GPU 上跑过
-- 冒烟脚本已就绪：`python scripts/smoke_test_gpu.py` (dry-run 通过)
-- 推荐顺序：先 0.6B/3B 快速冒烟验证管线 → 再 7B 正式训练
-- 成功标准（冒烟）：管线跑通，模型能产出 tool calls，不要求高分
-- 成功标准（正式）：composite ≥ 45%, maintenance ≥ 30%
+# 同步代码 + 训练
+python scripts/train.py --remote $GPU_SSH --sync --model $MODEL_PATH --lora
+```
 
 ## 待办
 
-1. **SFT 数据生成 + 微调**（当前优先）
-   - 生成 SFT 轨迹 → 用 Qwen3-4B 微调，建立 tool-calling + 答题 baseline
-   - GPU 机模型路径：`/home/xmyf/slime_assets/models/Qwen3-4B`
-2. **GRPO 训练**（SFT baseline 后）
+1. **GRPO 训练**（SFT baseline 已建立）
+   - 用 SFT checkpoint 作为初始化，GRPO 优化 episode reward
+2. **SFT 全流程验收**
+   - 用 smoke_test_gpu.py 跑完整 episode，验证 tool calls 正确率
+   - 评估 composite score（目标 ≥ 45%）
 3. 训练超参调优（基于训练结果）
 4. 更多 shaped reward 信号（如 search 精准度奖励）
 5. 多模板 curriculum 效果验证
@@ -202,13 +206,17 @@
 - 共享工具解析（_common.py：4 种格式解析 + episode runner）
 - 训练数据生成脚本（单 tier / curriculum 混合 tier）
 - 训练配置（GRPO + curriculum YAML）
-- 完整测试覆盖（31 + 27 = 58 tests）
+- 完整测试覆盖（36 tests in test_training.py）
 - noise/session_break 事件支持（training.py: _format_event + generate_sft_trajectory）
 - GPU 冒烟测试脚本（scripts/smoke_test_gpu.py，dry-run 验证通过）
 - GPU 端到端冒烟测试通过 ✅
-  - Qwen3-4B: 143 tool calls, 15/15 writes, 0/10 correct (未训练), 管线全流程无 crash
-  - Qwen2.5-0.5B: 管线跑通但模型太小无 tool calls (WARN_NO_TOOLS)
-  - 修复: content 类型强制转换 (list→str), thinking mode 禁用, 上下文截断
-  - GPU 机环境: 8x A100-80GB, 模型在 `/home/xmyf/slime_assets/models/`
-  - 依赖已安装: torch 2.10, transformers 5.3, chromadb 1.5.4, sentence-transformers 5.2
+- 远程训练 CLI（scripts/train.py）— SSH 远程执行 + 实时日志 + GPU 自动检测
+- SFT 训练管线完成 ✅
+  - assistant-only label masking（37.5% 有效 token，不训练文档预测）
+  - Qwen3-4B LoRA rank=16, 5 epochs, loss 0.22→0.06
+  - 训练后模型正确产出 `<tool_call>` 标签
+  - 关键参数：max_length=8192（短数据 avg 8K tokens，2048 会截断所有 assistant 内容）
+  - 数据：180 短轨迹（10 entities, 3 questions, avg 17 messages）
+  - checkpoint: `checkpoints/sft-qwen3-4b-masked` on GPU machine
+- 多卡训练支持（sft_train.py: DDP/FSDP via accelerate）
 
