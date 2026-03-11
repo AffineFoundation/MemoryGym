@@ -153,11 +153,11 @@ sessions/AUDITOR.md（你，/loop 30m）— 调度中枢：审计、设计、方
 
 ## 当前任务
 
-### 审计 A93 — 下一轮
+### 审计 A94 — 下一轮
 
-- Phase 77 + Phase 78 执行进度
-- 批次 15 进展
-- 代码审计：render_document + render_correction 叙事生成（维度 B）
+- Phase 78 执行进度
+- 批次 16 派发
+- 代码审计：stream_agent.py agent 运行循环 + 自适应问题替换（维度 B）
 
 ## 待跟进
 
@@ -171,6 +171,23 @@ sessions/AUDITOR.md（你，/loop 30m）— 调度中枢：审计、设计、方
 ## 审计日志
 
 （每次审计的结论摘要，最新在最上面。保持简洁，详细分析写 devlog/。）
+
+### 审计 A93（2026-03-11）— render 审计 + 批次 15 完成确认 + 批次 16 派发（维度 B+E）
+
+**Phase 进度**：Phase 77 ✅ commit `28cfb64`。Phase 78 未启动。
+
+**批次 15 ✅ 完成**（6/6，EVALUATOR.md 已更新但未 commit）：
+- GLM-5 avg composite **37%**（s0=0% 是异常值，s1 远更合理）
+- MiniMax avg composite **27%**（s0=13% → s1=27%，上升趋势）
+- GLM-5 company corrections 2/5 是弱模型中最好的
+
+**render_document + render_correction 审计**：✅ 无 bug。
+- 全部 6 模板使用 `_fmt()` 格式化 correction 值，与 `_format_value()`（GT 答案）一致 ✅
+- 叙事模式：distractors 通过 SentenceTemplate + randomized multiplier (0.5-0.9 或 1.1-1.5) 嵌入 ✅
+- Simulation 使用 compact 格式（无 other_entities），stream 使用 narrative 格式——设计合理
+- `detect_stored_entities` 通过 `_numeric_variants` 匹配，不依赖文档格式 ✅
+
+**派发批次 16 → EVALUATOR.md**：Phase 77 修改了问题权重分配，新 eval 数据可观察效果。
 
 ### 审计 A92（2026-03-11）— questions.py 20 种推理题型生成器审计 + Phase 78 派发（维度 B）
 
