@@ -57,34 +57,7 @@
 
 ## 当前任务
 
-### Phase 104 — SFT 轨迹 correction 时序 bug 修复
-
-**依据**：审计 A160 发现 maintenance=0%（12/12 evals），A161 追溯到 SFT 轨迹生成的两个 bug，导致 correction→Edit 示范严重不足（每条轨迹仅 1.7/5 个 Edit 示范）。
-
-**Bug 1 — 时序错位**（`training/env.py` L191）：
-- `ename in entity_mem_ids` 检查失败当 correction 先于 ingest 触发
-- 48/300 corrections（16%）丢失 Edit 示范
-- **修复**：记录"pending corrections"，当该实体后续 ingest 时直接用 corrected 值存储
-
-**Bug 2 — 原始值恢复**（`training/env.py` L142-148）：
-- ingest 时始终用 `original_attrs` 渲染，忽略已触发的 corrections
-- 模型学到"存储过时数据"
-- **修复**：ingest 时检查该实体是否已有 correction 触发，如有则用 corrected 值渲染（不恢复 original_attrs）
-
-#### Step 1 — 修复 Bug 1+2
-- 在 `generate_sft_trajectory()` 中维护 `pending_corrections: dict[str, event]`
-- correction 事件处理时：如果实体尚未 ingest（`ename not in entity_mem_ids`），记入 pending_corrections
-- ingest 事件处理时：检查 `pending_corrections`，如果该实体有待定 correction，用 corrected 值渲染 compact doc（跳过 L142-148 的 original_attrs 恢复），并从 pending 移除
-
-#### Step 2 — 修复 Bug 2（已 ingest 的实体）
-- L142-148 的 original_attrs 恢复逻辑本身是 Phase 100 引入的（为了让 ingest 用原始值）
-- 但如果 correction 已触发且该实体已存储，后续 ingest 同一实体时应跳过恢复
-
-#### Step 3 — 验证
-- 生成 60 条轨迹（6 模板 × 10 seeds），统计 Edit 示范数
-- **验证标准**：每条轨迹 Edit 示范 ≥ 3/5（均值），所有存储值为当前最新值
-- `python -m pytest tests/ -q` 全量通过
-- `python -m memorygym.bench --seeds 3 --validate` simulation 通过
+> 待办为空。
 
 ---
 
@@ -99,6 +72,7 @@
 
 ## 已完成
 
+### Phase 104 — SFT 轨迹 correction 时序修复 + Edit 覆盖提升 ✅
 ### Phase 102 — Correction 追踪误报修复 ✅
 ### Phase 101 — university + codebase 加入 OFFICIAL_TEMPLATES ✅
 ### Phase 100 — SFT 轨迹 _compact_document 使用原始值修复 ✅

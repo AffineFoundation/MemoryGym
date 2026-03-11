@@ -91,6 +91,27 @@ def generate_sft_trajectory(
     rng_correct = Random(seed + 3333)
     corrections = tmpl.generate_corrections(world, rng_correct, n_corrections)
 
+    # Ensure corrected entities are stored so SFT demonstrates Edit flow.
+    # Swap in corrected entities, evicting lowest-importance stored entities.
+    corrected_not_stored = [
+        c.entity_name for c in corrections
+        if c.entity_name not in stored_names
+    ]
+    if corrected_not_stored:
+        # Rank stored entities by importance (ascending) for eviction
+        name_to_importance = {
+            all_docs[i][0].name: tmpl.entity_importance(all_docs[i][0], world)
+            for i in range(len(all_docs))
+        }
+        evictable = sorted(
+            [n for n in stored_names if n not in {c.entity_name for c in corrections}],
+            key=lambda n: name_to_importance.get(n, 0),
+        )
+        for cname in corrected_not_stored:
+            if len(stored_names) >= write_budget and evictable:
+                stored_names.discard(evictable.pop(0))
+            stored_names.add(cname)
+
     # Implicit contradictions
     n_contras = max(1, n_corrections // 3)
     exclude_corrected = {c.entity_name for c in corrections}
@@ -115,6 +136,8 @@ def generate_sft_trajectory(
     total_events = len(stream)
     mem_id_counter = 0
     entity_mem_ids: dict[str, str] = {}  # entity_name → memory_id
+    # Corrections fired before entity was ingested — store corrected vals
+    fired_corrections: dict[str, list[dict]] = {}
 
     for event_idx, event in enumerate(stream):
         event_type = event["type"]
@@ -139,16 +162,21 @@ def generate_sft_trajectory(
                 entity = world.get_entity(ename)
                 if not entity:
                     continue
-                # Temporarily restore original attrs (before corrections)
-                saved = {}
-                if ename in original_attrs:
-                    for attr, val in entity.attrs.items():
-                        if attr in original_attrs[ename] and val != original_attrs[ename][attr]:
-                            saved[attr] = val
-                            entity.attrs[attr] = original_attrs[ename][attr]
-                compact = tmpl._compact_document(entity, world.active_attrs)
-                for attr, val in saved.items():
-                    entity.attrs[attr] = val
+                # If correction already fired for this entity, use corrected
+                # values (current entity.attrs). Otherwise restore original.
+                if ename not in fired_corrections:
+                    saved = {}
+                    if ename in original_attrs:
+                        for attr, val in entity.attrs.items():
+                            if attr in original_attrs[ename] and val != original_attrs[ename][attr]:
+                                saved[attr] = val
+                                entity.attrs[attr] = original_attrs[ename][attr]
+                    compact = tmpl._compact_document(entity, world.active_attrs)
+                    for attr, val in saved.items():
+                        entity.attrs[attr] = val
+                else:
+                    # Correction seen before ingest — store latest values
+                    compact = tmpl._compact_document(entity, world.active_attrs)
                 content = f"{ename} | {compact}"
                 mem_id_counter += 1
                 mid = f"mem_{mem_id_counter:03d}"
@@ -208,6 +236,8 @@ def generate_sft_trajectory(
                     ),
                 })
             else:
+                # Entity not yet ingested — track so ingest uses corrected vals
+                fired_corrections.setdefault(ename, []).append(event)
                 messages.append({
                     "role": "assistant",
                     "content": "Entity not in my memory. No update needed.",

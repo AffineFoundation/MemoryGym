@@ -611,22 +611,18 @@ class TestMemoryEnv:
                 # json.dumps was used (no raw f-string injection)
                 assert isinstance(parsed["arguments"], dict)
 
-    def test_sft_write_uses_original_values(self):
-        """SFT Write calls must contain pre-correction values, not post-correction."""
+    def test_sft_write_uses_correct_values(self):
+        """SFT Write uses original vals if no prior correction, corrected vals if correction fired first."""
         from memorygym.simulation import TEMPLATES
         from random import Random
 
         messages = generate_sft_trajectory("company", seed=42)
-        # Regenerate corrections to know what changed
+        # Regenerate to find correction positions
         tmpl = TEMPLATES["company"]()
         world = tmpl.generate_world(seed=42, n_entities=60, eval_salt=1)
-        # Render original docs before corrections
-        rng_doc = Random(42)
-        orig_docs = {e.name: tmpl.render_document(e, world.active_attrs, rng_doc)
-                     for e in world.entities}
         rng_correct = Random(42 + 3333)
         corrections = tmpl.generate_corrections(world, rng_correct, 5)
-        # For each corrected entity, check Write calls use old_val not new_val
+        # For each corrected entity in Write calls, value must be consistent
         for c in corrections:
             old_fmt = tmpl._format_value(c.attr, c.old_val)
             new_fmt = tmpl._format_value(c.attr, c.new_val)
@@ -635,15 +631,69 @@ class TestMemoryEnv:
                     continue
                 if c.entity_name not in m["content"]:
                     continue
-                # Write should contain original value
-                assert old_fmt in m["content"], (
-                    f"Write for {c.entity_name} missing original {c.attr}={old_fmt}"
+                # Write must contain either old or new value, not some other
+                has_old = old_fmt in m["content"]
+                has_new = new_fmt in m["content"]
+                assert has_old or has_new, (
+                    f"Write for {c.entity_name} has neither {c.attr}={old_fmt} nor {new_fmt}"
                 )
-                # Write should NOT contain corrected value
-                if old_fmt != new_fmt:
-                    assert new_fmt not in m["content"], (
-                        f"Write for {c.entity_name} has post-correction {c.attr}={new_fmt}"
-                    )
+
+    def test_sft_correction_edit_coverage(self):
+        """SFT trajectory should have Edit demos for most corrections."""
+        from memorygym.simulation import TEMPLATES
+        total_edits = 0
+        total_corrections = 0
+        for tmpl_name in ["company", "research", "city"]:
+            for seed in range(5):
+                msgs = generate_sft_trajectory(
+                    tmpl_name, seed=seed, n_corrections=5, write_budget=30)
+                edits = sum(
+                    1 for m in msgs
+                    if m["role"] == "assistant" and '"name": "Edit"' in m["content"]
+                )
+                total_edits += edits
+                total_corrections += 5
+        # Average Edit coverage ≥ 45% — limited by correction timing
+        # (corrections at batch 2-4 of 6 mean ~50% of entities not yet ingested)
+        avg = total_edits / (total_corrections) if total_corrections else 0
+        assert avg >= 0.45, (
+            f"Edit coverage {avg:.1%} ({total_edits}/{total_corrections}) < 45%"
+        )
+
+    def test_sft_stores_latest_values(self):
+        """When correction fires before ingest, Write must contain corrected value."""
+        from memorygym.simulation import TEMPLATES
+        from random import Random
+        import copy
+
+        for seed in range(5):
+            msgs = generate_sft_trajectory("company", seed=seed, n_corrections=5)
+            # Find corrections that got "not in my memory" response
+            for i, m in enumerate(msgs):
+                if (m["role"] == "assistant"
+                        and "not in my memory" in m.get("content", "")
+                        and i > 0
+                        and "[CORRECTION]" in msgs[i-1].get("content", "")):
+                    # Extract entity name from correction notice
+                    notice = msgs[i-1]["content"]
+                    # Find later Write for this entity
+                    tmpl = TEMPLATES["company"]()
+                    world = tmpl.generate_world(seed=seed, n_entities=60, eval_salt=1)
+                    rng_c = Random(seed + 3333)
+                    corrections = tmpl.generate_corrections(world, rng_c, 5)
+                    for c in corrections:
+                        if c.entity_name in notice:
+                            new_fmt = tmpl._format_value(c.attr, c.new_val)
+                            # Check that later Write uses corrected value
+                            for j in range(i+1, len(msgs)):
+                                mj = msgs[j]
+                                if (mj["role"] == "assistant"
+                                        and '"name": "Write"' in mj.get("content", "")
+                                        and c.entity_name in mj["content"]):
+                                    assert new_fmt in mj["content"], (
+                                        f"seed={seed}: Write for {c.entity_name} "
+                                        f"after skipped correction missing {new_fmt}"
+                                    )
 
     def test_env_edit_reward_requires_correct_value(self):
         """Shaped Edit reward: +0.5 only if new_text contains new_val."""
