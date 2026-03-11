@@ -63,19 +63,9 @@
 
 commit `4c8f3a1`：stream_agent dead code + write count fix + backend.close(), bench.py per-seed timing
 
-### Phase 81+82 合并 — 训练基础设施修复（SFT 转义 + adapters 泄漏）
+### Phase 81+82 合并 — 训练基础设施修复 ✅
 
-**修复 1 — SFT JSON 转义**（审计 A96，`training/env.py`）：
-3 处 f-string 直接嵌入值 → 用 `json.dumps(value)` 替代 `f'"{value}"'`：
-- L137-140: Write content
-- L178-181: Edit old_val/new_val
-- L263-264: submit_answer
-
-**修复 2 — adapters env.close()**（审计 A97）：
-- `verl_adapter.py` run() 末尾、`slime_adapter.py` generate() 末尾、`_common.py` run_episode() 末尾添加 `env.close()`（用 try/finally）
-- `_common.py` L170 前添加 `info: dict = {}`
-
-**验证**：`python -m pytest tests/ -q` 全部通过
+commit `1b3ba20`：SFT JSON escaping (json.dumps), adapters env.close() + info init
 
 ### Phase 85 — eval_task.py 默认值 + pyproject.toml 版本同步
 

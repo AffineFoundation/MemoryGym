@@ -153,11 +153,11 @@ sessions/AUDITOR.md（你，/loop 30m）— 调度中枢：审计、设计、方
 
 ## 当前任务
 
-### 审计 A106 — 下一轮
+### 审计 A107 — 下一轮
 
-- Phase 81-85 执行进度（Phase 79+80 ✅）
-- 维度 B：Phase 84（Inspect AI 工具名）和 Phase 85（eval_task 默认值）完成后，test_path_consistency 应追加测试
-- 维度 A：training/env.py MemoryEnv.reset() 与 generate_sft_trajectory() 的参数是否一致
+- Phase 83-85 执行进度（Phase 79+80 ✅, Phase 81+82 ✅）
+- 维度 A：adapters/ 修复验证——_common.py info init 和 env.close() 实际生效了吗？读代码确认
+- 维度 B：评测数据积累——批次 16 hospital/sport 仍为旧版本，需催促 EVALUATOR.md
 
 ## 待跟进
 
@@ -171,6 +171,23 @@ sessions/AUDITOR.md（你，/loop 30m）— 调度中枢：审计、设计、方
 ## 审计日志
 
 （每次审计的结论摘要，最新在最上面。保持简洁，详细分析写 devlog/。）
+
+### 审计 A106（2026-03-11）— Phase 81+82 验证 + MemoryEnv/SFT 一致性（维度 A+B）
+
+**Phase 进度**：Phase 79+80 ✅, Phase 81+82 ✅（commit `1b3ba20`）。Phase 83-85 待执行。Executor 恢复活跃。
+
+**Phase 81+82 验证**：
+- SFT JSON escaping：5 处全部改为 `json.dumps()`（L139, L178, L180-181, L264）✓
+- adapters env.close()：verl/slime/common 全部添加 ✓
+- _common.py info init：已添加 ✓
+
+**MemoryEnv vs SFT 参数一致性**（维度 A）：
+- 默认值一致：entities=60, questions=20, corrections=5, budget=30 ✓
+- RNG offsets 一致：seed+3333 (corrections), seed+7373 (contradictions), seed+5555 (stream) ✓
+- eval_salt 差异合理：MemoryEnv 默认 0（RL 训练不需要 anti-fingerprint），SFT 固定 1 ✓
+- stream 生成：contradiction 逻辑（n_contras = max(1, n_corrections//3)）一致 ✓
+
+**不派发 Phase**——两个完成的 Phase 验证通过，无新问题。
 
 ### 审计 A105（2026-03-11）— test_path_consistency 覆盖 + simulation 验证（维度 B+A）
 
