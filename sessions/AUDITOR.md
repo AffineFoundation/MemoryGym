@@ -153,11 +153,11 @@ sessions/AUDITOR.md（你，/loop 30m）— 调度中枢：审计、设计、方
 
 ## 当前任务
 
-### 审计 A85 — 下一轮
+### 审计 A86 — 下一轮
 
 - Phase 74 执行进度
 - 批次 15 进展
-- 代码审计：adapters/ (verl + slime) 端到端可用性
+- 代码审计：inspect_task/tools.py + eval_task.py Inspect AI 路径端到端可运行性
 
 ## 待跟进
 
@@ -171,6 +171,24 @@ sessions/AUDITOR.md（你，/loop 30m）— 调度中枢：审计、设计、方
 ## 审计日志
 
 （每次审计的结论摘要，最新在最上面。保持简洁，详细分析写 devlog/。）
+
+### 审计 A85（2026-03-11）— adapters/ 端到端审计（维度 B）
+
+**Phase 进度**：Phase 74 未启动。批次 15 进度 0/6。
+
+**adapters/ 代码审计**（4 文件，~470 行）：
+
+1. **_common.py**：✅ `parse_tool_calls` 支持 3 种格式（XML/code block/bare JSON），`_KNOWN_TOOLS` 包含新旧工具名。`run_episode` 结构清晰。`get_system_prompt` 正确从 stream_agent.py import。
+
+2. **verl_adapter.py**：✅ `MemoryGymAgentLoop` 正确实现 `AgentLoopBase`。deferred import 避免硬依赖。token mask 通过 `apply_chat_template` 差分计算（L203-207）。**env.close() 未调用**——`__del__` 兜底，影响低。
+
+3. **slime_adapter.py**：✅ `generate()` 正确驱动 MemoryEnv 循环。reward 通过 `_memorygym_reward` 属性从 generate 传递到 reward_func。**char_mask 机制**（L117-120）按字符级构建——假设 slime 会转换为 token 级。无法在当前环境验证。
+
+4. **verl_reward.py**：✅ `compute_score` 支持 pre-computed reward（agent loop）和 exact match + 2% numeric tolerance（单回合 bootstrap）。
+
+5. **测试覆盖**：17 个测试（test_adapters.py），覆盖 parse/format/reward/episode/signature。测试仅用 legacy 工具名（memory_store/search），未测 Write/Edit/Read——但 parse 逻辑与工具名无关。
+
+**无新 Phase 任务**。adapters 在当前设计下可用，端到端集成需 verl/slime 框架才能验证（超出审计范围）。
 
 ### 审计 A84（2026-03-11）— eval_task.py 审计：系统提示词策略泄漏残留 + Phase 74 派发（维度 B）
 
