@@ -57,11 +57,45 @@
 
 ## 当前任务
 
-### Phase 72 — Simulation 轴分数不变量验证
+### Phase 74 — 系统提示词 Correction 策略泄漏修复（Phase 57/71 遗漏） ⚡ 最高优先级
 
-（详见下方 Phase 72 描述）
+**依据**：审计 A84 发现 Phase 57（系统提示词中立化）和 Phase 71（事件格式策略提示移除）均遗漏了 SYSTEM_PROMPT 中的 "Handling Corrections" 章节。
 
-### Phase 73 — Version bug + Leaderboard composite 排名修复
+**问题**：`stream_agent.py` L65-70 和 `eval_task.py` L55-60 的 SYSTEM_PROMPT 包含：
+```
+## Critical: Handling Corrections
+When you receive a CORRECTION:
+1. memory_search the entity name to find existing data
+2. Edit the old value to the corrected value
+This costs 1 write but ensures your answers reflect current data.
+Failing to update = wrong answers on update questions.
+```
+以及 L72-75 / L65：
+```
+- Corrections will arrive later and each update costs 1 write
+```
+
+`training/env.py` L101 从 stream_agent.py 导入同一 SYSTEM_PROMPT，训练也受影响。
+
+**修复方案**：
+
+1. 移除 "Critical: Handling Corrections" 整个章节（L55-60 / L65-70）——correction 处理策略应由 agent 自主决定
+2. 修改 "Memory Budget" 章节中 "Corrections will arrive later" → 移除此行。保留 "Each Write or Edit counts against your budget"
+3. 只需改 `stream_agent.py` 和 `eval_task.py`——training 自动通过 import 继承
+
+**注意**：eval_task.py 的 SYSTEM_PROMPT 是独立副本，需要**同步修改**（不是 import）。
+
+**验证标准**：
+- `python -m pytest tests/ -q` 全部通过
+- `python -m memorygym.bench --seeds 3 --validate` ALL PASS
+- grep 确认无 "memory_search the entity" 和 "Corrections will arrive"
+- system prompt 仍描述工具用法和 budget 约束（只移除策略指导）
+
+### Phase 72 — Simulation 轴分数不变量验证 ✅ commit `9b0055e`
+
+### Phase 73 — Version bug + Leaderboard composite 排名修复 ✅ commit `bdf919c`
+
+### Phase 73（原文） — Version bug + Leaderboard composite 排名修复
 
 **依据**：审计 A81 发现两个数据质量 bug。
 

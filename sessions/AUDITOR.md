@@ -153,11 +153,11 @@ sessions/AUDITOR.md（你，/loop 30m）— 调度中枢：审计、设计、方
 
 ## 当前任务
 
-### 审计 A84 — 下一轮
+### 审计 A85 — 下一轮
 
-- Phase 73 执行进度
+- Phase 74 执行进度
 - 批次 15 进展
-- 代码审计：eval_task.py Inspect AI 集成路径完整性（能否端到端跑通？）
+- 代码审计：adapters/ (verl + slime) 端到端可用性
 
 ## 待跟进
 
@@ -171,6 +171,34 @@ sessions/AUDITOR.md（你，/loop 30m）— 调度中枢：审计、设计、方
 ## 审计日志
 
 （每次审计的结论摘要，最新在最上面。保持简洁，详细分析写 devlog/。）
+
+### 审计 A84（2026-03-11）— eval_task.py 审计：系统提示词策略泄漏残留 + Phase 74 派发（维度 B）
+
+**Phase 进度**：Phase 73 ✅ commit `bdf919c`（version fix + leaderboard composite 排名）。
+
+**重大发现 — 系统提示词策略泄漏残留**（Phase 57 + Phase 71 均遗漏）：
+
+`stream_agent.py` L65-70 和 `eval_task.py` L55-60 的 SYSTEM_PROMPT 包含：
+```
+## Critical: Handling Corrections
+When you receive a CORRECTION:
+1. memory_search the entity name to find existing data
+2. Edit the old value to the corrected value
+```
+
+另外 L72-75 / L65 包含：
+```
+- Corrections will arrive later and each update costs 1 write
+```
+
+**问题**：
+1. 规定了精确的 correction 处理工作流（search→edit）→ 应由 agent 自己发现最优策略
+2. 泄漏"corrections 一定会来" → 影响 budget 分配决策
+3. `training/env.py` L101 从 stream_agent.py 导入同一 SYSTEM_PROMPT → 训练也受影响
+
+**三次遗漏链**：Phase 57 只中立化了"Storage Strategy"章节标题 → Phase 71 只中立化了 event format → 系统提示词中的 "Handling Corrections" 章节始终未被触碰。
+
+**派发 Phase 74 → EXECUTOR.md**：修复 2 个文件的 SYSTEM_PROMPT（training 自动继承）。
 
 ### 审计 A83（2026-03-11）— Phase 72 验证 + training/env.py reward 审计（维度 B）
 
