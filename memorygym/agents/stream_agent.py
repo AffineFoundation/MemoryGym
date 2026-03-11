@@ -211,6 +211,8 @@ def _run_tool_loop(
                         print(" [ctx-trim]", end="", flush=True)
                         continue
                     else:
+                        # Context overflow with no room to prune — abstain gracefully
+                        stats.answer = "I don't have enough information"
                         response = None
                         break
                 transient = ("429" in err_str or "503" in err_str

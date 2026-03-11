@@ -1,3 +1,3 @@
 """MemoryGym: Memory Management Evaluation for LLM Agents."""
 
-__version__ = "0.10.13"
+__version__ = "0.10.14"
