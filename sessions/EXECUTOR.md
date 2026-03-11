@@ -71,18 +71,6 @@ get_verifiable_reward() 改用 compute_axis_scores() composite。Edit shaped rew
 
 ## P3 — 评测质量 + 文档（不阻塞训练，可延后）
 
-### Phase 91 — 问题措辞泄漏修复（temporal_trend + comparison）
-
-**问题**：
-1. `temporal_trend`（questions.py L570-576）：phrasing 包含完整 5 级答案分类
-2. `comparison`（questions.py L392）："By how much?" 仅出现在此题型
-
-**修复 1**（temporal_trend）：改为开放式 "Describe the overall trend of {entity}'s {attr} over time." 等。答案验证不变。
-
-**修复 2**（comparison）：改为 "Compare X and Y's {attr}. Which is higher and what is the difference?"
-
-**验证**：`python -m pytest tests/ -q` + simulation smart_guesser < 5%
-
 ### Phase 93 — CLI UX 修复：README tier 默认值 + help 补全 + strategy 校验
 
 **问题**：README L68 说 "lite (default)"，实际默认 standard。--tier help 遗漏 "multi"。--strategy 无效名静默忽略。
@@ -113,6 +101,7 @@ get_verifiable_reward() 改用 compute_axis_scores() composite。Edit shaped rew
 
 ## 已完成
 
+### Phase 91 — 问题措辞泄漏修复（temporal_trend + comparison） ✅
 ### Phase 92 — RL reward 对齐 4 轴评分 + Edit shaped reward ✅
 ### Phase 89+90 — SFT 轨迹 budget 超支 + json.dumps ✅
 ### Phase 87 — SFT 轨迹连续 user 消息合并 ✅

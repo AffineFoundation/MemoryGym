@@ -388,8 +388,8 @@ class QuestionGeneratorMixin:
         else:
             diff = round(diff, 2)
         ew = self.entity_word
-        q = (f"Does {e_a.name} or {e_b.name} have higher "
-             f"{label}? By how much?")
+        q = (f"Compare {_possessive(e_a.name)} and {_possessive(e_b.name)} "
+             f"{label}. Which is higher and what is the difference?")
         return GeneratedQA(
             q, f"{winner} ({diff})", "comparison",
             [e_a.name, e_b.name],
@@ -567,14 +567,12 @@ class QuestionGeneratorMixin:
             answer = "flat"
         label = self.attr_label(attr)
         q = rng.choice([
-            f"Is {_possessive(e.name)} {label} trend strongly rising, "
-            f"slightly rising, flat, slightly falling, or strongly falling?",
-            f"Looking at {_possessive(e.name)} {label} over time, "
-            f"classify the trend: strongly rising, slightly rising, "
-            f"flat, slightly falling, or strongly falling.",
-            f"Based on {_possessive(e.name)} {label} series, "
-            f"is it strongly rising, slightly rising, flat, "
-            f"slightly falling, or strongly falling?",
+            f"Describe the overall trend of {_possessive(e.name)} "
+            f"{label} over time.",
+            f"How has {_possessive(e.name)} {label} changed across "
+            f"the recorded periods?",
+            f"What is the direction of {_possessive(e.name)} {label} "
+            f"trend?",
         ])
         return GeneratedQA(
             q, answer, "temporal_trend", [e.name],
