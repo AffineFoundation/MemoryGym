@@ -57,6 +57,34 @@
 
 ## 当前任务
 
+### Phase 66 — ROADMAP.md 数据同步 + 后端对比结论
+
+**依据**：审计 A69 发现 ROADMAP.md 多处数据过时：
+- §0 test count 停在 ~263，实际 341（`python -m pytest tests/ -q`）
+- §3 eval count 停在 46，实际 50
+- 批次 13（v3 基线）和批次 14（MarkdownBackend 对比）结果未记录
+
+**后端对比结论**（批次 14 数据）：
+- MarkdownBackend avg 30% vs ChromaDB avg 31.7% — 无显著差异
+- Retrieval 瓶颈在模型侧（entities_per_write=1.0，不做 packing），非后端搜索精度
+
+#### Step 1 — 更新 ROADMAP.md
+
+1. §0：test count → 341, eval count → 50
+2. §3.1 数据表：添加批次 13/14 结果，50 个有效 eval
+3. §3 新增后端对比分析小节：markdown vs chromadb 结论
+
+#### Step 2 — 更新 CLAUDE.md eval 数据描述（如有过时）
+
+检查 CLAUDE.md 中的 eval 数据相关描述是否与 50 evals 一致。
+
+#### 验证标准
+- `docs/ROADMAP.md` 中 test count = 341, eval count = 50
+- 后端对比结论有数据支撑
+- `python -m pytest tests/ -q` 通过（无代码改动，仅文档）
+
+---
+
 ### Phase 57 — 系统提示词中立化 ✅
 
 Storage Strategy → Memory Budget（只描述约束，不规定策略）。

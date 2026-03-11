@@ -153,24 +153,46 @@ sessions/AUDITOR.md（你，/loop 30m）— 调度中枢：审计、设计、方
 
 ## 当前任务
 
-### 审计 A69 — 下一轮
+### 审计 A70 — 下一轮
 
-- 各线程活动检查
-- 如无新活动，可降低审计频率（当前 5 个维度已完整覆盖一轮）
-- 关注：批次 13/14 是否有进展、训练线程是否启动
+- 训练线程 SFT v3 是否启动
+- ROADMAP.md 更新是否完成（Phase 66 派发）
+- 前沿搜索（距 A63 >6 轮，应做一次维度 C）
 
 ## 待跟进
 
 （审计中发现的、需要持续关注但不紧急的事项）
 
 - **Reward hacking 风险**（A42+A44）：env.py shaped reward 用 `n.lower() in content.lower()` 匹配实体名，Edit +0.5 不验证 new_text。**暂不修复**——等训练跑出数据再优化
-- **Retrieval 瓶颈**（A62 数据）：11% 正确率，60% 弃权。MarkdownBackend 对比 eval 已派发（批次 14）
+- **Retrieval 瓶颈**（A62+A69 数据）：11% 正确率，MarkdownBackend 对比完成（batch 14）——**无显著差异**（30% vs 31.7%）。瓶颈在模型侧（entities_per_write=1.0，不做 packing）
 - **7 个推理类型 0%**（A62 数据）：outlier/comparison/cross_category 等系统性失败。非 bug，是模型能力天花板
 - **前沿方向**：GSPO（已写入 TRAINER.md F1）、MemoryRewardBench（RM 监督）、AMA-Bench（因果图）、NemoClaw（单 GPU GRPO pipeline）。均等训练跑通后再考虑
 
 ## 审计日志
 
 （每次审计的结论摘要，最新在最上面。保持简洁，详细分析写 devlog/。）
+
+### 审计 A69（2026-03-11）— 批次 13/14 完成确认 + 后端对比结论（维度 A+E）
+
+**批次 13（v3 基线重跑）✅**：6/6 evals 完成，v0.6.7。
+- Qwen3.5: company 30%, research 30%, hospital 35% (avg 31.7%)
+- Kimi: company 35%, research 25%, hospital 30% (avg 30%)
+- Corrections >0 confirmed — Bug 2 修复有效（batch 12 为 0/5）
+
+**批次 14（MarkdownBackend 对比）✅**：3/3 evals 完成。
+- markdown: company 25%, research 35%, hospital 30% (avg 30%)
+- chromadb: company 30%, research 30%, hospital 35% (avg 31.7%)
+- **结论：无显著差异。retrieval 瓶颈在模型侧，非后端。**
+
+**数据深度分析（50 evals）**：
+- entities_per_write = 1.0（模型不做 packing，浪费压缩机会）
+- 7 个推理类型仍为 0%（outlier/comparison/cross_category/text_match/enum_filter/aggregation/multi_hop）
+- 这些是合法难度，不是 bug
+
+**文档漂移**：ROADMAP.md test count 263→341, eval count 46→50。
+
+**派发 Phase 66 → EXECUTOR.md**：ROADMAP.md 更新 + EVALUATOR.md 批次完成标记。
+**派发批次 15 → EVALUATOR.md**：扩展模型覆盖（GLM-5 + MiniMax 新 seed）。
 
 ### 审计 A68（2026-03-10）— 维护状态确认 + 战略评估
 
