@@ -435,7 +435,9 @@ def main(argv: list[str] | None = None) -> int:
         print("=" * 70)
         print("Validation")
         print("=" * 70)
-        checks = run_validation(agg, template_names)
+        checks = run_validation(
+            agg, template_names,
+            n_entities=n_entities, write_budget=write_budget)
         for check, passed in checks.items():
             status = "PASS" if passed else "FAIL"
             print(f"  {check:<50s}: {status}")

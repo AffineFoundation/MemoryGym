@@ -507,8 +507,14 @@ def simulate_one_stream(
     }
 
 
-def run_validation(agg: dict, templates_used: list[str]) -> dict[str, bool]:
+def run_validation(
+    agg: dict,
+    templates_used: list[str],
+    n_entities: int = 60,
+    write_budget: int = 30,
+) -> dict[str, bool]:
     """Run invariant checks on aggregated results."""
+    from memorygym.protocol import compute_axis_scores
     checks: dict[str, bool] = {}
 
     for tmpl_name in templates_used:
@@ -594,6 +600,41 @@ def run_validation(agg: dict, templates_used: list[str]) -> dict[str, bool]:
             trick_total += t
         if trick_total > 0:
             checks[prefix + "guesser trick_retrieval = 0%"] = trick_correct == 0
+
+    # 4-axis composite invariants
+    def avg_composite(strategy: str, tmpl_filter: str | None = None) -> float:
+        composites = []
+        for v in agg.get(strategy, []):
+            if tmpl_filter and v["template"] != tmpl_filter:
+                continue
+            # Convert (correct, total) tuples to list[bool] for axis scoring
+            by_comp_bools: dict[str, list[bool]] = {}
+            for comp, (c, t) in v["by_competency"].items():
+                by_comp_bools[comp] = [True] * c + [False] * (t - c)
+            axis = compute_axis_scores(
+                by_competency=by_comp_bools,
+                n_entities=n_entities,
+                stored_count=v["stored"],
+                writes_used=v["stored"],  # simulation: 1 write per entity
+                write_budget=write_budget,
+            )
+            composites.append(axis["composite"])
+        return sum(composites) / len(composites) if composites else 0.0
+
+    p_comp = avg_composite("perfect")
+    g_comp = avg_composite("guesser")
+    checks["perfect composite > 90%"] = p_comp > 0.90
+    checks["guesser composite = 0%"] = g_comp < 0.01
+
+    for tmpl_name in templates_used:
+        prefix = f"[{tmpl_name}] "
+        st_comp = avg_composite("strategic", tmpl_name)
+        n_comp = avg_composite("naive", tmpl_name)
+        checks[prefix + "strategic composite > naive composite"] = (
+            st_comp > n_comp)
+
+    ab_comp = avg_composite("abstainer")
+    checks["abstainer composite < 15%"] = ab_comp < 0.15
 
     # Determinism check
     for tmpl_name in templates_used:
