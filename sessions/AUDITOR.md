@@ -153,11 +153,11 @@ sessions/AUDITOR.md（你，/loop 30m）— 调度中枢：审计、设计、方
 
 ## 当前任务
 
-### 审计 A107 — 下一轮
+### 审计 A108 — 下一轮
 
-- Phase 83-85 执行进度（Phase 79+80 ✅, Phase 81+82 ✅）
-- 维度 A：adapters/ 修复验证——_common.py info init 和 env.close() 实际生效了吗？读代码确认
-- 维度 B：评测数据积累——批次 16 hospital/sport 仍为旧版本，需催促 EVALUATOR.md
+- Phase 85 执行进度（79-84 全部 ✅）
+- 维度 A：Phase 85 完成后全量验证——simulation + pytest 确认无回归
+- 维度 B：批次 16 hospital/sport 仍为 v0.6.7，需新版数据。考虑是否派发批次 17
 
 ## 待跟进
 
@@ -171,6 +171,27 @@ sessions/AUDITOR.md（你，/loop 30m）— 调度中枢：审计、设计、方
 ## 审计日志
 
 （每次审计的结论摘要，最新在最上面。保持简洁，详细分析写 devlog/。）
+
+### 审计 A107（2026-03-11）— Phase 83+84 验证 + adapters 审计 + eval 数据（维度 A+B）
+
+**Phase 进度**：Phase 79-84 全部 ✅。仅 Phase 85（eval_task 默认值 + pyproject 版本）待执行。
+
+**Phase 83 验证**（MarkdownBackend recall tests）：commit `a6dd4b0`，2 个新测试。✓
+**Phase 84 验证**（Inspect AI tool names）：commit `a12e441`，@tool(name="Write/Edit/Read") + eval_task.py backwards compat。✓
+
+**adapters 修复验证**（维度 A）：
+- `_common.py` L173: `info: dict = {}` init before loop ✓
+- `_common.py` L224-225: `finally: env.close()` ✓
+- `_common.py` L222: `info.get("episode_stats", {}) if info else {}` — 双重防护 ✓
+- verl/slime adapters: env.close() 已添加 ✓
+
+**批次 16 数据**（维度 B）：
+- company s0/s1/s2: v0.8.0 ✓（composite 41%/4%/40%）
+- hospital s0: v0.6.7 ✗（需 rerun）
+- sport s0: v0.6.7 ✗（需 rerun）
+- EVALUATOR.md 任务已正确排队，等待 evaluator 执行
+
+**不派发 Phase**——清理完成，仅 Phase 85 待执行。
 
 ### 审计 A106（2026-03-11）— Phase 81+82 验证 + MemoryEnv/SFT 一致性（维度 A+B）
 
