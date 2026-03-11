@@ -545,3 +545,26 @@ class TestMemoryEnv:
         assert tmpdir.exists()
         env.close()
         assert not tmpdir.exists()
+
+    def test_chromadb_edit_miss_refunds_budget(self):
+        """ChromaDB Edit with wrong old_text should refund budget."""
+        env = MemoryEnv("company", seed=0, n_entities=10,
+                        n_questions=3, backend_type="chromadb")
+        env.reset(seed=0)
+        # Store an entity
+        env.step({"tool": "Write",
+                  "args": {"content": "Company A | Revenue: 500"}})
+        writes_after_store = env._writes_used
+        # Edit with non-matching old_text
+        _, _, _, info = env.step({
+            "tool": "Edit",
+            "args": {"old_text": "Revenue: 999", "new_text": "Revenue: 600"}
+        })
+        assert info.get("error") == "Text not found in memory"
+        assert info.get("edited") is False
+        # Budget should be refunded
+        assert env._writes_used == writes_after_store
+        # Original content should be unchanged
+        results = env._backend.search("Company A", top_k=1)
+        assert "500" in results[0]["content"]
+        env.close()

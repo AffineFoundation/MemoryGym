@@ -588,7 +588,7 @@ class MemoryEnv:
                 else:
                     # Fallback for ChromaDB: search + forget + store
                     results = self._backend.search(old_text, top_k=1)
-                    if results:
+                    if results and old_text in results[0]["content"]:
                         self._backend.forget(results[0]["id"])
                         updated = results[0]["content"].replace(
                             old_text, new_text, 1)
