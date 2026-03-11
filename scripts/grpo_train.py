@@ -46,11 +46,7 @@ from memorygym.adapters._common import (
     parse_tool_calls,
 )
 from memorygym.training import MemoryEnv
-
-
-def strip_think(text: str) -> str:
-    """Remove <think>...</think> blocks from model output."""
-    return re.sub(r"<think>.*?</think>\s*", "", text, flags=re.DOTALL)
+from memorygym.training.common import strip_think
 
 
 def strip_special_tokens(text: str) -> str:

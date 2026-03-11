@@ -30,9 +30,3 @@ class MemoryBudget:
     def remaining(self) -> int:
         return max(0, self.total_writes - self.writes_used)
 
-    def status(self) -> dict:
-        return {
-            "writes_used": self.writes_used,
-            "total_writes": self.total_writes,
-            "remaining": self.remaining(),
-        }

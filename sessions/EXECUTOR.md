@@ -79,6 +79,7 @@ get_verifiable_reward() 改用 compute_axis_scores() composite。Edit shaped rew
 
 ## 已完成
 
+### Phase 94 — 死代码清理 ✅
 ### Phase 88 — docs/ROADMAP.md 同步更新 ✅
 ### Phase 93 — CLI UX 修复：README tier 默认值 + help 补全 ✅
 ### Phase 91 — 问题措辞泄漏修复（temporal_trend + comparison） ✅

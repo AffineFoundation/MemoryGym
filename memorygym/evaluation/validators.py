@@ -13,18 +13,6 @@ _TITLE_PREFIXES = re.compile(
 _PAREN_SUFFIX = re.compile(r"\s*\([^)]*\)\s*$")
 
 
-def resolve_entity_name(name: str, known_names: set[str]) -> str:
-    """Resolve a possibly multi-word entity name against known entities.
-
-    Handles names like "Dr. Kelen Frostwick" or "Apex Controller" by
-    checking against the known entity set rather than naively splitting.
-    """
-    for known in known_names:
-        if name.startswith(known) or known.startswith(name):
-            return known
-    return name
-
-
 def _normalize_entity(name: str) -> str:
     """Strip titles and parenthetical suffixes from an entity name."""
     name = _PAREN_SUFFIX.sub("", name)

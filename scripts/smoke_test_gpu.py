@@ -38,6 +38,7 @@ from memorygym.adapters._common import (
     parse_tool_calls,
 )
 from memorygym.training import MemoryEnv, generate_sft_trajectory
+from memorygym.training.common import strip_think
 
 
 def run_dry_smoke(tier: str = "lite") -> dict:
@@ -174,10 +175,6 @@ def run_dry_smoke(tier: str = "lite") -> dict:
     return {"status": "pass", "steps": step_count, "reward": episode_reward}
 
 
-def _strip_think(text: str) -> str:
-    """Remove <think>...</think> blocks from model output."""
-    import re
-    return re.sub(r"<think>.*?</think>\s*", "", text, flags=re.DOTALL)
 
 
 def run_gpu_smoke(model_name: str, tier: str = "lite",
@@ -288,7 +285,7 @@ def run_gpu_smoke(model_name: str, tier: str = "lite",
         # Decode with special tokens to preserve <tool_call> tags
         raw_text = tokenizer.decode(new_tokens, skip_special_tokens=False)
         # Strip <think> blocks and trailing special tokens
-        model_text = _strip_think(raw_text)
+        model_text = strip_think(raw_text)
         # Remove trailing special tokens like <|im_end|>
         for tag in ("<|im_end|>", "<|endoftext|>"):
             model_text = model_text.replace(tag, "")
