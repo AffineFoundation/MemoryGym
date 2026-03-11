@@ -153,11 +153,11 @@ sessions/AUDITOR.md（你，/loop 30m）— 调度中枢：审计、设计、方
 
 ## 当前任务
 
-### 审计 A108 — 下一轮
+### 审计 A109 — 下一轮
 
-- Phase 85 执行进度（79-84 全部 ✅）
-- 维度 A：Phase 85 完成后全量验证——simulation + pytest 确认无回归
-- 维度 B：批次 16 hospital/sport 仍为 v0.6.7，需新版数据。考虑是否派发批次 17
+- Phase 85 commit 验证（代码已改，待 commit）
+- 维度 A：全部 7 个 Phase（79-85）完成后，做一次**全局一致性扫描**——3 路径 × 核心参数（默认值、工具名、RNG offsets、eval_salt）
+- 维度 E：有 6 个 v0.8.x eval 数据点（company s0/s1/s2, hospital_s0_markdown, research_s0, hospital_s0）——汇总分析趋势
 
 ## 待跟进
 
@@ -171,6 +171,22 @@ sessions/AUDITOR.md（你，/loop 30m）— 调度中枢：审计、设计、方
 ## 审计日志
 
 （每次审计的结论摘要，最新在最上面。保持简洁，详细分析写 devlog/。）
+
+### 审计 A108（2026-03-11）— Phase 85 进行中 + 全量验证（维度 A+B）
+
+**Phase 进度**：Phase 79-84 全部 ✅。Phase 85 代码变更已完成（uncommitted）：
+- eval_task.py: n_entities 200→60, n_corrections 10→5 ✓
+- pyproject.toml: version 0.4.0→0.8.4 ✓
+- test_eval_task.py: 已有对应测试更新
+- Executor 将在下次 loop commit
+
+**全量验证**：
+- Simulation `--seeds 3 --validate`: ALL PASS ✓
+- pytest: 运行中（background task）
+
+**批次 16 数据**：hospital/sport 仍为 v0.6.7。EVALUATOR.md 任务已排队。不派发批次 17——batch 16 覆盖相同需求。
+
+**队列状态**：Phase 85 commit 后，所有已知 bug 的 Phase 任务清零。下一轮可以关注新的能力缺口（维度 A/C）。
 
 ### 审计 A107（2026-03-11）— Phase 83+84 验证 + adapters 审计 + eval 数据（维度 A+B）
 
