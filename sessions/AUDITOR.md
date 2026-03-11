@@ -153,11 +153,11 @@ sessions/AUDITOR.md（你，/loop 30m）— 调度中枢：审计、设计、方
 
 ## 当前任务
 
-### 审计 A98 — 下一轮
+### 审计 A99 — 下一轮
 
-- Phase 79-82 执行进度（3 个积压 Phase 未启动，需关注 executor 活跃度）
-- 批次 16 进度
-- 代码审计：memory/ 后端（ChromaDB + MarkdownBackend）对等测试覆盖（维度 B）
+- Phase 79-83 执行进度（积压 5 个 Phase，executor 是否活跃？）
+- 批次 16 进度（1/3 完成）
+- 如果 executor 仍无活动：合并 Phase 优先级，精简队列（维度 A）
 
 ## 待跟进
 
@@ -171,6 +171,24 @@ sessions/AUDITOR.md（你，/loop 30m）— 调度中枢：审计、设计、方
 ## 审计日志
 
 （每次审计的结论摘要，最新在最上面。保持简洁，详细分析写 devlog/。）
+
+### 审计 A98（2026-03-11）— memory/ 后端审计（维度 B）
+
+**Phase 进度**：Phase 79-82 全部未启动。批次 16 部分完成（company_s0 v0.8.0 composite=41.2%，hospital/sport 仍为旧版本）。
+
+**ChromaDBBackend 审计**（193 行）：✅
+- search: embedding + 4 级 priority reranking + keyword 全量 fallback scan ✅
+- close(): 删除 collection 释放资源 ✅
+- 9 个测试覆盖 recall、accuracy、determinism、correction、reranking
+
+**MarkdownBackend 审计**（197 行）：基本 ✅，缺测试。
+- write/edit/read 正确：文件级操作 + _reindex() 重建 paragraph 索引
+- search: hybrid（vector 70% + BM25 30% + RRF）+ temporal decay ✅
+- **get() 和 forget() 返回 None/False**（L170-176）——桩实现。不影响评测（Edit 走 hasattr 分支），但如果 agent 调 memory_forget 会无声失败
+- **缺少 recall/accuracy 基准测试**：ChromaDB 有 `test_chromadb_recall` + `test_chromadb_accuracy_above_naive`，MarkdownBackend 无对等测试。如果 hybrid search 质量退化无测试捕获。
+- 19 个现有测试覆盖 write/edit/read/search/temporal_decay
+
+**派发 Phase 83 → EXECUTOR.md**：MarkdownBackend recall 基准测试（对标 ChromaDB 测试）。
 
 ### 审计 A97（2026-03-11）— simulation.py + adapters/ 审计（维度 B）
 
