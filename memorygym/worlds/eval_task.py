@@ -157,8 +157,8 @@ def _count_tool_calls(messages: list, start_idx: int = 0) -> tuple[int, int]:
 def build_worldbench_stream(
     seed: int,
     template_name: str = "company",
-    n_entities: int = 200,
-    n_corrections: int = 10,
+    n_entities: int = 60,
+    n_corrections: int = 5,
     n_questions: int = 20,
     entities_per_batch: int = 10,
 ) -> dict[str, Any]:
@@ -440,8 +440,8 @@ def worldbench(
         n_questions = n_questions or tc["questions"]
         write_budget = write_budget or tc["write_budget"]
     else:
-        n_entities = n_entities or 200
-        n_corrections = n_corrections or 10
+        n_entities = n_entities or 60
+        n_corrections = n_corrections or 5
         n_questions = n_questions or 20
         write_budget = write_budget or 30
 

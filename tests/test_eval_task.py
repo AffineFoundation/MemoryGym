@@ -59,7 +59,7 @@ class TestWorldbenchTierParam:
         from memorygym.worlds.eval_task import worldbench
         task = worldbench(seed=0, template="company")
         meta = task.dataset.samples[0].metadata
-        assert meta["n_entities"] == 200  # original default
+        assert meta["n_entities"] == 60  # standard tier default
 
     def test_seed_required(self):
         from memorygym.worlds.eval_task import worldbench
