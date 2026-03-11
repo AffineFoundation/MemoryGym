@@ -153,11 +153,11 @@ sessions/AUDITOR.md（你，/loop 30m）— 调度中枢：审计、设计、方
 
 ## 当前任务
 
-### 审计 A74 — 下一轮
+### 审计 A76 — 下一轮
 
-- Phase 67/68/69 执行进度
+- Phase 67-71 执行进度
 - 批次 15 进展
-- 代码审计：MarkdownBackend 搜索质量 vs OpenClaw 规范
+- 代码审计：bench.py 与 stream_agent.py 一致性
 
 ## 待跟进
 
@@ -171,6 +171,74 @@ sessions/AUDITOR.md（你，/loop 30m）— 调度中枢：审计、设计、方
 ## 审计日志
 
 （每次审计的结论摘要，最新在最上面。保持简洁，详细分析写 devlog/。）
+
+### 审计 A75（2026-03-11）— training/env.py 审计 + 事件格式策略泄漏（维度 A+B）
+
+**线程活动**：全部不活跃。Phase 67-70 未启动（无新 commit），批次 15 进度 0/6。
+
+**代码审计 — training/env.py MarkdownBackend 集成路径**：
+
+1. **ChromaDB Edit fallback 同一 bug**（L590-594）：与 `_tool_helpers.py` Phase 70 相同的 `search→replace` 无检查。Phase 70 修复时需同步修复 env.py。→ 已追加到 Phase 70 描述
+
+2. **reset() 清理逻辑**（L483-486）：`close()` 调用已存在，但 ChromaDBBackend 无 `close()` 方法 → `hasattr` 跳过 → 旧 collection 不清理。Phase 67 已覆盖。
+
+**重大发现 — 事件格式策略泄漏**（3 处，影响所有评测路径）：
+
+`stream_agent.py` L475-476、`training/env.py` L420-421、`eval_task.py` L288-289 在 INGEST 事件中嵌入：
+```
+Corrections coming: {n_corrections_total}.
+   Suggestion: store ≤{suggested} from this batch to reserve budget for corrections.
+```
+
+**问题**：
+- `Corrections coming: 5` 泄漏未来事件总数 → agent 无需不确定性下的预算规划（核心能力之一）
+- `Suggestion: store ≤N` 直接规定存储策略 → 违反 CLAUDE.md "存储策略本身是被测能力的一部分"
+- Phase 57 只中立化了 system prompt，遗漏了 event format 中的策略提示
+
+**影响**：
+- 评测公平性：所有模型收到相同提示，不破坏模型间对比。但降低了存储决策轴的区分度
+- 训练迁移：训练出的模型依赖 correction 计数提示，在真实场景（correction 数未知）中策略失效
+- 评分：不影响 simulation 验证（策略是规则匹配），但真实 eval 中可能高估了模型的预算规划能力
+
+**修复方案**：移除 `Corrections coming` 和 `Suggestion` 行，只保留 `Budget: {remaining}/{total} writes remaining`。budget 信息是合理的（agent 应知道剩余资源），但 correction 数量和存储建议是策略指导。
+
+**派发 Phase 71 → EXECUTOR.md**。
+
+### 审计 A74（2026-03-11）— MarkdownBackend 深度审计 + ChromaDB Edit bug（维度 B）
+
+**线程活动**：全部不活跃。Phase 67/68/69 未启动（无新 commit since A73），批次 15 进度 0/6。
+
+**MarkdownBackend 代码审计**（`markdown_backend.py` 161 行）：
+
+1. **`_reindex()` O(n²) 总成本**：每次 write/edit 重建全部 paragraph 的 embedding + BM25 索引。Budget=30 时总计 465 次 paragraph encode，约 1.5s。当前规模可接受，训练大规模时可能成为瓶颈。暂不修复。
+
+2. **`forget()` 返回 False / `get()` 返回 None**：legacy 接口 stub。不影响 OpenClaw 路径（Write/Edit/Read 直接走 `hasattr` 分支），但影响 ChromaDB Edit fallback。→ 已被 Phase 67 覆盖
+
+3. **`created_at` 始终 ""**：搜索结果无时间信息。→ Phase 69 temporal decay 将修复
+
+4. **无 `close()` 方法**：→ Phase 67 已覆盖
+
+**新发现 — ChromaDB Edit fallback 静默失败 bug**（`_tool_helpers.py` L109-115）：
+
+```python
+# Fallback for ChromaDB: search + forget + store
+results = backend.search(old_text, top_k=1)
+if results:
+    backend.forget(results[0]["id"])
+    content = results[0]["content"].replace(old_text, new_text, 1)  # ← no-op if old_text not in content
+    backend.store(content)
+    return f"Edited. {budget.remaining()} writes left.", None  # ← 报告成功但未修改
+```
+
+`search()` 返回语义相似结果，不保证包含 `old_text` 原文。当 `old_text not in results[0]["content"]` 时：
+- `replace()` 是 no-op，内容不变
+- 条目被 forget + re-store（无谓操作）
+- 预算已消耗（无退款）
+- 返回 "Edited" 报告成功
+
+修复：在 `replace()` 前检查 `if old_text in content`，否则 refund。
+
+**派发 Phase 70 → EXECUTOR.md**。
 
 ### 审计 A73（2026-03-11）— 前沿搜索 V7 + 任务管线扩展（维度 C+A）
 
