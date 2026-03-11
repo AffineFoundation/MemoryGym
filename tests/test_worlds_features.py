@@ -693,6 +693,62 @@ def test_contradictions():
         assert expected == q.answer
 
 
+def test_lite_tier_contradictions_not_lost():
+    """Bug fix: contradiction_batch must not exceed n_batches (lite tier)."""
+    from memorygym.worlds.city import CityWorld
+    tmpl = CityWorld()  # city has lowest correction_rate → late corrections
+    world = tmpl.generate_world(seed=42, n_entities=30, eval_salt=1)
+    rng_c = Random(42 + 3333)
+    corrections = tmpl.generate_corrections(world, rng_c, 3)
+    rng_contra = Random(42 + 7373)
+    contradictions = tmpl.generate_contradictions(world, rng_contra, 1)
+    rng_s = Random(42 + 5555)
+    stream = tmpl.generate_stream(
+        world, rng_s, corrections, set(), 10,
+        contradictions=contradictions,
+    )
+    contra_events = [e for e in stream if e.get("is_contradiction")]
+    assert len(contra_events) >= 1, \
+        "Lite tier must include contradiction events in stream"
+
+
+def test_mid_question_weights_match_template():
+    """Mid-stream questions should respect template question_weights."""
+    from memorygym.worlds.hospital import HospitalWorld
+    from memorygym.worlds.city import CityWorld
+
+    def _count_mid_q_types(tmpl_cls, seed=42, n_runs=20):
+        counts = {"recall": 0, "coverage": 0, "update": 0,
+                  "comprehension": 0, "abstention": 0}
+        for s in range(seed, seed + n_runs):
+            tmpl = tmpl_cls()
+            world = tmpl.generate_world(seed=s, n_entities=60, eval_salt=1)
+            rng_c = Random(s + 3333)
+            corrections = tmpl.generate_corrections(world, rng_c, 5)
+            rng_s = Random(s + 5555)
+            stream = tmpl.generate_stream(
+                world, rng_s, corrections,
+                {e.name for e in world.entities}, 20,
+            )
+            for e in stream:
+                if e["type"] == "question" and e.get("purpose") in counts:
+                    counts[e["purpose"]] += 1
+        return counts
+
+    hospital_counts = _count_mid_q_types(HospitalWorld)
+    city_counts = _count_mid_q_types(CityWorld)
+
+    # Hospital has update=0.30, city has update=0.10
+    # Hospital should generate more update questions than city
+    h_total = sum(hospital_counts.values()) or 1
+    c_total = sum(city_counts.values()) or 1
+    h_update_frac = hospital_counts["update"] / h_total
+    c_update_frac = city_counts["update"] / c_total
+    assert h_update_frac > c_update_frac, \
+        f"Hospital update fraction ({h_update_frac:.2f}) should exceed " \
+        f"city ({c_update_frac:.2f})"
+
+
 if __name__ == "__main__":
     tests = [
         test_seed_not_in_visible_ids,
@@ -715,6 +771,8 @@ if __name__ == "__main__":
         test_relationship_questions,
         test_relationship_gt_correct,
         test_contradictions,
+        test_lite_tier_contradictions_not_lost,
+        test_mid_question_weights_match_template,
     ]
     print("Running feature tests...")
     for t in tests:

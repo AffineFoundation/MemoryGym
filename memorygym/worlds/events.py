@@ -230,8 +230,10 @@ class EventGeneratorMixin:
         corr_frac = rng.uniform(ct_min, ct_max)
         correction_batch = max(1, int(n_batches * corr_frac))
         contra_frac = rng.uniform(0.7, 0.9)
-        contradiction_batch = max(correction_batch + 1,
-                                  int(n_batches * contra_frac))
+        contradiction_batch = min(
+            n_batches - 1,
+            max(correction_batch + 1, int(n_batches * contra_frac)),
+        )
 
         # Track introduced entities for question generation
         introduced: list[EntitySpec] = []
@@ -468,20 +470,25 @@ class EventGeneratorMixin:
         corrections: list[Correction] | None,
     ) -> GeneratedQA | None:
         """Generate a single random question for mid-stream emission."""
-        # Weighted choice: retrieval-heavy during mid-stream
+        w = self.question_weights
+        t_ret = w.get("retrieval", 0.40)
+        t_upd = t_ret + w.get("update", 0.20)
+        t_comp = t_upd + w.get("comprehension", 0.25)
+        # remainder → abstention
+
         roll = rng.random()
-        if roll < 0.5:
+        if roll < t_ret:
             q = self._gq_retrieval(world, rng, introduced)
             if q:
                 name = q.required_entities[0]
                 q.purpose = "recall" if name in stored_names else "coverage"
                 return q
-        elif roll < 0.75 and corrections:
+        elif roll < t_upd and corrections:
             q = self._gq_update(world, rng, corrections)
             if q:
                 q.purpose = "update"
                 return q
-        elif roll < 0.90 and len(introduced) >= 5:
+        elif roll < t_comp and len(introduced) >= 5:
             comp_pool = ([e for e in introduced if e.name in stored_names]
                          if stored_names else introduced)
             q = self._gq_synthesis(world, rng, comp_pool)
