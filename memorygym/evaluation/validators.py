@@ -46,13 +46,24 @@ class AnswerValidator:
 
         if question_type in ("retrieval", "update", "aggregation",
                               "cross_category", "ratio", "delta",
-                              "relationship_hop", "relationship_chain"):
+                              "relationship_hop", "relationship_chain",
+                              "temporal_extreme", "relationship_count",
+                              "multi_constraint"):
             if self._numeric_match(answer, ground_truth):
                 return True
 
         if question_type in ("synthesis", "cross_domain", "conditional",
                               "comparison", "multi_hop", "outlier"):
             if self._synthesis_match(answer, gt):
+                return True
+
+        if question_type in ("text_match", "enum_filter",
+                              "relationship_lookup", "relationship_filter"):
+            if self._entity_match(answer, gt):
+                return True
+
+        if question_type == "temporal_trend":
+            if gt.lower() in answer.lower():
                 return True
 
         if question_type == "abstention":

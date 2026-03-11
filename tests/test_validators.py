@@ -456,3 +456,122 @@ class TestValidateWithFallback:
         assert ok
         assert reason == "rule:pass"
         assert len(calls) == 0
+
+
+# ── Phase 110: Newly-routed question types ──
+
+
+class TestTemporalTrendRoute:
+    """temporal_trend: substring match on categorical GT."""
+
+    def test_exact_match(self):
+        assert V.validate("strongly rising", "strongly rising", "temporal_trend")
+
+    def test_contextual_answer(self):
+        assert V.validate(
+            "The trend is strongly rising over time",
+            "strongly rising", "temporal_trend")
+
+    def test_wrong_trend_rejected(self):
+        assert not V.validate("slightly falling", "strongly rising", "temporal_trend")
+
+    def test_flat_match(self):
+        assert V.validate("The values are flat", "flat", "temporal_trend")
+
+    def test_random_text_rejected(self):
+        assert not V.validate("I don't know", "strongly rising", "temporal_trend")
+
+
+class TestTemporalExtremeRoute:
+    """temporal_extreme: numeric match on period number GT."""
+
+    def test_exact_period(self):
+        assert V.validate("3", "3", "temporal_extreme")
+
+    def test_contextual_period(self):
+        assert V.validate("Period 3", "3", "temporal_extreme")
+
+    def test_wrong_period_rejected(self):
+        assert not V.validate("5", "3", "temporal_extreme")
+
+
+class TestTextMatchRoute:
+    """text_match: entity name match."""
+
+    def test_exact_name(self):
+        assert V.validate("Alice Chen", "Alice Chen", "text_match")
+
+    def test_contextual_name(self):
+        assert V.validate(
+            "The answer is Alice Chen", "Alice Chen", "text_match")
+
+    def test_wrong_name_rejected(self):
+        assert not V.validate("Bob Smith", "Alice Chen", "text_match")
+
+
+class TestEnumFilterRoute:
+    """enum_filter: entity name match."""
+
+    def test_exact_name(self):
+        assert V.validate("Alice Chen", "Alice Chen", "enum_filter")
+
+    def test_contextual_name(self):
+        assert V.validate(
+            "That would be Alice Chen", "Alice Chen", "enum_filter")
+
+    def test_wrong_name_rejected(self):
+        assert not V.validate("Bob Smith", "Alice Chen", "enum_filter")
+
+
+class TestRelationshipLookupRoute:
+    """relationship_lookup: entity name match."""
+
+    def test_exact_name(self):
+        assert V.validate("Alice Chen", "Alice Chen", "relationship_lookup")
+
+    def test_contextual_name(self):
+        assert V.validate(
+            "The entity is Alice Chen", "Alice Chen", "relationship_lookup")
+
+    def test_wrong_name_rejected(self):
+        assert not V.validate("Bob Smith", "Alice Chen", "relationship_lookup")
+
+
+class TestRelationshipCountRoute:
+    """relationship_count: numeric match on count GT."""
+
+    def test_exact_count(self):
+        assert V.validate("4", "4", "relationship_count")
+
+    def test_contextual_count(self):
+        assert V.validate("There are 4 entities", "4", "relationship_count")
+
+    def test_wrong_count_rejected(self):
+        assert not V.validate("7", "4", "relationship_count")
+
+
+class TestRelationshipFilterRoute:
+    """relationship_filter: entity name match."""
+
+    def test_exact_name(self):
+        assert V.validate("Alice Chen", "Alice Chen", "relationship_filter")
+
+    def test_contextual_name(self):
+        assert V.validate(
+            "It is Alice Chen", "Alice Chen", "relationship_filter")
+
+    def test_wrong_name_rejected(self):
+        assert not V.validate("Bob Smith", "Alice Chen", "relationship_filter")
+
+
+class TestMultiConstraintRoute:
+    """multi_constraint: numeric match on count GT."""
+
+    def test_exact_count(self):
+        assert V.validate("7", "7", "multi_constraint")
+
+    def test_contextual_count(self):
+        assert V.validate("There are 7 matching entities", "7", "multi_constraint")
+
+    def test_wrong_count_rejected(self):
+        assert not V.validate("3", "7", "multi_constraint")

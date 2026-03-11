@@ -57,7 +57,43 @@
 
 ## 当前任务
 
-（无待办任务，等待新任务写入）
+### Phase 110 — validators.py 推理题型路由补全
+
+**依据**：审计 A190 发现 `memorygym/evaluation/validators.py:39-61` 的 `validate()` 方法只路由了 14 个题型到专用匹配器，其余题型（text_match, enum_filter, relationship_lookup, temporal_trend, temporal_extreme, relationship_count, relationship_filter, multi_constraint）只能通过 line 44 的精确字符串匹配。
+
+**问题**：在真实 eval 中，模型回答通常包含上下文文字（如 "The answer is Alice Chen"），无法精确匹配。这些题型的 rule-based 路径全部 return False（line 61），完全依赖 LLM judge。simulation 不受影响（perfect 策略返回精确 GT 文本，line 44 通过）。
+
+**影响范围**：至少 8 个推理题型的 rule-based 验证缺失。这可能导致 eval 中不必要的 LLM judge 调用（增加成本和延迟），且当 judge 不可用时这些题型永远 0%。
+
+#### Step 1 — 分析每个未路由题型的 GT 格式
+
+读 `memorygym/worlds/questions.py`，确认每个未路由题型的 answer 格式：
+- **实体名称类**（GT = entity name）：text_match, enum_filter, relationship_lookup, relationship_filter, relationship_count（部分）
+- **数值类**（GT = number）：temporal_extreme, multi_constraint（部分）
+- **分类字符串类**（GT = categorical string like "strongly rising"）：temporal_trend
+
+#### Step 2 — 补全 validate() 路由
+
+在 `validators.py:47-56` 添加缺失的路由分支：
+
+1. **数值路由**（line 47-51）：添加 `temporal_extreme`, `multi_constraint`
+2. **synthesis 路由**（line 53-56）：添加需要 entity+value 匹配的题型
+3. **新增实体名称路由**：对 text_match, enum_filter, relationship_lookup, relationship_filter 调用 `_entity_match()`
+4. **新增分类匹配路由**：对 temporal_trend 做 `gt.lower() in answer.lower()` 子串匹配
+
+**注意**：不要改变 `_entity_match()` 或 `_numeric_match()` 的内部逻辑，只补全路由。
+
+#### Step 3 — 添加测试
+
+在 `tests/` 中添加测试覆盖每个新路由：
+- 精确匹配仍通过
+- 带上下文文字的正确答案通过（如 "The answer is Alice Chen" matches "Alice Chen"）
+- 错误答案仍拒绝
+
+#### 验证标准
+- `python -m pytest tests/ -q` 全通过
+- `python -m memorygym.bench --seeds 3 --validate` simulation 不变量通过（perfect=100%）
+- 新增测试覆盖所有 8 个原先未路由的题型
 
 ---
 
@@ -72,6 +108,7 @@
 
 ## 已完成
 
+### Phase 110 — validators.py 推理题型路由补全（8 个未路由题型） ✅
 ### Phase 109 — LEADERBOARD.md 4 轴补全 + leaderboard.py Reasoning/Efficiency 列 ✅
 ### Phase 108 — CLI UX 打磨（表格对齐/API 前置检查/choices 显示/HF 噪音） ✅
 ### Phase 107 — 文档同步：README/LEADERBOARD/pyproject.toml/EVALUATOR ✅
