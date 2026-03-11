@@ -50,7 +50,7 @@ Call tools by outputting JSON blocks:
 **Write** — Append to your memory file (costs 1 write, budget: {budget}):
 <tool_call>{{"name": "Write", "arguments": {{"content": "info to store"}}}}</tool_call>
 
-**Edit** — Edit existing content in your memory file (costs 1 write):
+**Edit** — Update existing content in your memory file when data changes (costs 1 write). Use old_text/new_text to replace outdated values:
 <tool_call>{{"name": "Edit", "arguments": {{"old_text": "text to find", "new_text": "replacement text"}}}}</tool_call>
 
 **Read** — Read your memory file (free):
@@ -495,7 +495,8 @@ def run_stream_agent(
             content = (
                 f"=== Event {event_idx+1}/{total_events} [CORRECTION] ===\n\n"
                 f"**Correction Notice:**\n{event['notice']}\n\n"
-                f"A correction has been issued. Decide how to handle it.\n"
+                f"A correction has been issued. If you stored data about this entity, "
+                f"use memory_search to find it and Edit to update the old value to the new value.\n"
                 f"Budget: {budget.remaining()} writes remaining."
             )
             messages.append({"role": "user", "content": content})

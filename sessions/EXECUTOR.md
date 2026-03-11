@@ -69,6 +69,10 @@ get_verifiable_reward() 改用 compute_axis_scores() composite。Edit shaped rew
 
 ---
 
+## P1 — Corrections 0/5 系统性修复 ✅
+
+---
+
 ## P3 — 评测质量 + 文档（不阻塞训练，可延后）
 
 ### 低优先级 Backlog
@@ -79,6 +83,7 @@ get_verifiable_reward() 改用 compute_axis_scores() composite。Edit shaped rew
 
 ## 已完成
 
+### Phase 98 — Correction 引导消息增强 ✅
 ### Phase 97 — Codebase 世界模板（第 8 个领域） ✅
 ### Phase 96 — University 模板 Constraint 4 逻辑修复 ✅
 ### Phase 94 — 死代码清理 ✅
