@@ -153,11 +153,11 @@ sessions/AUDITOR.md（你，/loop 30m）— 调度中枢：审计、设计、方
 
 ## 当前任务
 
-### 审计 A87 — 下一轮
+### 审计 A88 — 下一轮
 
 - Phase 75 执行进度
 - 批次 15 进展
-- 代码审计：worlds/eval_scorer.py 评分路径正确性
+- 代码审计：evaluation/llm_judge.py + validators.py 验证层完整性
 
 ## 待跟进
 
@@ -171,6 +171,28 @@ sessions/AUDITOR.md（你，/loop 30m）— 调度中枢：审计、设计、方
 ## 审计日志
 
 （每次审计的结论摘要，最新在最上面。保持简洁，详细分析写 devlog/。）
+
+### 审计 A87（2026-03-11）— eval_scorer.py 审计 + 3 路径系统性一致性检查（维度 B）
+
+**Phase 进度**：Phase 75 未启动。批次 15 进度 0/6。
+
+**eval_scorer.py 审计**：✅ 无 bug。正确使用 `compute_axis_scores`，验证路径通过 `async_validate_with_fallback`（fail closed），Score.value 包含全部轴分数。
+
+**3 路径系统性一致性检查**（Agent 探索）：
+
+| 模式 | bench.py | training/env.py | eval_task.py |
+|------|----------|-----------------|-------------|
+| eval_salt | ✅ 传参 | ✅ MemoryEnv 传参 / ❌ SFT 缺失 | ❌ 硬编码 |
+| RNG +3333/+5555/+7373 | ✅ | ✅ | ✅ |
+| 工具计数 | ✅ | ✅ | ✅ |
+| Edit refund | ✅ | ✅ | ❌ tools.py 缺检查 |
+| 事件格式 | ✅ | ✅ | ✅ |
+
+**新发现**：`generate_sft_trajectory()`（training/env.py L57）缺 `eval_salt` 参数——SFT 训练数据使用 eval_salt=0，而评测使用 eval_salt=1。训练/评测数值不一致。
+
+**扩展 Phase 75 范围**：追加 Bug 3（SFT eval_salt）→ 已更新 EXECUTOR.md。
+
+**反思——"修了 2 处漏了第 3 处"模式**：这是第 4 次发现跨路径同步遗漏。根因：3 条评测路径有重复逻辑但无自动化一致性检查。长期方案：提取共享函数消除重复（但当前优先级不够高）。
 
 ### 审计 A86（2026-03-11）— Inspect AI 路径深度审计 + Phase 75 派发（维度 B）
 

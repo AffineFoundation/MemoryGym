@@ -92,13 +92,22 @@ world = tmpl.generate_world(seed, n_entities, eval_salt=1)
 ```
 bench.py 和 env.py 都传 eval_salt，Inspect AI 路径遗漏。
 
+**Bug 3 — SFT trajectory 缺 eval_salt**（`memorygym/training/env.py` L57）：
+```python
+# 当前：
+world = tmpl.generate_world(seed=seed, n_entities=n_entities)
+# 修复：
+world = tmpl.generate_world(seed=seed, n_entities=n_entities, eval_salt=1)
+```
+SFT 训练数据使用 eval_salt=0（默认），而所有官方 eval 使用 eval_salt=1。训练数据和评测数据的数值不一致。
+
 **Dead code 清理**（`eval_task.py` L240-242）：
 `n_corrections_total` 变量计算后未使用（Phase 71 移除了引用的格式字符串）。删除。
 
 **验证标准**：
 - `python -m pytest tests/ -q` 全部通过
 - grep 确认 `inspect_task/tools.py` 的 edit 路径包含 `old_text in results[0]["content"]`
-- grep 确认 `eval_task.py` 包含 `eval_salt`
+- grep 确认 `eval_task.py` 和 `training/env.py generate_sft_trajectory` 包含 `eval_salt`
 
 ### Phase 74 — 系统提示词 Correction 策略泄漏修复 ✅ commit `4f120ed`
 
