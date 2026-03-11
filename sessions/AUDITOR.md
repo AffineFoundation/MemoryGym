@@ -153,9 +153,9 @@ sessions/AUDITOR.md（你，/loop 30m）— 调度中枢：审计、设计、方
 
 ## 当前任务
 
-### 审计 A116 — 下一轮
+### 审计 A117 — 下一轮
 
-- 维度 A：Phase 87-91 验证
+- 维度 A：Phase 87-92 验证（executor 持续不活跃）
 - 维度 E：批次 17 数据（evaluator 持续不活跃）
 
 ## 待跟进
@@ -170,6 +170,30 @@ sessions/AUDITOR.md（你，/loop 30m）— 调度中枢：审计、设计、方
 ## 审计日志
 
 （每次审计的结论摘要，最新在最上面。保持简洁，详细分析写 devlog/。）
+
+### 审计 A116（2026-03-11）— RL 训练路径 vs 真实评估路径对齐审计（维度 A）
+
+**Phase 87-91 状态**：executor 未活跃，5 个 Phase 全部待执行。Batch 17 同样待执行。
+
+**MemoryEnv vs bench.py/stream_agent 对齐审计**：
+
+1. 🔴 **get_verifiable_reward() 不映射 4 轴评分**：
+   - RL 用 `correct_count / total_questions`（flat）+ `unique_stored / writes_used`（效率代理）
+   - 真实评估用 `0.30*breadth + 0.25*maintenance + 0.25*reasoning + 0.20*efficiency`
+   - 效率计算也不同：RL = stored/writes_used，eval = correct_total/write_budget
+   - **后果**：RL agent 可能忽视 retrieval（30% 权重）去刷容易的推理题，但在真实 eval 分数低
+   - → **Phase 92**
+
+2. 🟡 **Edit +0.5 不验证 new_val**（L586-587）：Edit 成功就给 +0.5，不检查是否为 correction 的正确新值。已在待跟进（A42+A44）但现在应修复：
+   - 修复方案：`reward = 0.5` 仅当 `new_text` 匹配当前 correction event 的 `new_val`
+   - → 归入 Phase 92（一并处理 shaped reward）
+
+3. ✅ **Stream 生成一致**：两条路径用相同 `generate_stream()` + 相同 RNG offsets
+4. ✅ **工具接口一致**：Write/Edit/Read/memory_search 逻辑完全匹配（含 Edit refund）
+5. ✅ **Budget 耗尽处理一致**：两条路径都拒绝超预算写入
+6. ℹ️ **RL 不经历 tool parsing**：设计如此（RL 用结构化 action），不是 bug
+
+**派发**：Phase 92（RL reward 对齐 4 轴评分 + Edit shaped reward 验证）
 
 ### 审计 A115（2026-03-11）— SFT 训练质量深审 + 问题措辞泄漏（维度 A）
 

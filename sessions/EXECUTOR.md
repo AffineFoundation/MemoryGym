@@ -59,6 +59,34 @@
 
 > **Phase 79-86 全部完成。** 以下是新任务。
 
+### Phase 92 — RL reward 对齐 4 轴评分 + Edit shaped reward 验证
+
+**问题 1**：`MemoryEnv.get_verifiable_reward()` 用 `correct_count / total_questions`（flat 均值），不映射真实 eval 的 4 轴加权（0.30 breadth + 0.25 maintenance + 0.25 reasoning + 0.20 efficiency）。效率计算也不同（RL: unique_stored/writes_used vs eval: correct_total/write_budget）。
+
+**修复 1**：在 `get_verifiable_reward()` 中调用 `compute_axis_scores()`：
+- 收集 `self._by_competency`（已有 `_correct_count` 和 `_total_questions`，需按 competency 拆分）
+- 在 `step()` 处理 submit_answer 时，记录 `{competency: [True/False]}` 到 `self._by_competency`
+- `get_verifiable_reward()` 调用 `compute_axis_scores(self._by_competency, self._n_entities, len(self._stored_entity_names), self._writes_used, self.write_budget)` 返回 composite
+- 导入 `from ..protocol import compute_axis_scores`
+
+**问题 2**：Edit shaped reward +0.5（env.py L586-587）不验证 new_text 是否为当前 correction 的正确新值。Agent 可以 Edit 任意文本获得 +0.5。
+
+**修复 2**：在 correction event 上下文中，仅当 `new_text` 包含 `event['new_val']` 时才给 +0.5：
+```python
+if shaped and event_type == "correction":
+    expected_new = str(current_event.get("new_val", ""))
+    if expected_new and expected_new.lower() in new_text.lower():
+        reward = 0.5
+    else:
+        reward = 0.1  # Attempted but wrong value
+```
+
+**验证**：
+1. `python -m pytest tests/test_training.py -q` 全部通过
+2. 添加测试：`test_env_verifiable_reward_uses_4axis` — 验证返回值与 compute_axis_scores 一致
+3. 添加测试：`test_env_edit_reward_requires_correct_value`
+4. 确认 MemoryEnv shaped reward 的 Edit +0.5 仅对正确 correction 触发
+
 ### Phase 89 — SFT 轨迹 budget 超支修复 ⚡ 最高优先
 
 **问题**：`generate_sft_trajectory()` 中 `store_ratio` 只控制选哪些实体存储，不限制总写入数。结果：
