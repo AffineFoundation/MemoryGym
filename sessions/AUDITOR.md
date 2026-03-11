@@ -153,11 +153,11 @@ sessions/AUDITOR.md（你，/loop 30m）— 调度中枢：审计、设计、方
 
 ## 当前任务
 
-### 审计 A103 — 下一轮
+### 审计 A104 — 下一轮
 
-- Phase 79-84 执行进度（executor 连续 4 轮不活跃）
-- 维度 B：bench.py `--backend markdown` 端到端测试（MarkdownBackend 在真实 eval 中能跑通吗？）
-- 维度 A：stream_agent.py 与 eval_task.py 的 tool name 一致性（stream_agent 用 Write/Edit/Read 还是 write_memory?）
+- Phase 79-84 执行进度
+- 维度 D：用户体验——安装到首次评测的完整路径是否有文档？`pip install` 能成功吗？
+- 维度 A：protocol.py TIERS 定义与 bench.py/eval_task.py 默认值是否一致
 
 ## 待跟进
 
@@ -171,6 +171,23 @@ sessions/AUDITOR.md（你，/loop 30m）— 调度中枢：审计、设计、方
 ## 审计日志
 
 （每次审计的结论摘要，最新在最上面。保持简洁，详细分析写 devlog/。）
+
+### 审计 A103（2026-03-11）— MarkdownBackend 端到端 + 工具名一致性（维度 B+A）
+
+**MarkdownBackend 端到端**（维度 B）：
+- `bench.py --backend markdown` 路径结构正确：创建 MarkdownBackend → 传入 run_stream_agent → 返回 stored_contents
+- MarkdownBackend 实现所有必需方法（write/edit/read/search/list/close）
+- `list()` 返回 `{"id", "content", "created_at"}` — 与 bench.py 期望的 `e["content"]` 兼容
+- **发现**：bench.py 和 stream_agent.py 均不调用 `backend.close()`，泄漏 ChromaDB collection / temp dir。追加到 Phase 79+80
+
+**工具名一致性**（维度 A）：
+- stream_agent.py：使用 `Write`/`Edit`/`Read`/`memory_search`（L84, L172-174）✓
+- _tool_helpers.py execute_tool：匹配 `Write`/`Edit`/`Read`/`memory_search` ✓
+- eval_task.py SYSTEM_PROMPT：指示 `Write`/`Edit`/`Read`/`memory_search` ✓
+- **inspect_task/tools.py**：注册为 `write_memory`/`edit_memory`/`read_memory` ✗ — 已在 Phase 84 修复
+- **结论**：只有 Inspect AI 路径不一致，其他路径均统一
+
+**Phase 进度**：79-84 全部未启动。Executor 连续 5 轮不活跃。
 
 ### 审计 A102（2026-03-11）— Inspect AI 端到端 + SFT 轨迹质量（维度 B+A）
 

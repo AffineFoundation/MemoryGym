@@ -72,6 +72,10 @@
 - L287-302 result dict 添加 `"writes_used": writes_used`
 - L559 `_build_per_seed_axis_scores` 改为 `v.get("writes_used", stored_count)`
 
+**修复 3 — bench.py/stream_agent.py 未关闭 backend**（审计 A103）：
+- bench.py L248 后（`run_stream_agent` 返回后）添加 `backend_obj.close()`（用 `if hasattr(backend_obj, 'close')`）
+- 或更好：在 `run_stream_agent` 末尾（L870 前）添加 `backend.close()`
+
 **验证**：`python -m pytest tests/ -q` 全部通过
 
 ### Phase 81+82 合并 — 训练基础设施修复（SFT 转义 + adapters 泄漏）
