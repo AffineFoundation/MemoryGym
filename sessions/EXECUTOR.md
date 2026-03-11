@@ -57,66 +57,53 @@
 
 ## 当前任务
 
-### Phase 67 — MemoryEnv 资源泄漏修复 + stale 元数据清理
+### Phase 68 — env.py 漂移修复（RNG + eval_salt + backend + version）
 
-**依据**：审计 A72 代码深度审计发现 2 个真实 bug + 1 个元数据问题。
+**依据**：审计 A72 RNG 不一致 + 审计 A76 发现 `memorygym/env.py`（affinetes 入口）与 bench.py 有 4 处不一致。
 
-#### Bug 1 — ChromaDB Collection 泄漏（中等严重度）
+**注意**：bench.py、training/env.py、eval_task.py 的 RNG 已对齐（`seed+3333`/`seed+5555`），**只剩 `memorygym/env.py` 未修复**。
 
-`memorygym/training/env.py` L472: `reset()` 每次创建新 ChromaDB collection（`_make_backend()` → `ChromaDBBackend(collection_name=f"memenv_{uuid...}")`），但旧 collection 永远不被删除。
+**`memorygym/env.py` 需修复 4 处**：
 
-**影响**：训练循环 100+ episodes → 100+ orphaned collections 累积在内存中，导致内存膨胀。
-
-**修复方案**：
-1. 在 `_make_backend()` 调用前，如果 `self._backend` 已存在且是 ChromaDBBackend，调用清理（delete collection 或 reset）
-2. 或者：给 MemoryEnv 添加 `close()` 方法 + `__del__` fallback
-3. ChromaDBBackend 需要暴露 cleanup 接口（目前没有）
-
-**验证**：在 `tests/test_training.py` 添加测试：多次 `env.reset()` 后，旧 collections 不再存在。
-
-#### Bug 2 — MarkdownBackend 临时目录泄漏（低严重度）
-
-`memorygym/memory/backends/markdown_backend.py` L39-41: `__init__` 创建 `/tmp/memorygym_md_*` 目录，无清理。
-
-**修复方案**：添加 `close()` 方法清理目录，`__del__` fallback。
-
-#### 清理 — stale mem0 元数据
-
-1. 删除 `memorygym/memory/backends/__pycache__/mem0_backend.cpython-312.pyc`（Phase 58 删了源文件但 pycache 残留）
-2. 重新生成 egg-info：`pip install -e .`（会更新 SOURCES.txt 和 requires.txt，移除 mem0 引用）
-
-#### 验证标准
-- `python -m pytest tests/ -q` 全部通过
-- `python -m memorygym.training smoke` 通过
-- 新测试：MemoryEnv 多次 reset() 后无 orphan collections
-- `find /tmp -name "memorygym_md_*" -mmin +1` 无残留（close 后清理）
-- `grep mem0 memorygym.egg-info/SOURCES.txt` 无结果
-
-### Phase 68 — 训练-评测 RNG 一致性对齐
-
-**依据**：审计 A72 发现 bench.py 和 training/env.py 的 RNG 种子策略与 simulation.py 不一致。
-
-**现状**：
-- `simulation.py` 用分离的 RNG：`rng_correct = Random(seed + 3333)`, `rng_stream = Random(seed + 5555)`, `rng_q = Random(seed + 7777)`
-- `bench.py` 和 `training/env.py` 用单一 `rng = Random(seed)`，corrections 和 stream 共享同一 RNG
-
-**影响**：同一 seed 在 simulation、bench、training 三个路径产生不同的 corrections 和 stream 顺序。虽然各路径内部确定性，但无法跨路径对比调试。
-
-**修复方案**：
-1. 在 `bench.py` L193 将 `rng = Random(seed)` 改为：
+1. **L228 RNG 未对齐**：
    ```python
+   # Before: rng = Random(seed)
+   # After:
    rng_correct = Random(seed + 3333)
    corrections = tmpl.generate_corrections(world, rng_correct, n_corrections)
+   # ...
+   rng_stream = Random(seed + 5555)
+   stream = tmpl.generate_stream(world, rng_stream, corrections, ...)
    ```
-2. stream 生成用 `rng_stream = Random(seed + 5555)`
-3. `training/env.py` L452 做同样修改
-4. `env.py`（根目录 affinetes）L228 做同样修改
-5. `worlds/eval_task.py` L182 做同样修改
+
+2. **L226 缺 eval_salt**：
+   ```python
+   # Before: world = tmpl.generate_world(seed=seed, n_entities=n_entities)
+   # After:
+   world = tmpl.generate_world(seed=seed, n_entities=n_entities, eval_salt=tier_cfg.get("eval_salt", 1))
+   ```
+
+3. **L245 后端硬编码**：
+   ```python
+   # Before: backend_obj = ChromaDBBackend()
+   # After:
+   if backend_type == "markdown":
+       from memorygym.memory.backends.markdown_backend import MarkdownBackend
+       backend_obj = MarkdownBackend()
+   else:
+       backend_obj = ChromaDBBackend()
+   ```
+
+4. **L305 缺 version**：
+   ```python
+   # 在 extra dict 中添加：
+   "version": __version__,  # 需要顶部 from memorygym import __version__
+   ```
 
 **验证标准**：
 - `python -m pytest tests/ -q` 全部通过
-- `python -m memorygym.bench --seeds 3 --validate` ALL PASS
-- grep 确认所有 4 个文件使用 `seed + 3333` / `seed + 5555` 模式
+- grep 确认 `memorygym/env.py` 使用 `seed + 3333` / `seed + 5555`
+- grep 确认 `memorygym/env.py` 有 `eval_salt`、`__version__`、`MarkdownBackend` 引用
 
 ### Phase 69 — MarkdownBackend temporal decay 搜索
 
@@ -210,6 +197,10 @@ f"Be selective — store what matters most."
 - **注意**：此变更会影响 v3 eval 分数（模型失去策略提示可能表现更差），这是预期行为——v4 基线需重新建立
 
 ---
+
+### Phase 67 — MemoryEnv 资源泄漏修复 ✅
+
+ChromaDB collection + MarkdownBackend tmpdir 清理。`close()` 添加到两个后端 + MemoryEnv.close() + __del__。343 passed, 1 skipped。
 
 ### Phase 57 — 系统提示词中立化 ✅
 

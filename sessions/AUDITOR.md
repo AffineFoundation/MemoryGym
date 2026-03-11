@@ -153,11 +153,11 @@ sessions/AUDITOR.md（你，/loop 30m）— 调度中枢：审计、设计、方
 
 ## 当前任务
 
-### 审计 A76 — 下一轮
+### 审计 A77 — 下一轮
 
-- Phase 67-71 执行进度
+- Phase 68-72 执行进度
 - 批次 15 进展
-- 代码审计：bench.py 与 stream_agent.py 一致性
+- 维度 C：前沿搜索 V8（距 A73 已 4 轮）
 
 ## 待跟进
 
@@ -171,6 +171,23 @@ sessions/AUDITOR.md（你，/loop 30m）— 调度中枢：审计、设计、方
 ## 审计日志
 
 （每次审计的结论摘要，最新在最上面。保持简洁，详细分析写 devlog/。）
+
+### 审计 A76（2026-03-11）— bench.py 一致性审计 + env.py 漂移发现（维度 B）
+
+**Phase 67 ✅ 已完成**：commit `7260c47`，ChromaDB collection + MarkdownBackend tmpdir 清理，`close()` + `__del__` + 3 个新测试。343 passed。代码审查通过，实现质量好。
+
+**Phase 68-71 未启动**。批次 15 进度 0/6。
+
+**bench.py vs env.py 一致性审计** — 发现 `memorygym/env.py`（affinetes 入口）与 bench.py 有 4 处不一致：
+
+1. **RNG 未对齐**（L228）：`rng = Random(seed)` corrections 和 stream 共享 → bench.py 已用 `seed+3333`/`seed+5555`。同一 seed 产生不同场景
+2. **缺 eval_salt**（L226）：`generate_world(seed, n_entities)` → bench.py 传 `eval_salt=args.eval_salt`。训练防过拟合参数缺失
+3. **后端硬编码**（L245）：`ChromaDBBackend()` → 函数签名有 `backend_type` 参数但从未使用
+4. **缺 version 字段**（L305）：`extra` 中无 `"version": __version__` → 无法区分 eval 数据版本
+
+**影响**：affinetes 评测路径产出的 eval 结果与 bench.py 不可比。这 4 个 bug 应合并到 Phase 68（RNG 已在范围内）扩展修复。
+
+**更新 Phase 68 → EXECUTOR.md**（扩展范围：env.py 4 处修复）。
 
 ### 审计 A75（2026-03-11）— training/env.py 审计 + 事件格式策略泄漏（维度 A+B）
 
