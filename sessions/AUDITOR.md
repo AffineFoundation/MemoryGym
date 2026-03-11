@@ -153,11 +153,11 @@ sessions/AUDITOR.md（你，/loop 30m）— 调度中枢：审计、设计、方
 
 ## 当前任务
 
-### 审计 A105 — 下一轮
+### 审计 A106 — 下一轮
 
-- Phase 79-85 执行进度（executor 连续 6 轮不活跃——考虑是否需要调整优先级或合并任务）
-- 维度 B：test_path_consistency.py 是否覆盖了 A102-A104 发现的问题（tool name, default values）
-- 维度 A：simulation.py 9 strategies 的分数区间是否在 CLAUDE.md 规定范围内
+- Phase 81-85 执行进度（Phase 79+80 ✅）
+- 维度 B：Phase 84（Inspect AI 工具名）和 Phase 85（eval_task 默认值）完成后，test_path_consistency 应追加测试
+- 维度 A：training/env.py MemoryEnv.reset() 与 generate_sft_trajectory() 的参数是否一致
 
 ## 待跟进
 
@@ -171,6 +171,22 @@ sessions/AUDITOR.md（你，/loop 30m）— 调度中枢：审计、设计、方
 ## 审计日志
 
 （每次审计的结论摘要，最新在最上面。保持简洁，详细分析写 devlog/。）
+
+### 审计 A105（2026-03-11）— test_path_consistency 覆盖 + simulation 验证（维度 B+A）
+
+**Phase 进度**：Phase 79+80 ✅（commit `4c8f3a1`，executor 恢复活跃）。Phase 81-85 待执行。
+
+**Simulation 验证**：`--seeds 3 --validate` ALL PASS。所有 9 策略不变量通过。
+- 注意：composite 级别 strategic>naive 检查不包含 +10% margin（L633-634），CLAUDE.md 要求 +10%。per-template accuracy 级别有 +10% 检查（L548）。不影响正确性，仅记录。
+
+**test_path_consistency.py 覆盖分析**：
+当前 5 个测试类覆盖：eval_salt, Edit fallback guard, strategy leakage, Edit refund, RNG seeds。
+
+**未覆盖的 A102-A104 发现**：
+1. **Inspect AI 工具名**（A102）：`@tool` 应用 `name="Write"` — test_path_consistency 不检查。Phase 84 修复后应追加测试
+2. **eval_task.py 默认 n_entities**（A104）：200 vs bench.py 60 — 无一致性测试。Phase 85 修复后应追加测试
+
+**不派发新 Phase**——这些测试应在 Phase 84/85 完成后由 executor 顺带添加，不需要单独 Phase。
 
 ### 审计 A104（2026-03-11）— TIERS 一致性 + 用户体验（维度 A+D）
 

@@ -59,24 +59,9 @@
 
 > **注意**：5 个 Phase 积压（A99 审计清理）。按优先级排序，从上往下执行。每个 Phase 都是独立的小任务（<30 行改动）。
 
-### Phase 79+80 合并 — 数据质量修复（stream_agent + bench.py）
+### Phase 79+80 合并 — 数据质量修复 ✅
 
-**这是 2 个小修复合并为 1 个 commit，涉及 2 个文件。**
-
-**修复 1 — stream_agent.py 死代码 + write 计数**（审计 A94）：
-- 删除 `_parse_and_execute`（L160-183，死代码，从未调用）
-- 修复 `_run_tool_loop` L270-282: write 计数在 execute_tool 前。改为比较 `budget.writes_used` 前后差值
-
-**修复 2 — bench.py 时间计量 + writes_used**（审计 A95）：
-- L251 `seed_elapsed = time.time() - t0` 是累积值。改为每 seed 前 `seed_t0 = time.time()`
-- L287-302 result dict 添加 `"writes_used": writes_used`
-- L559 `_build_per_seed_axis_scores` 改为 `v.get("writes_used", stored_count)`
-
-**修复 3 — bench.py/stream_agent.py 未关闭 backend**（审计 A103）：
-- bench.py L248 后（`run_stream_agent` 返回后）添加 `backend_obj.close()`（用 `if hasattr(backend_obj, 'close')`）
-- 或更好：在 `run_stream_agent` 末尾（L870 前）添加 `backend.close()`
-
-**验证**：`python -m pytest tests/ -q` 全部通过
+commit `4c8f3a1`：stream_agent dead code + write count fix + backend.close(), bench.py per-seed timing
 
 ### Phase 81+82 合并 — 训练基础设施修复（SFT 转义 + adapters 泄漏）
 
