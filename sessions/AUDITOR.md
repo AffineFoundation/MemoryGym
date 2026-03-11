@@ -153,11 +153,11 @@ sessions/AUDITOR.md（你，/loop 30m）— 调度中枢：审计、设计、方
 
 ## 当前任务
 
-### 审计 A94 — 下一轮
+### 审计 A95 — 下一轮
 
-- Phase 78 执行进度
-- 批次 16 派发
-- 代码审计：stream_agent.py agent 运行循环 + 自适应问题替换（维度 B）
+- Phase 78 + 79 执行进度
+- 批次 16 进度
+- 代码审计：bench.py CLI 入口 + 评分输出逻辑（维度 B）
 
 ## 待跟进
 
@@ -171,6 +171,22 @@ sessions/AUDITOR.md（你，/loop 30m）— 调度中枢：审计、设计、方
 ## 审计日志
 
 （每次审计的结论摘要，最新在最上面。保持简洁，详细分析写 devlog/。）
+
+### 审计 A94（2026-03-11）— stream_agent.py 运行循环 + 自适应问题替换审计（维度 B）
+
+**Phase 进度**：Phase 78 未启动（executor 尚未拾取）。批次 16 未启动（无 Qwen3.5 eval 文件）。
+
+**stream_agent.py 审计**（871 行）：
+
+1. **Dead code `_parse_and_execute`**（L160-183）：定义但从未被调用。功能已内联到 `_run_tool_loop`（L266-281）。
+2. **stats.writes 过度计数**（L270-282）：Write/Edit 在 `execute_tool` 执行前就计数，被拒绝的写入（预算耗尽 L86-87、Edit miss L106/L116）也被统计。影响 trajectory JSON 的 `n_writes` 字段和 `AgentResult.n_writes`。eval_task.py L145-154 有相同模式。**不影响评分**（评分用 `budget.writes_used`），但影响 eval 数据质量。
+3. **`_BARE_JSON_RE` 不支持嵌套大括号**（L95-97）：bare JSON 中 arguments 含 `{` 会匹配失败。低优先级——是 XML 和 markdown 解析之后的第三级 fallback。
+4. **自适应问题替换一致**：stream_agent.py（L602-607）、eval_task.py（L312-318）、bench.py（通过 run_stream_agent）三路径均调用 `maybe_replace_comprehension`，参数一致（`rng_seed=seed+event_idx`）。training/env.py 不使用——SFT 路径知道 GT，无需替换，设计正确。
+5. **_tool_helpers.py**（160 行）：execute_tool 逻辑清晰，Edit refund 正确（L106/L116），Write 2000 字符限制（L84），budget 检查在 consume 之前（L86-88）。✅
+
+**派发 Phase 79 → EXECUTOR.md**：清理死代码 + 修复 write 计数准确性。
+
+**训练反馈**：F1-F7 无变化，无新反馈。
 
 ### 审计 A93（2026-03-11）— render 审计 + 批次 15 完成确认 + 批次 16 派发（维度 B+E）
 

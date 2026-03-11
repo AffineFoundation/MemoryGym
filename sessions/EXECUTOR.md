@@ -77,6 +77,25 @@
 - `python -m pytest tests/ -q` 全部通过
 - 新测试覆盖全部 20 种推理类型
 
+### Phase 79 — stream_agent.py 死代码清理 + write 计数修复
+
+**依据**：审计 A94 发现两个问题。
+
+**问题 1 — 死代码 `_parse_and_execute`**（`stream_agent.py` L160-183）：
+定义但从未被调用。其功能已内联到 `_run_tool_loop`（L266-281）。直接删除。
+
+**问题 2 — `stats.writes` 过度计数**（`stream_agent.py` L270-282）：
+Write/Edit 在 `execute_tool` 前就计数（`n_w += 1`），被拒绝的写入也被统计。应该在 execute_tool 之后，根据返回结果判断是否实际消费了写入预算。
+
+**修复方案**：
+1. 删除 `_parse_and_execute` 函数
+2. 在 `_run_tool_loop` 中，将 write 计数移到 `execute_tool` 之后，检查是否实际消费了预算（通过比较 `budget.writes_used` 前后差值）
+
+**验证标准**：
+- `python -m pytest tests/ -q` 全部通过
+- `_parse_and_execute` 不存在
+- stats.writes 只计实际消费的写入
+
 ### Phase 77 — events.py contradiction 丢失 bug + 中流问题权重不一致 ✅
 
 **依据**：审计 A90 发现 events.py 事件流生成 2 个问题。
