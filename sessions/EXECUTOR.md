@@ -57,7 +57,36 @@
 
 ## 当前任务
 
-> **Phase 79-85 全部完成。** 以下是新任务。
+> **Phase 79-86 全部完成。** 以下是新任务。
+
+### Phase 87 — SFT 轨迹连续 user 消息合并
+
+**问题**：`generate_sft_trajectory()` 产出的消息序列中有 28/132（21%）连续 user 消息对。模式：tool result (role=user) 后紧接 next event (role=user)。TRL SFTTrainer 和 unsloth 要求严格 user/assistant 交替，这会导致训练失败。
+
+**修复**：在 `memorygym/training/env.py` 的 `generate_sft_trajectory()` 中，当 tool result 后紧接新 event 时，合并为单条 user 消息（用 `\n\n---\n\n` 分隔）。
+
+**验证**：
+1. `python -m pytest tests/test_training.py -q` 全部通过
+2. 添加测试：`test_sft_no_consecutive_same_role` — 验证无连续同角色消息
+3. 生成 JSONL 验证消息数减少但内容完整
+
+**注意**：只改 SFT 轨迹生成，不改 MemoryEnv step 接口（RL 不需要严格交替）。
+
+### Phase 88 — docs/ROADMAP.md 同步更新
+
+**问题**：ROADMAP.md 多处与代码现状不一致（审计 A114 发现）。
+
+**更新清单**：
+1. §0 测试数 "341" → "393"
+2. §0 simulation 版本 "v0.6.7" → "v0.8.6"
+3. §0 已完成列表追加 Phase 66-86（简要一行）
+4. §0 eval 数据 "50 次评测" → "62 次评测"
+5. §2.7 测试数同步
+6. §3.1 数据表更新（Qwen3.5 N=23, Kimi N=18, MiniMax N=9, GLM-5 N=5；均值需重算）
+7. §6 MarkdownBackend 临时目录泄漏 → 标记 ✅（Phase 79 已修 close()）
+8. CLAUDE.md §常用命令 追加 training CLI：`python -m memorygym.training data --seeds 5 --templates company`
+
+**验证**：数据表均值用 eval/*.json 实际计算，不要猜。
 
 ### Phase 86 — test_path_consistency 扩展 + flaky test 修复 ✅
 

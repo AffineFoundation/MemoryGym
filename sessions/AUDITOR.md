@@ -153,11 +153,10 @@ sessions/AUDITOR.md（你，/loop 30m）— 调度中枢：审计、设计、方
 
 ## 当前任务
 
-### 审计 A113 — 下一轮
+### 审计 A115 — 下一轮
 
-- 维度 E：批次 17 数据到位后分析（hospital/sport/research v0.8.x）
-- 维度 A：training CLI `data` subcommand 端到端测试——`python -m memorygym.train data` 能否产出可用 JSONL？
-- 维度 D：文档 audit——CLAUDE.md §常用命令 是否覆盖训练 CLI？docs/ROADMAP.md 是否过时？
+- 维度 E：批次 17 数据到位后分析（evaluator 仍未执行）
+- 维度 A：Phase 87+88 验证
 
 ## 待跟进
 
@@ -171,6 +170,36 @@ sessions/AUDITOR.md（你，/loop 30m）— 调度中枢：审计、设计、方
 ## 审计日志
 
 （每次审计的结论摘要，最新在最上面。保持简洁，详细分析写 devlog/。）
+
+### 审计 A113+A114（2026-03-11）— SFT 消息格式 + ROADMAP 漂移 + 62 eval 数据概览（维度 A+B+E）
+
+**A113：Training CLI 验证**（维度 A）：
+- `python -m memorygym.training` 正确 ✓，`memorygym.train` 不存在（仅 discoverability 问题，非 bug）
+- CLAUDE.md §常用命令 缺少训练 CLI 命令
+
+**A114-1：SFT 连续 user 消息**（维度 A）：
+- 132 条消息中有 **28 对连续 user 消息**（21%）。模式：tool result (role=user) 紧接 next event (role=user)
+- OpenAI API 允许连续 user，但 **TRL SFTTrainer 和 unsloth 要求严格交替**
+- **修复方案**：合并 tool result + next event 为单条 user 消息（`\n\n---\n\n` 分隔）
+- **→ 派发 Phase 87**
+
+**A114-2：docs/ROADMAP.md 漂移**（维度 B）：
+- §0 测试数 "341" → 实际 393。Phase 66-86 未列入已完成
+- §0 版本 "v0.6.7" → 实际 v0.8.6
+- §3.1 "50 次评测" → 实际 62 个文件，5 模型
+- §6 "MarkdownBackend 临时目录泄漏" — Phase 79 已修复 close()
+- §6 "MemoryEnv ChromaDB 资源泄漏" — 仍存在
+- §2.7 测试数过期
+- **→ 派发 Phase 88**
+
+**A114-3：Eval 数据概览**（维度 E）：
+- 62 个 eval 文件：Qwen3.5(23), Kimi(18), MiniMax(9), Qwen3-235B(7), GLM-5(5)
+- Company v0.8.0（10 seeds s0-s9）：mean composite ≈ **27.3%**（含 s1=4.2% 离群）
+- Hospital/sport/research/city/movie：仍为旧版本（v0.5.0-v0.6.7），**batch 17 未执行**
+- Qwen3.5 跨模板（旧版本）：sport_s0=41.3%, research_s1=30.7%, hospital_s0=22.7%, city_s1=33.7%, movie_s1=21.2%
+- Kimi 最高：research_s1=41.8%, city_s1=35.7%, research_s2=33.8%
+
+**派发**：Phase 87（SFT 消息合并）、Phase 88（ROADMAP 同步）
 
 ### 审计 A112（2026-03-11）— Phase 86 ✅ + CLI 一致性 + eval 数据等待（维度 A+E）
 
