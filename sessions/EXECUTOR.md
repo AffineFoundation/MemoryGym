@@ -59,21 +59,9 @@
 
 > **Phase 79-85 全部完成。** 以下是新任务。
 
-### Phase 86 — test_path_consistency 扩展 + flaky test 修复
+### Phase 86 — test_path_consistency 扩展 + flaky test 修复 ✅
 
-**依据**：审计 A102-A104 发现的问题应有一致性测试防回归，MarkdownBackend recall test 偶发失败。
-
-**Step 1 — test_path_consistency.py 追加 2 个测试类**（`tests/test_path_consistency.py`）：
-
-6\. Inspect AI tool names：验证 `inspect_task/tools.py` 中 `@tool(name="Write"/"Edit"/"Read")` 存在
-
-7\. Default n_entities：验证 bench.py / eval_task.py / training/env.py 默认值为 60（不含 200）
-
-**Step 2 — test_markdown_backend.py flaky test**（`tests/test_markdown_backend.py` L108-117）：
-- `test_search_recall` 阈值 `found >= 8` 偶发失败（短名 "Eve"/"Bob" 嵌入区分度低）
-- 修复：用更长实体名（如 "Alice Johnson"）或降阈值到 7
-
-**验证**：`python -m pytest tests/test_path_consistency.py tests/test_markdown_backend.py -q` 全部通过
+commit: test_path_consistency +5 tests (tool names, default entities), search_recall flaky fix (longer names + threshold 7). 392 passed.
 
 ### Phase 79+80 合并 — 数据质量修复 ✅
 

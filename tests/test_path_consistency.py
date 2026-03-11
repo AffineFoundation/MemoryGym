@@ -155,3 +155,47 @@ class TestRNGSeeds:
         # All paths should use seed + 3333 for corrections RNG
         assert re.search(r"seed\s*\+\s*3333", src), \
             f"{relpath}: missing seed+3333 for corrections RNG"
+
+
+# ---------------------------------------------------------------------------
+# 6. Inspect AI tool names use @tool(name=...)
+# ---------------------------------------------------------------------------
+
+class TestInspectToolNames:
+    """Inspect AI tools must register with OpenClaw-compatible names."""
+
+    _EXPECTED_NAMES = ["Write", "Edit", "Read"]
+
+    def test_tool_decorators_have_correct_names(self):
+        src = _read("inspect_task/tools.py")
+        for name in self._EXPECTED_NAMES:
+            pattern = rf'@tool\(\s*name\s*=\s*"{name}"\s*\)'
+            assert re.search(pattern, src), \
+                f'inspect_task/tools.py missing @tool(name="{name}")'
+
+
+# ---------------------------------------------------------------------------
+# 7. Default n_entities = 60 across all paths (not 200)
+# ---------------------------------------------------------------------------
+
+class TestDefaultEntities:
+    """All paths must default to n_entities=60, not the old 200."""
+
+    _PATHS = [
+        "worlds/eval_task.py",
+        "training/env.py",
+    ]
+
+    @pytest.mark.parametrize("relpath", _PATHS)
+    def test_default_n_entities_is_60(self, relpath: str):
+        src = _read(relpath)
+        # Check function signature defaults to 60
+        assert re.search(r"n_entities[:\s]*int\s*=\s*60", src), \
+            f"{relpath}: n_entities default should be 60"
+
+    @pytest.mark.parametrize("relpath", _PATHS)
+    def test_no_hardcoded_200_entities(self, relpath: str):
+        src = _read(relpath)
+        # Should not have old default of 200 for n_entities
+        assert not re.search(r"n_entities\s*=\s*200", src), \
+            f"{relpath}: still has old n_entities=200 default"
