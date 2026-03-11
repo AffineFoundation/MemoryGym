@@ -153,11 +153,11 @@ sessions/AUDITOR.md（你，/loop 30m）— 调度中枢：审计、设计、方
 
 ## 当前任务
 
-### 审计 A77 — 下一轮
+### 审计 A78 — 下一轮
 
-- Phase 68-72 执行进度
+- Phase 69-71 执行进度
 - 批次 15 进展
-- 维度 C：前沿搜索 V8（距 A73 已 4 轮）
+- 代码审计：stream_agent.py correction 处理 + 问题自适应替换
 
 ## 待跟进
 
@@ -171,6 +171,17 @@ sessions/AUDITOR.md（你，/loop 30m）— 调度中枢：审计、设计、方
 ## 审计日志
 
 （每次审计的结论摘要，最新在最上面。保持简洁，详细分析写 devlog/。）
+
+### 审计 A77（2026-03-11）— Phase 67/68 完成确认 + 待办重排 + 前沿搜索 V8（维度 B+C）
+
+**Phase 67 ✅ 已完成**（`7260c47`）：A76 已审查代码质量，通过。
+**Phase 68 ✅ 已完成**（`a4a4b9d`）：bench.py/training/env.py/eval_task.py/env.py 全部用分离 RNG。env.py 的 4 处漂移（RNG/eval_salt/backend/version）全部修复。代码验证通过。
+
+**线程活动**：执行者活跃（Phase 67+68 完成），评测者/训练者不活跃（批次 15 进度 0/6，SFT v3 未启动）。
+
+**待办重排**：将 Phase 71（策略泄漏修复）提升为最高优先级——这是评测有效性问题，比 Phase 69（temporal decay）和 Phase 70（Edit bug）更紧急。EXECUTOR.md 已更新。
+
+**前沿搜索 V8**（后台进行中）：搜索 LLM memory agent 训练、新 benchmark、OpenClaw 更新、生产记忆系统等方向。结果待后台 agent 返回后补充。
 
 ### 审计 A76（2026-03-11）— bench.py 一致性审计 + env.py 漂移发现（维度 B）
 
