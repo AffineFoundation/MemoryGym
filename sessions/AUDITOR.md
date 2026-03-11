@@ -153,11 +153,11 @@ sessions/AUDITOR.md（你，/loop 30m）— 调度中枢：审计、设计、方
 
 ## 当前任务
 
-### 审计 A78 — 下一轮
+### 审计 A79 — 下一轮
 
 - Phase 69-71 执行进度
 - 批次 15 进展
-- 代码审计：stream_agent.py correction 处理 + 问题自适应替换
+- 代码审计：simulation.py 策略 vs 评分一致性
 
 ## 待跟进
 
@@ -171,6 +171,23 @@ sessions/AUDITOR.md（你，/loop 30m）— 调度中枢：审计、设计、方
 ## 审计日志
 
 （每次审计的结论摘要，最新在最上面。保持简洁，详细分析写 devlog/。）
+
+### 审计 A78（2026-03-11）— stream_agent.py 代码审计 + Phase 71 扩展（维度 B）
+
+**env.py 漂移修复确认**：commit `30cf424` 修复了 env.py 的 4 处不一致（RNG/eval_salt/backend/version）。Phase 68 完全完成。
+
+**Phase 69-71 未启动**。批次 15 进度 0/6。
+
+**stream_agent.py correction 处理审计**：
+
+1. **CORRECTION 事件步骤提示**（L535-541）：`"1. memory_search \"{entity_name}\"\n2. Edit the old value..."` 规定了精确搜索查询和工作流。这与 Phase 71 的 INGEST 策略泄漏属同类问题——违反 CLAUDE.md "检索定位：用正确的查询策略找到已存储的信息"。
+   - **扩展 Phase 71 Part B**：移除 CORRECTION 事件中的步骤提示和精确搜索查询。→ 已追加到 EXECUTOR.md
+
+2. **Adaptive question replacement**（L614-621）：`maybe_replace_comprehension` 正确实现。当 required entities 未存储时，用 stored entities 生成替代问题。设计合理：breadth 轴已惩罚低存储量，comprehension 轴只测 "能否从已存数据推理"。
+
+3. **Error → break 策略**（L643-662, L609-612）：API 错误后跳过所有后续事件。合理——API 故障通常持续，继续重试浪费成本。
+
+4. **`detect_stored_entities` 复杂度**：O(E × S × A) per question，standard tier = 60×30×23 = 41K iterations/question。相对 LLM API 调用时间可忽略。
 
 ### 审计 A77（2026-03-11）— Phase 67/68 完成确认 + 待办重排 + 前沿搜索 V8（维度 B+C）
 

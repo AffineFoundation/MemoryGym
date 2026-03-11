@@ -94,10 +94,30 @@ f"Be selective — store what matters most."
 
 3 个文件的 budget_ctx 都做相同修改。同时删除 `suggested` 计算逻辑（不再需要）。
 
+**Part B — CORRECTION 事件步骤提示移除**（审计 A78 追加）
+
+`stream_agent.py` L535-541 和 `training/env.py` L425-430 的 CORRECTION 事件中：
+```python
+# Before:
+f"ACTION REQUIRED: You must update your stored memory.\n"
+f"1. memory_search \"{entity_name}\"\n"
+f"2. Edit the old value to the corrected value\n"
+
+# After:
+f"A correction has been issued. Decide how to handle it.\n"
+f"Budget: {budget.remaining()} writes remaining."
+```
+移除原因：
+- `memory_search "{entity_name}"` 给出了精确搜索查询 → 应由 agent 自己从 notice 文本提取
+- 步骤列表规定了 search→edit 工作流 → 应由 agent 自己决定如何处理
+- 保留 "A correction has been issued" 提示（agent 需知道这是修正事件）和 budget 信息
+
+`eval_task.py` 的 CORRECTION 格式也需同步检查。
+
 **验证标准**：
 - `python -m pytest tests/ -q` 全部通过（更新 test_training.py L223 的 "Corrections coming:" 断言）
 - `python -m memorygym.bench --seeds 3 --validate` ALL PASS
-- grep 确认 3 个文件中无 "Corrections coming" 和 "Suggestion: store"
+- grep 确认 3 个文件中无 "Corrections coming"、"Suggestion: store"、"ACTION REQUIRED"
 - **注意**：此变更会影响 v3 eval 分数（模型失去策略提示可能表现更差），这是预期行为——v4 基线需重新建立
 
 ### Phase 70 — ChromaDB Edit fallback 静默失败修复
