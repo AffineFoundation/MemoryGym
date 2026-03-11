@@ -371,6 +371,18 @@ class MemoryEnv:
         self._backend_type = backend_type
         self._backend = self._make_backend()
 
+    def close(self) -> None:
+        """Clean up backend resources."""
+        if self._backend is not None and hasattr(self._backend, "close"):
+            self._backend.close()
+            self._backend = None
+
+    def __del__(self) -> None:
+        try:
+            self.close()
+        except Exception:
+            pass
+
     def _make_backend(self):
         """Create a fresh backend instance."""
         if self._backend_type == "markdown":
@@ -468,7 +480,9 @@ class MemoryEnv:
         )
         self._event_idx = 0
         self._mem_counter = 0
-        # Reset backend
+        # Clean up old backend before creating new one
+        if self._backend is not None and hasattr(self._backend, "close"):
+            self._backend.close()
         self._backend = self._make_backend()
         self._writes_used = 0
         self._questions_answered = 0

@@ -183,3 +183,10 @@ class ChromaDBBackend:
             name=self._collection.name,
             embedding_function=self._ef,
         )
+
+    def close(self) -> None:
+        """Delete the collection to free resources."""
+        try:
+            self._client.delete_collection(self._collection.name)
+        except Exception:
+            pass

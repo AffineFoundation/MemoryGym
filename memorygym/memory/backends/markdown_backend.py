@@ -158,3 +158,9 @@ class MarkdownBackend:
         """Clear the memory file and index."""
         self._file.write_text("")
         self._reindex()
+
+    def close(self) -> None:
+        """Remove the temp directory if it exists under /tmp."""
+        import shutil
+        if self._dir.exists() and str(self._dir).startswith("/tmp/"):
+            shutil.rmtree(self._dir, ignore_errors=True)

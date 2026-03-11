@@ -504,3 +504,44 @@ class TestMemoryEnv:
             "args": {"query": "entity"}
         })
         assert reward == 0.1
+
+    def test_reset_cleans_old_chromadb_collection(self):
+        """Multiple reset() calls should not leak ChromaDB collections."""
+        env = MemoryEnv("company", seed=0, n_entities=10,
+                        n_questions=3, backend_type="chromadb")
+        env.reset(seed=0)
+        # Store something so collection isn't empty
+        env.step({"tool": "Write", "args": {"content": "entity A data"}})
+        old_client = env._backend._client
+        old_name = env._backend._collection.name
+        # Reset creates new backend, old collection should be cleaned up
+        env.reset(seed=1)
+        # Old collection should no longer exist
+        existing_names = [c.name for c in old_client.list_collections()]
+        assert old_name not in existing_names, (
+            f"Old collection {old_name} still exists after reset()")
+        env.close()
+
+    def test_reset_cleans_old_markdown_tmpdir(self):
+        """Multiple reset() calls should not leak /tmp directories."""
+        import os
+        env = MemoryEnv("company", seed=0, n_entities=10,
+                        n_questions=3, backend_type="markdown")
+        env.reset(seed=0)
+        old_dir = env._backend._dir
+        assert old_dir.exists()
+        # Reset should clean up old temp dir
+        env.reset(seed=1)
+        assert not old_dir.exists(), (
+            f"Old temp dir {old_dir} still exists after reset()")
+        env.close()
+
+    def test_env_close_cleans_up(self):
+        """MemoryEnv.close() cleans up backend resources."""
+        env = MemoryEnv("company", seed=0, n_entities=10,
+                        n_questions=3, backend_type="markdown")
+        env.reset(seed=0)
+        tmpdir = env._backend._dir
+        assert tmpdir.exists()
+        env.close()
+        assert not tmpdir.exists()
