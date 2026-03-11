@@ -59,6 +59,53 @@
 
 > **Phase 79-86 全部完成。** 以下是新任务。
 
+### Phase 89 — SFT 轨迹 budget 超支修复 ⚡ 最高优先
+
+**问题**：`generate_sft_trajectory()` 中 `store_ratio` 只控制选哪些实体存储，不限制总写入数。结果：
+- perfect 策略：61 次 Write，budget=30（超 2x）
+- strategic 策略：43 次 Write，budget=30（超 43%）
+- **模型从 SFT 学到"无视预算"**，这是训练信号质量的根本缺陷
+
+**修复**：在 `generate_sft_trajectory()` 中：
+1. 用 `write_budget` 直接 cap `stored_indices` 数量：`stored_indices = stored_indices[:write_budget]`（保留高优先实体）
+2. 对 perfect 策略：用 `entity_importance()` 排序后取 top-budget 个（不是随机截断）
+3. 对 strategic 策略：`n_store = min(int(len(all_docs) * store_ratio), write_budget)`
+4. Edit（corrections）不消耗 Write budget（与真实 eval 一致）
+
+**验证**：
+1. 添加测试 `test_sft_respects_budget`：Write 调用数 ≤ write_budget
+2. `python -m pytest tests/test_training.py -q` 全部通过
+3. 验证 perfect 策略优先存高重要性实体
+
+### Phase 90 — SFT memory_search json.dumps 修复
+
+**问题**：`training/env.py` L252 用裸字符串插值 `"{search_entity}"`，但 L139/L178/L180-181 已正确使用 `json.dumps()`。不一致且对特殊字符不安全。
+
+**修复**：L252 改为 `{json.dumps(search_entity)}`
+
+**验证**：`python -m pytest tests/test_training.py -q`
+
+### Phase 91 — 问题措辞泄漏修复（temporal_trend + comparison）
+
+**问题**：两处措辞泄漏题型信息：
+1. `temporal_trend`（questions.py L570-576）：所有 phrasing 包含完整答案分类 "strongly rising, slightly rising, flat, slightly falling, or strongly falling"——agent 看到就知道是 5 选 1
+2. `comparison`（questions.py L392）："By how much?" 仅出现在 comparison 题
+
+**修复 1**（temporal_trend）：改为开放式提问，不列出答案选项。例如：
+- "Describe the overall trend of {entity}'s {attr} over time."
+- "How has {entity}'s {attr} changed across the recorded periods?"
+- "What pattern does {entity}'s {attr} show over time?"
+答案验证不变（仍匹配 5 级分类），但问题不泄漏分类体系。
+
+**修复 2**（comparison）：合并为通用比较措辞，不用 "By how much?"。例如：
+- "Compare {e_a} and {e_b}'s {attr}. Which is higher and what is the difference?"
+- "Between {e_a} and {e_b}, who has greater {attr} and by what margin?"
+
+**验证**：
+1. `python -m pytest tests/ -q` 全部通过（特别是 simulation validation）
+2. 确认 smart_guesser < 5% 不变量仍满足
+3. 确认答案格式不变（temporal_trend 仍返回 5 级分类，comparison 仍返回 "Entity (diff)"）
+
 ### Phase 87 — SFT 轨迹连续 user 消息合并
 
 **问题**：`generate_sft_trajectory()` 产出的消息序列中有 28/132（21%）连续 user 消息对。模式：tool result (role=user) 后紧接 next event (role=user)。TRL SFTTrainer 和 unsloth 要求严格 user/assistant 交替，这会导致训练失败。

@@ -153,10 +153,10 @@ sessions/AUDITOR.md（你，/loop 30m）— 调度中枢：审计、设计、方
 
 ## 当前任务
 
-### 审计 A115 — 下一轮
+### 审计 A116 — 下一轮
 
-- 维度 E：批次 17 数据到位后分析（evaluator 仍未执行）
-- 维度 A：Phase 87+88 验证
+- 维度 A：Phase 87-91 验证
+- 维度 E：批次 17 数据（evaluator 持续不活跃）
 
 ## 待跟进
 
@@ -170,6 +170,34 @@ sessions/AUDITOR.md（你，/loop 30m）— 调度中枢：审计、设计、方
 ## 审计日志
 
 （每次审计的结论摘要，最新在最上面。保持简洁，详细分析写 devlog/。）
+
+### 审计 A115（2026-03-11）— SFT 训练质量深审 + 问题措辞泄漏（维度 A）
+
+**Phase 87+88 状态**：executor 未活跃，未执行。**Batch 17**：evaluator 未活跃，未执行。TRAINER.md 无新反馈。
+
+**SFT 轨迹质量深审**（`training/env.py generate_sft_trajectory()`）：
+
+1. 🔴 **Budget 超支**：perfect 策略生成 61 次 Write（budget=30，超 2x），strategic 生成 43 次（超 43%）。`store_ratio` 只控制选哪些实体，不 cap 在 write_budget。**模型学到"无视预算"**
+   - → **Phase 89**：SFT 写入数必须 ≤ write_budget
+
+2. 🟡 **memory_search json.dumps 缺失**：L252 用 `"{search_entity}"` 裸插值，L178 用 `json.dumps(ename)`。虽然当前实体名不含特殊字符但不一致
+   - → **Phase 90**（与 87 合并或独立）
+
+3. ℹ️ **Correction 只影响已存实体**：这是正确设计——未存实体的 correction 应该跳过，不是 bug。Agent subagent 的"33% 正确率"分析有误——这是 store_ratio 的自然结果。
+
+**问题措辞泄漏审计**（`worlds/questions.py` + `questions_advanced.py`）：
+
+4. 🟡 **temporal_trend 泄漏答案分类**：所有 phrasing 都包含 "strongly rising, slightly rising, flat, slightly falling, or strongly falling" — 等于把答案选项给了 agent
+   - → **Phase 91**：重写为开放式 "Describe the trend of X's {attr}"
+
+5. 🟡 **comparison 独特标记**："By how much?" 仅出现在 comparison 题（L392）——agent 可识别题型
+   - → Phase 91 一并处理
+
+6. ℹ️ **synthesis/ratio/relationship 关键词**：有一定泄漏但 smart_guesser 仍 <5%，说明识别题型 ≠ 能答对（仍需存储数据+计算）。**暂不处理**，监控 smart_guesser 分数。
+
+7. ✅ **retrieval/update/abstention 保护完好**：使用相同 `_q_text()` 模板，不可区分。
+
+**派发**：Phase 89（SFT budget cap）、Phase 90（json.dumps 一致性）、Phase 91（temporal_trend + comparison 措辞修复）
 
 ### 审计 A113+A114（2026-03-11）— SFT 消息格式 + ROADMAP 漂移 + 62 eval 数据概览（维度 A+B+E）
 
