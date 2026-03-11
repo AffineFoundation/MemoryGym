@@ -3,13 +3,31 @@
 from memorygym.agents.stream_agent import (
     _execute_tool,
     _extract_tool_calls,
-    _parse_and_execute,
     _format_documents,
     SYSTEM_PROMPT,
     _TOOL_CALL_RE,
 )
 from memorygym.memory.backends.chromadb_backend import ChromaDBBackend
 from memorygym.memory.budget import MemoryBudget
+
+
+def _parse_and_execute(text, backend, budget):
+    """Test helper: parse tool calls and execute, return (results, answer, writes, searches)."""
+    results = []
+    answer = None
+    writes_before = budget.writes_used
+    n_searches = 0
+    for call in _extract_tool_calls(text):
+        name = call.get("name", "")
+        args = call.get("arguments", {})
+        result_text, submitted = _execute_tool(name, args, backend, budget)
+        results.append(f"[{name}] {result_text}")
+        if submitted is not None:
+            answer = submitted
+        if name in ("memory_search", "memory_list", "memory_get", "Read"):
+            n_searches += 1
+    n_writes = budget.writes_used - writes_before
+    return results, answer, n_writes, n_searches
 
 
 def _fresh_backend():

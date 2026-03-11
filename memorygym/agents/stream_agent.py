@@ -157,31 +157,6 @@ def _extract_tool_calls(text: str) -> list[dict]:
     return calls
 
 
-def _parse_and_execute(
-    text: str, backend: MemoryBackend, budget: MemoryBudget,
-) -> tuple[list[str], str | None, int, int]:
-    """Parse tool_call blocks and execute. Returns (results, answer, writes, searches)."""
-    results = []
-    answer = None
-    n_writes = n_searches = 0
-
-    for call in _extract_tool_calls(text):
-        name = call.get("name", "")
-        args = call.get("arguments", {})
-
-        if name in ("Write", "Edit", "memory_store"):
-            n_writes += 1
-        elif name in ("memory_search", "memory_list", "memory_get", "Read"):
-            n_searches += 1
-
-        result_text, submitted = _execute_tool(name, args, backend, budget)
-        results.append(f"[{name}] {result_text}")
-
-        if submitted is not None:
-            answer = submitted
-
-    return results, answer, n_writes, n_searches
-
 
 @dataclass
 class _LoopStats:
@@ -266,21 +241,18 @@ def _run_tool_loop(
         parsed_calls = _extract_tool_calls(text)
         results: list[str] = []
         answer: str | None = None
-        n_w = n_s = 0
+        writes_before = budget.writes_used
         for call in parsed_calls:
             name = call.get("name", "")
             args = call.get("arguments", {})
-            if name in ("Write", "Edit", "memory_store"):
-                n_w += 1
-            elif name in ("memory_search", "memory_list", "memory_get", "Read"):
-                n_s += 1
             result_text, submitted = _execute_tool(
                 name, args, backend, budget)
             results.append(f"[{name}] {result_text}")
             if submitted is not None:
                 answer = submitted
-        stats.writes += n_w
-        stats.searches += n_s
+            if name in ("memory_search", "memory_list", "memory_get", "Read"):
+                stats.searches += 1
+        stats.writes += budget.writes_used - writes_before
 
         # Capture per-turn detail for trajectory
         turn_detail: dict[str, Any] = {
@@ -867,4 +839,6 @@ def run_stream_agent(
         print(f"  {'═' * 50}")
 
     stored_contents = [e["content"] for e in backend.list()]
+    if hasattr(backend, "close"):
+        backend.close()
     return results, budget.writes_used, stored_contents, eval_error, trajectory

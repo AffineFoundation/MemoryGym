@@ -233,6 +233,7 @@ def main(argv: list[str] | None = None) -> int:
                     from memorygym.memory.backends.chromadb_backend import ChromaDBBackend
                     backend_obj = ChromaDBBackend()
 
+                seed_t0 = time.time()
                 agent_results, writes_used, stored, eval_error, traj = run_stream_agent(
                     model=args.model,
                     stream=stream,
@@ -248,7 +249,7 @@ def main(argv: list[str] | None = None) -> int:
                 )
 
                 # Convert to standard format
-                seed_elapsed = time.time() - t0
+                seed_elapsed = time.time() - seed_t0
                 correct = sum(r.correct for r in agent_results)
                 total = len(agent_results)
                 by_comp: dict[str, list[bool]] = defaultdict(list)
@@ -556,7 +557,7 @@ def _build_per_seed_axis_scores(
             by_comp_bools[comp] = [True] * c + [False] * (t - c)
 
         stored_count = v.get("stored", 0)
-        writes_used = stored_count  # simulation: writes ≈ stored count
+        writes_used = v.get("writes_used", stored_count)
 
         axes = compute_axis_scores(
             by_competency=by_comp_bools,
