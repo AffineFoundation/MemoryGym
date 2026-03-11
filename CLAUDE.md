@@ -69,6 +69,7 @@ python -m pytest tests/ -q                    # 全量测试
 python tests/test_worlds.py                    # 世界模板测试（快速迭代）
 python -m memorygym.bench --seeds 10 --validate  # Simulation 不变量检查
 python -m memorygym.bench --model xxxxxx --seed 42 --template company  # 真实评测
+python -m memorygym.training data --seeds 5 --templates company       # SFT 训练数据生成
 ```
 
 每次代码变更必须通过 `python tests/test_worlds.py`。

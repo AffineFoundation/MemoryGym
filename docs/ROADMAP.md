@@ -26,9 +26,14 @@
 - Phase 62: MarkdownBackend 接入 bench.py + training env ✅
 - Phase 63-64: training/env.py 与 eval 对齐 + eval_task.py 同步 ✅
 - Phase 65: training/env.py Edit hasattr 修复 ✅
+- Phase 67-70: 资源泄漏修复、RNG 对齐、MarkdownBackend temporal decay、ChromaDB Edit fallback ✅
+- Phase 71-76: 事件格式策略提示移除、Simulation 轴分数验证、版本 bug、系统提示词修复、Inspect AI 路径修复、3 路径一致性测试 ✅
+- Phase 77-80: contradiction 丢失 bug、推理题型全覆盖测试、数据质量修复 ✅
+- Phase 81-86: 训练基础設施修复、MarkdownBackend recall 基准、Inspect AI 工具名、eval_task.py 默认值、test_path_consistency 扩展 ✅
+- Phase 87-93: SFT 连续消息合并、budget 超支修复、问题措辞泄漏修复、RL reward 对齐 4 轴评分、CLI UX 修复 ✅
 - 6 模板 × 22-23 attrs × 6 dtypes × 20 reasoning competencies
-- 341 tests, 9 simulation strategies ALL PASS（v0.6.7）
-- 50 real evaluations, 5 models — Qwen3.5=30%, Kimi=28%, Qwen3-235B=18%, MiniMax=13%, GLM-5=8%
+- 397 tests, 9 simulation strategies ALL PASS（v0.9.1）
+- 66 real evaluations, 5 models — Qwen3.5=33%, Kimi=28%, GLM-5=25%, Qwen3-235B=18%, MiniMax=18%
 - 2 backends: ChromaDB（embedding）+ MarkdownBackend（BM25+向量混合搜索）
 - Backend 对比完成：MarkdownBackend 30% vs ChromaDB 31.7%（无显著差异，瓶颈在模型端）
 - MemoryEnv shaped reward + verl/slime 适配器 + SFT 轨迹生成
@@ -136,7 +141,7 @@ abstention_diagnostic 单独报告，不计入 composite。
 
 ### 2.7 测试覆盖
 
-341 tests: test_worlds(37) + test_validators(61) + test_bench(23) + test_stream_agent(21) + test_training(36) + test_backend_bench(7) + test_llm_judge(11) + test_narrative(15) + test_adapters(32) + test_new_dtypes(7) + test_worlds_features(20) + test_markdown_backend + test_env + test_config + test_eval_task
+397 tests: test_validators(81) + test_training(44) + test_adapters(33) + test_stream_agent(27) + test_bench(24) + test_worlds_features(22) + test_reasoning_coverage(22) + test_worlds(21) + test_markdown_backend(21) + test_path_consistency(19) + test_eval_task(17) + test_narrative(15) + test_env(13) + test_llm_judge(11) + test_new_dtypes(9) + test_config(9) + test_backend_bench(9)
 
 ---
 
@@ -146,21 +151,21 @@ abstention_diagnostic 单独报告，不计入 composite。
 
 > v1 数据（10 属性模板）已归档到 `eval/archive_v1/`。以下为 v2 数据（22-23 属性，6 dtype，20 reasoning types）。
 
-**50 次真实评测，5 个模型，5 个厂商。** 多模型汇总：
+**66 次真实评测，5 个模型，5 个厂商。** 多模型汇总：
 
 | 模型 | N | Composite | Breadth | Maint. | Reasoning | Efficiency |
 |------|---|-----------|---------|--------|-----------|------------|
-| Qwen3.5-397B | 15 | **30%** | 12% | 49% | 12% | 13% |
-| Kimi-K2.5 | 18 | **28%** | 13% | 37% | 10% | 11% |
-| Qwen3-235B | 7 | **18%** | 16% | 48% | 2% | 11% |
-| MiniMax-M2.5 | 7 | **13%** | 3% | 27% | 4% | 5% |
-| GLM-5 | 2 | **8%** | 0% | 0% | 0% | 0% |
+| Qwen3.5-397B | 27 | **24%** | 27% | 37% | 17% | 14% |
+| Qwen3-235B | 7 | **19%** | 16% | 48% | 2% | 10% |
+| Kimi-K2.5 | 18 | **18%** | 12% | 38% | 12% | 11% |
+| GLM-5 | 5 | **17%** | 16% | 22% | 18% | 10% |
+| MiniMax-M2.5 | 9 | **13%** | 7% | 28% | 8% | 7% |
 
 **关键发现**（A62 数据分析 + A69 批次分析）：
 - Retrieval 11% 正确率是最大瓶颈（60% 弃权 = 存了但搜不到）
 - 7 个推理类型 0%（outlier/comparison/cross_category/text_match/enum_filter/aggregation/multi_hop）——系统性模型能力差距，非 bug
 - Maintenance 最强轴（27-49%），Efficiency 最弱（5-13%）
-- 三强模型统计等价（18-30%），MiniMax 明显弱（13%），GLM-5 工具调用失败
+- 五模型分为三档：Qwen3.5 领先（24%），Qwen3-235B/Kimi/GLM-5 中档（17-19%），MiniMax 末位（13%）
 - entities_per_write = 1.0（所有模型）——多实体打包是未开发的优化方向
 - Backend 对比：MarkdownBackend 30% vs ChromaDB 31.7%——无显著差异，瓶颈在模型端
 
@@ -204,7 +209,7 @@ eval/              # v2 数据（Phase 16 后，22-23 属性模板）
 - stale 元数据清理（mem0 __pycache__, egg-info）
 
 **3. 弱模型覆盖扩展** — 进行中
-- GLM-5 仅 2 evals, MiniMax 仅 7 evals
+- GLM-5 仅 5 evals, MiniMax 仅 9 evals
 - 需要更多数据点确认弱模型得分是否稳定
 - Batch 15 已派发
 
@@ -268,7 +273,7 @@ eval/              # v2 数据（Phase 16 后，22-23 属性模板）
 | 问题 | 严重度 | 备注 |
 |------|--------|------|
 | MemoryEnv ChromaDB 资源泄漏 | 中 | reset() 创建新 collection 不清理旧的 |
-| MarkdownBackend 临时目录泄漏 | 低 | /tmp 目录不清理 |
+| ~~MarkdownBackend 临时目录泄漏~~ | ~~低~~ | ✅ Phase 79 已修 close() |
 | GRPO v2 policy collapse | 高 | loss→负值，v3 计划 KL 正则化 |
 | 7 个推理类型所有模型 0% | 中 | 需更多数据确认是合理难度还是需调整 |
 | entities_per_write = 1.0 | 低 | 模型能力问题，非系统 bug |

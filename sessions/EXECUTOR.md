@@ -71,22 +71,6 @@ get_verifiable_reward() 改用 compute_axis_scores() composite。Edit shaped rew
 
 ## P3 — 评测质量 + 文档（不阻塞训练，可延后）
 
-### Phase 88 — docs/ROADMAP.md 同步更新
-
-**问题**：ROADMAP.md 多处与代码现状不一致（审计 A114 发现）。
-
-**更新清单**：
-1. §0 测试数 "341" → "393"
-2. §0 simulation 版本 "v0.6.7" → "v0.8.6"
-3. §0 已完成列表追加 Phase 66-86（简要一行）
-4. §0 eval 数据 "50 次评测" → "62 次评测"
-5. §2.7 测试数同步
-6. §3.1 数据表更新（Qwen3.5 N=23, Kimi N=18, MiniMax N=9, GLM-5 N=5；均值需重算）
-7. §6 MarkdownBackend 临时目录泄漏 → 标记 ✅（Phase 79 已修 close()）
-8. CLAUDE.md §常用命令 追加 training CLI：`python -m memorygym.training data --seeds 5 --templates company`
-
-**验证**：数据表均值用 eval/*.json 实际计算，不要猜。
-
 ### 低优先级 Backlog
 
 - **用户体验修正**：API key 错误信息改善（docs/Design.md 已删除 A65，LEADERBOARD.md 已填充 A58）
@@ -95,6 +79,7 @@ get_verifiable_reward() 改用 compute_axis_scores() composite。Edit shaped rew
 
 ## 已完成
 
+### Phase 88 — docs/ROADMAP.md 同步更新 ✅
 ### Phase 93 — CLI UX 修复：README tier 默认值 + help 补全 ✅
 ### Phase 91 — 问题措辞泄漏修复（temporal_trend + comparison） ✅
 ### Phase 92 — RL reward 对齐 4 轴评分 + Edit shaped reward ✅
