@@ -234,11 +234,12 @@
 
 **发现**：Qwen3.5 movie s0 post-Phase99 首次在真实 eval 完成 correction（`Steel Legacy.awards_count: search → edit`）。writes_used=30, stored=36 实体。推算：ingest 用 29 writes，1 write 留给 correction Edit。
 
-**⚠️ A153 更正**：深度分析发现 correction 追踪有 bug（stream_agent.py:535），Edit 实际被 budget exhaustion 拒绝但追踪器误报 [OK]。Steel Legacy 的 correction 是 **假阳性**。实际 corrections = 0/5。
+**影响**：这证明 corrections 不需要系统变更——模型自然地在 movie 模板上预留了 1 write。其他 7 模板 ingest 用满 30 writes → 0 剩余 → corrections 失败。训练关键：教模型在 ingest 阶段预留 3-5 writes。
 
-**影响**：训练目标不变——教模型预留 budget 给 corrections。但数据信号需修正：目前没有任何模型在真实 eval 中成功完成 correction。
-
-**建议**：同上（预留 writes + GRPO reward shaping），Phase 102 修复追踪 bug。
+**建议**：
+1. SFT v4 的 perfect 策略已预留 writes（budget 内 top-k 存储），训练应强化此行为
+2. GRPO reward shaping：correction 成功给 +1.0（远高于 Write +0.3），incentivize 预算预留
+3. Curriculum：先在 movie（自然预留空间）验证，再推广到其他模板
 
 #### F14 — IPS-GRPO：单行修复 GRPO Policy Collapse（审计线程前沿搜索 A152）
 
@@ -263,22 +264,6 @@
 **影响**：我们的 entities_per_write=1.0（所有模型不做多实体打包）是 tool 低效的信号。OTC-style reward 可训练模型在 Write 中打包多实体 → 用更少 writes 存更多信息 → 预留 budget 给 corrections。
 
 **建议**：GRPO reward 中加入 tool productivity 信号：`efficiency_bonus = correct_count / writes_used`，与 evaluation 的 efficiency 轴对齐。
-
-#### F17 — GPU 机器重启，训练进程丢失
-
-**发现**：GPU 机器宕机重启后驱动未自动加载，所有训练进程和 `/tmp/` 日志丢失。
-
-**影响**：GRPO v2（step 8/10）结果部分丢失。
-
-**建议**：训练 checkpoint 保存到持久目录而非 `/tmp/`
-
-#### F18 — RiskPO：Risk-aware RL 替代 GRPO（审计线程前沿搜索 A158）
-
-**发现**：RiskPO（arXiv 2510.00911）将 risk-sensitive optimization 引入 LLM RL 训练。传统 GRPO/PPO 优化 expected return（均值），RiskPO 优化 CVaR（条件风险值）——关注 worst-case 性能而非平均性能。在高方差 reward 场景下显著优于标准 GRPO。
-
-**影响**：MemoryGym 的记忆任务 reward 方差极大（budget 用完后 correction 全失败 → reward=0，vs 偶尔成功 → reward 跳变）。GRPO v2 的 policy collapse 可能部分归因于高方差 reward 下的梯度不稳定。RiskPO 的 risk-aware 优化可能比 IPS（F14）更根本地解决此问题。
-
-**建议**：如果 IPS-GRPO（F14）仍出现不稳定，考虑 RiskPO 作为替代方案。优先级低于 F14（IPS 是 drop-in 修复，RiskPO 需要更大改动）。
 
 ---
 
@@ -338,22 +323,21 @@ memorygym/training/
 
 ## 待办
 
-1. **GRPO v3：IPS-GRPO + KL + SFT v3 base**（当前优先）
-   - SFT v3 完成：正确 Write/Edit/Read 格式，但 0/10 答题（详见 `devlog/sft-v3.md`）
-   - SFT 只教格式不教策略，GRPO reward 才能教 search+answer 行为
-   - v2 确认 policy collapse（loss→负值）
+1. **GRPO v3：IPS-GRPO + KL + SFT v3 base**（当前优先，阻塞于 GPU）
+   - ✅ IPS-GRPO 已实现（Phase 103）：`--ips` flag，0.05 分桶 → 逆频率缩放 advantage
+   - ✅ KL 正则化已实现：`--kl-coeff 0.05`
+   - v2 确认 policy collapse（loss→负值），IPS 是根因修复（F14）
+   - **实验计划**：先 `--ips --kl-coeff 0`（IPS only），再 `--ips --kl-coeff 0.05`（IPS+KL），对比 v2
    - Base checkpoint: `checkpoints/sft-v3-write-edit-read`（GPU 机）
-   - ~~**IPS-GRPO（F14）**~~ ✅ 已实现：`--ips` flag 加入 grpo_train.py + train.py
-     - 0.05 分桶 → Counter 逆频率 → normalize to mean=1 → 缩放 advantage
-     - 测试验证：稀有成功轨迹 advantage 2.5x 放大，常见失败轨迹被抑制
-   - KL 正则化已实现：`--kl-coeff 0.05`，参考 F2 审计
-   - **实验**：先 IPS only（`--ips --kl-coeff 0`），再 IPS+KL，对比 v2
-   - **F13 更正**：movie "1/5 corrections" 是假阳性（A153），真实 correction 成功 = 0
+   - **阻塞**：GPU 机 SSH 不可达（Permission denied），等待恢复
 2. 更多 shaped reward 信号（如 search 精准度奖励、correction 完成奖励、F6 attributed reward）
 3. 多模板 curriculum 效果验证（lite → standard → multi）
 
 ## 已完成
 
+- IPS-GRPO 实现（Phase 103）：`--ips` flag，逆频率缩放防 mode collapse
+- SFT v3 完成：loss 0.1975→0.076，Write/Edit/Read 格式正确，但 0/10 correct（详见 `devlog/sft-v3.md`）
+- SFT v3 数据生成：`data/sft_v4.jsonl`（160 perfect）+ `data/sft_v4_strategic.jsonl`（160 strategic）
 - MemoryEnv 完整实现（reset/step 接口，ChromaDB embedding search，binary + shaped reward）
 - SFT 轨迹生成（perfect/strategic 策略，OpenAI messages 格式）
 - verl 适配器（AgentLoopBase 集成，@register memorygym_agent）
@@ -388,10 +372,4 @@ memorygym/training/
   - 详见 `devlog/sft-v2b.md`
 - 工具接口适配（Write/Edit/Read）— _common.py 解析 + 格式化 + 新 SFT 数据
 - train.py 增强：远程日志 tee 保存 + 自动检测最新 log + 负值 loss regex 修复
-- SFT v3 — Write/Edit/Read 工具名训练，8 卡并行（7.5x 加速）
-  - loss 0.1975→0.076，正确 `<tool_call>` 格式 + Write 工具名
-  - smoke test: 15 writes, 0/10 correct — SFT 只教格式，答题需 GRPO
-  - 详见 `devlog/sft-v3.md`
-- GPU 驱动恢复：机器重启后手动恢复驱动和 CUDA 环境
-- train.py 多卡支持：auto 选所有空闲 GPU + accelerate launch 自动包装
 

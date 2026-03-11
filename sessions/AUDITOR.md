@@ -177,241 +177,71 @@ sessions/AUDITOR.md（你，/loop 30m）— 调度中枢：审计、设计、方
 
 ## 当前任务
 
-### 审计 A159 — 微观：budget.py 深度审计（维度 B）
+### 审计 A161 — 微观：SFT 轨迹 correction 覆盖度审计（维度 B+E）
 
-**范围**：`memorygym/memory/budget.py` + 所有消费路径（`_tool_helpers.py`、`inspect_task/tools.py`、`training/env.py`）
+**结论：SFT 轨迹的 correction→Edit 示范严重不足，存在两个 bug。**
 
-#### 结论：budget.py 本身无缺陷，3 条路径一致性良好
+**数据**（6 模板 × 10 seeds = 60 轨迹，每轨迹 5 corrections）：
+- 300 corrections 中，151 (50.3%) 涉及已存储实体（应产生 Edit 示范）
+- 实际产生 Edit 示范：仅 103 (34.3%)
+- 每条轨迹平均仅 1.7 个 Edit 示范（vs 5 个 correction 事件）
 
-**budget.py（32 行）审计通过**：
-- `MemoryBudget` 是纯 dataclass，无隐藏状态、无类变量、无全局变量 → 无跨 run 泄漏风险
-- `consume_write()` 先检查 `can_write()` 再递增 → 不可能超额
-- `remaining()` 用 `max(0, ...)` 防负数 → 安全
-- 确定性：无随机性，same seed → same budget 行为（budget 本身不依赖 seed，只是计数器）
+**Bug 1 — 时序错位**（`env.py` L191: `ename in entity_mem_ids`）：
+corrections 在 stream 中间触发（40%-70% 位置），但部分已存储实体的 ingest 事件排在 correction 之后。此时 `entity_mem_ids` 尚未包含该实体，导致本该产生 Edit 的 correction 被跳过（"Entity not in my memory"）。影响：48/300 = 16% corrections 丢失 Edit 示范。
 
-**3 条消费路径一致性**：
+**Bug 2 — 原始值恢复**（`env.py` L142-148）：
+ingest 时始终用 `original_attrs` 渲染 compact document。当一个实体的 correction 先于 ingest 触发，该实体被存储时写入的是旧值，且永远不会被 Edit 更新。模型学到的是"存储过时数据"。
 
-| 路径 | Write 消费 | Edit 消费 | Edit 失败退款 | 位置 |
-|------|-----------|-----------|-------------|------|
-| `_tool_helpers.py:execute_tool()` | L88 consume_write | L102 consume_write | L106,L116 writes_used-=1 | stream_agent 用 |
-| `inspect_task/tools.py` | L55 consume_write | L84 consume_write | L88,L104 writes_used-=1 | Inspect AI 用 |
-| `training/env.py:step()` | L574 writes_used+=1 | L604 writes_used+=1 | L608,L635 writes_used-=1 | RL 环境用 |
+**对 maintenance=0% 的解释**：
+- SFT 轨迹中 Edit 示范仅占 correction 事件的 34%，且每条轨迹平均不到 2 个，信号太弱
+- Bug 2 进一步教模型"correction 后继续存旧值"，与维护行为方向相反
+- 真实 eval agent (`stream_agent.py` L482+) 有完整的 correction 处理逻辑（search→edit→验证），但 SFT 轨迹未忠实复现
 
-三条路径逻辑完全一致：Write 消费 1，Edit 消费 1，Edit 失败退款。
+**修复方案（建议派发 Phase 任务）**：
+1. **Bug 1 修复**：`generate_sft_trajectory` 中，对 timing 错位的 correction，应在后续该实体 ingest 时直接用 corrected 值存储（不需要 Edit，因为存的就是最新值）
+2. **Bug 2 修复**：ingest 时应检查该实体是否已有 correction 被触发，如有则用 corrected 值渲染
+3. **覆盖度提升**：考虑让 `generate_corrections` 优先选已存储实体（或确保至少 60% corrections 命中已存储实体），提高 Edit 示范密度
 
-**MemoryEnv 不使用 MemoryBudget 类**（发现 D1）：
-- `env.py` 自己维护 `self._writes_used` 计数器（L390,L563,L574,L604），不导入也不使用 `MemoryBudget`
-- 这是**重复实现**而非 bug — 逻辑一致，但违反 DRY 原则
-- **风险**：未来修改 budget 逻辑时可能忘记同步 env.py
-- **建议**：低优先级重构 — 让 MemoryEnv 内部使用 MemoryBudget 实例
-
-**Edit 退款的直接字段写入**（发现 D2）：
-- 三条路径均用 `budget.writes_used -= 1`（或 `mem_budget.writes_used -= 1`）直接修改字段
-- 绕过了 `consume_write()` 的封装，但因为 dataclass 字段是 public 的，这不算 bug
-- **建议**：可加 `refund_write()` 方法保持封装，但优先级极低
-
-**correction 事件与 budget 交互**（审计点 6）：
-- correction 触发 Edit → 消费 1 write → 符合设计（修正也需要 budget）
-- 如果 budget 耗尽时收到 correction，agent 无法更新 → 这是**预期行为**（预算管理能力的一部分）
-- SFT 轨迹生成（env.py L191-209）中 correction 的 Edit 不受 budget 追踪 → 因为 SFT 只是生成消息格式，不执行真实工具
-
-**无竞态风险**：所有路径都是同步单线程执行（stream_agent 串行处理 tool calls，env.step() 单步执行）
-
-#### 派发
-
-无需派发 Phase。发现 D1（MemoryEnv 不复用 MemoryBudget）是低优先级重构，记录备查。
+**验证标准**：修复后每条轨迹 Edit 示范 ≥ 3/5，且所有存储值应为当前最新值。
 
 ---
 
-### 审计 A158 — 宏观：前沿搜索（维度 C）
+### 审计 A160 — 宏观 Eval 数据系统性分析（维度 E）
 
-**背景**：距上次前沿搜索（A152）已超 3 轮，本轮必做。搜索 2025-2026 年 LLM 记忆评测、GRPO 改进、工具调用 RL 训练最新进展。
+**数据集**：12 个 post-Phase99 eval（v0.10.4+），2 模型（Qwen3.5-397B ×8, Kimi-K2.5 ×4），7 模板，60 实体/30 写入预算。
 
-#### 发现（按可操作性排序）
+**模型排名**：Qwen3.5 composite=22.1% >> Kimi-K2.5=12.3%（差距主要在 reasoning 30% vs 10.5%）。
 
-**F15 — VerlTool: 异步工具执行 RL 框架** (2509.01055)
-- verl 官方扩展，标准化多模态工具管理 API，异步 rollout 近 2x 加速
-- 与 MemoryGym 的 verl adapter 直接相关：可替代自研 adapter，获得异步工具执行
-- **可操作性：高** — 检查 verl 最新文档是否已集成 VerlTool，若是则 adapter 可大幅简化
+**模板难度排名**（composite 均值）：
 
-**F16 — RiskPO: 风险度量替代均值目标** (2510.00911)
-- 用 Mixed Value-at-Risk 替代 GRPO 均值目标，解决 entropy collapse + 稀有推理路径被忽略
-- bundle scheme 聚合多问题稳定梯度，Pass@k 显著优于 GRPO
-- **可操作性：中高** — 与 IPS-GRPO (F14/Phase103) 正交，可叠加。需修改 loss 计算
+| 模板 | N | Comp | Breadth | Maint | Reason | Effic | 平均存储 |
+|------|---|------|---------|-------|--------|-------|----------|
+| hospital | 3 | 24.3% | 51.3% | 0% | 22.2% | 16.7% | 32/60 |
+| research | 1 | 22.4% | 42.9% | 0% | 25.0% | 16.7% | 33/60 |
+| university | 2 | 18.7% | 35.7% | 0% | 21.4% | 13.3% | 26.5/60 |
+| movie | 1 | 18.3% | 42.9% | 0% | 11.1% | 13.3% | 36/60 |
+| company | 2 | 17.1% | 21.4% | 0% | 33.3% | 11.7% | 33.5/60 |
+| codebase | 2 | 13.6% | 20.0% | 0% | 22.2% | 10.0% | 34.5/60 |
+| sport | 1 | 13.2% | 16.7% | 0% | 25.0% | 10.0% | 35/60 |
 
-**F17 — Training-Free GRPO: 上下文空间优化** (2510.08191)
-- 冻结 LLM + 可变经验上下文，优化从参数空间转到上下文空间
-- 100 样本 + $8 成本 > 全量微调 32B，在 web search 任务上验证
-- **可操作性：中** — 理念与 MemoryGym 的 memory-as-context 高度契合，但需全新训练范式
+**关键发现**：
 
-**F18 — Agent-R1 / AGENTRL: 端到端多轮 Agent RL** (2511.14460, 2510.04206)
-- 系统化多轮工具调用 RL：动态环境交互、轨迹级奖励、scaling laws
-- AGENTRL 提出 agent RL 的 scaling 规律（更多轮次 + 更多工具 = 更强泛化）
-- **可操作性：中** — 架构参考价值高，但 MemoryGym 已有 MemoryEnv 实现类似理念
+**F1: Maintenance 0% — 系统性失败，不是个别现象。** 12/12 eval maintenance=0%。43 个 update/delta 问题中，35 个回答"不确定"（实体未存储或未被搜索到），8 个回答了旧值（存储了但没更新）。模型完全不具备 correction 处理能力。这不是评测 bug——是模型真实弱点+系统提示词未强调更新的合理结果。maintenance 占 25% 权重意味着天花板被压在 75%。
 
-**F19 — Minerva: 可编程记忆测试** (OpenReview, ICML 2025 area)
-- 自动生成记忆测试：search/recall/edit/match/compare 5 种细粒度任务
-- 与 MemoryGym 20 推理题型部分重叠，但 edit/match 维度可借鉴
-- **可操作性：低** — 评测维度补充参考，不需代码变更
+**F2: Competency 两极分化严重。** relationship_count/lookup=100%，abstention=97%（模型擅长"说不知道"），retrieval=34%（约 1/3 实体被正确检索）。而 delta=0%（12/12 全零）、update=0%（12/12 全零）、comparison=0%（2/2 全零）、multi_constraint=8%（11/12 全零）。这些零分 competency 不全是评测问题——delta 依赖 correction 记忆，comparison 和 multi_constraint 需要跨实体推理。
 
-**F20 — Evo-Memory / A-Mem: 自进化记忆** (2511.20857, 2502.12110)
-- 运行时 RL 驱动记忆自进化（MemRL）；Zettelkasten 式关联记忆图（A-Mem）
-- 记忆不只是存取，还包括自组织和关联发现
-- **可操作性：低** — 长期方向参考（MemoryGym Phase N+多 的记忆后端演进）
+**F3: 存储量与得分弱相关。** Kimi university 只存 17/60 → comp=9%，但 Qwen sport 存 35/60 → comp=13%（存多不代表分高）。hospital 模板 breadth 最高（51%）因为存储命中率高。sport/codebase breadth 最低（17-20%），说明这些模板的属性对模型更难提取。
 
-#### 与已知前沿的关系
+**F4: Budget 全部耗尽但利用率低。** 12/12 eval 都用满 30 writes，但 stored_entities 范围 17-36（28-60%），说明模型每次 write 只存 1 个实体（entities_per_write≈1.0），从不打包多实体。这是效率轴低分（10-20%）的直接原因。
 
-| 已有 | 本次新发现 | 关系 |
-|------|-----------|------|
-| F14 IPS-GRPO (Phase103) | F16 RiskPO | 正交可叠加 |
-| F4 AgeMem (已知) | F20 Evo-Memory | 同方向新进展 |
-| verl adapter (已有) | F15 VerlTool | 上游官方方案 |
-| F1 GSPO (已知) | F17 TF-GRPO | 不同范式（参数 vs 上下文） |
+**F5: "不确定"回答占主导。** 大量 retrieval 和 update 问题的回答都是"I don't have enough information"。这说明 memory_search 检索失败率高——实体被存了但搜不到，或者搜到了但模型不确信。abstention competency 97% 说明模型在真正不知道时表现好，但问题是很多"应该知道"的也被当成"不知道"。
 
-#### 结论
+**可执行建议**（按优先级）：
 
-1. **F15 VerlTool** 最值得跟进 — 若 verl 已原生支持 VerlTool，MemoryGym 的 adapter 可简化并获得异步加速。**建议派 Phase（调研+适配）**，但优先级 P2，待 Batch 22 结果后决定。
-2. **F16 RiskPO** 作为 GRPO loss 替代值得实验 — 但需要 GPU 验证，记入 TRAINER.md 作为实验方向。
-3. 其余发现记录备查，暂不派 Phase。
-
-**不派新 Phase**（F15 待 Batch 22 后评估，F16 转 TRAINER.md）。
-
-**演进检查清单**：
-- [x] 产出：6 个前沿发现，2 个可操作方向
-- [x] EXECUTOR.md 待办区空（符合预期，无紧急 Phase）
-- [x] 下一轮：**微观（维度 B）** — 审查 memory/budget.py 或 agents/stream_agent.py
-- [x] 前沿搜索？— 本轮已完成，下次 >3 轮后
-
----
-
-### 审计 A156 — Phase 102 验收（维度 B） ✅
-
-**验证**：commit `a7439df` 修复 correction 追踪误报。
-
-**代码审查**：
-- ✅ `stream_agent.py:506-532`：现在检查 `results[i]` 而非只看 arguments
-  - Edit: 正面匹配 `"Edited." in result`（而非排除法）
-  - Write: `"Budget exhausted" not in result`
-- ✅ 4 个新测试：success / budget-exhausted / text-not-found / write-budget-exhausted
-- ✅ `did_search` 仍被追踪（用于 chain 记录），不影响 `correction_ok`
-
-**边界检查**：
-- L518 `results[i] if i < len(results) else ""`：当 results 少于 calls 时 fallback 到空字符串 → 安全（Edit/Write 匹配失败 → correction_ok=False）
-
-**不派新 Phase。** Phase 102 ✅ 完成。EXECUTOR.md 待办已清空。
-
----
-
-### 审计 A157 — 微观：validators.py 答案验证层审计（维度 B）
-
-**审计对象**：`evaluation/validators.py`（255 行），4 层匹配 + judge fallback。
-
-**架构正确性** ✅：
-- L44: exact string → L47: numeric → L52: synthesis → L57: abstention → L60: fail
-- `validate_with_fallback` (L192)：rule-first, judge-fallback。abstention 永远走 rules（不浪费 judge API）
-- async 版本 (L229) 逻辑一致
-
-**整数精确匹配（V14）** ✅：
-- L85-87: `int(round(ans_num)) == int(round(gt_num))` — 年份/计数/人数精确匹配，完全阻断猜测攻击
-- L89-93: 浮点数 2% 相对容差 — 合理处理显示舍入
-
-**抗作弊审查** ✅：
-- entity_match L112: 长度守卫 `len(ans) < len(gt) * 0.5` → 单词欺骗被拒
-- abstention L164: 含数字即拒 → "Unknown but I guess 50" 不算 abstention
-- synthesis L126-137: 实体名 + 数值双重验证 → 不能只对一个
-
-**🟡 发现：8 种推理题型缺少 rule 路径（非阻塞）**
-
-当前 question_type → rule 路由：
-| 路径 | 类型 | 已覆盖 |
-|------|------|--------|
-| numeric_match | retrieval, update, aggregation, cross_category, ratio, delta | ✅ |
-| synthesis_match | synthesis, cross_domain, conditional, comparison, multi_hop, outlier | ✅ |
-| **无 rule** | relationship_filter, relationship_count, relationship_lookup, multi_constraint, temporal_trend, text_match, enum_filter, counterfactual | ⚠️ |
-
-这 8 种类型只有 exact string match（L44），不命中则直接跳到 judge fallback。
-
-**影响**：
-- 不影响正确性（judge 能处理）
-- 增加 judge API 调用（每次 eval 约 5-10 次额外 judge 调用）
-- 引入 judge 非确定性（rule 是确定性的，judge 不是）
-
-**推荐类型→路径映射**（供未来优化）：
-- `relationship_count, multi_constraint, counterfactual` → numeric_match
-- `relationship_filter` → synthesis_match
-- `relationship_lookup, text_match, enum_filter` → entity_match（需新分支）
-
-**结论**：validators.py 设计健壮，无评分漏洞。类型路由缺失是优化项（P3），不阻塞训练/评测。**不派新 Phase。**
-
-**演进检查清单**：
-- [x] 产出：A156 验收 + A157 validator 审计
-- [x] EXECUTOR.md 待办区空（Phase 102 ✅）
-- [x] 下一轮：**宏观（维度 C/E）** — Batch 22 数据分析或前沿搜索
-- [ ] 前沿搜索？— A152 三轮前，下轮做
-
----
-
-### 审计 A155 — 宏观：能力缺口 + 文档漂移（维度 A+D）
-
-**审计范围**：外部用户视角——如果有人今天要用 MemoryGym，会遇到什么问题？
-
-**文档漂移（严重）**：
-
-| 文件 | 问题 | 实际状态 |
-|------|------|----------|
-| README.md L84 | "6 domain templates" | 代码有 8 个（+university, +codebase） |
-| README.md L111 | `worlds/ # 6 domain templates` | 同上 |
-| README.md | 无训练 CLI 文档 | `python -m memorygym.training {data,sft,grpo,smoke}` 可用 |
-| README.md | 无 multi tier 文档 | TIERS 有 multi（3 sessions） |
-| README.md | 无 backend 选择文档 | `--backend {chromadb,markdown}` 可用 |
-| LEADERBOARD.md | 数据过时（pre-Phase99） | post-Phase99 分数高 10-20%，缺 university/codebase |
-| LEADERBOARD.md | 列名过时（Retrieval/Update） | 应为 Breadth/Maintenance |
-
-**功能完整性（正常）**：
-- ✅ 8 模板 simulation ALL PASS
-- ✅ 4 tier 可用（lite/standard/hard/multi）
-- ✅ 2 后端可用（chromadb/markdown）
-- ✅ 训练管线端到端可跑（SFT v3 完成，GRPO 待 GPU）
-- ✅ Inspect AI 集成（eval_task.py）有测试覆盖
-
-**竞品对标**：
-- AMA-Bench（2602.22769）：真实 agent 轨迹，我们用 simulation + real eval 覆盖
-- MemoryAgentBench（ICLR 2026）：4 种能力，我们 4 轴 + 20 推理题型更全面
-- MemoryGym 独特优势：budget 约束 + correction 追踪 + RL 训练环境，竞品无此组合
-
-**结论**：系统功能完整，无阻塞性缺口。**文档漂移是唯一实质问题**——但 P3 优先级，不阻塞训练/评测。
-
-**→ 不派新 Phase**（Phase 102 已排队）。文档更新加入 EXECUTOR.md P3 backlog。
-
-**演进检查清单**：
-- [x] 产出：文档漂移清单 + 竞品对标
-- [x] EXECUTOR.md 待办区非空（Phase 102）
-- [x] 下一轮：**微观（维度 B）** — 交替使用，选具体模块深入
-- [ ] 前沿搜索？— A152 两轮前，可再跳过一轮
-
----
-
-### 审计 A154 — 训练者同步：SFT v3 结果 + 冲突解决
-
-**触发**：训练者推送了 commit `0e3b917`（SFT v3 训练完成），与本地 TRAINER.md 修改冲突。
-
-**训练者变更**：
-- `devlog/sft-v3.md`：SFT v3 结果 — loss 0.1975→0.076，15/15 writes，**0/10 correct**（vs v2b 3/10）
-- `scripts/train.py`：auto GPU 选择改为全选 + accelerate multi-GPU + PATH 修复
-- TRAINER.md 待办更新：SFT v3 完成，GRPO v3 为下一步
-
-**SFT v3 分析**（训练者 devlog）：
-- Write/Edit/Read 格式正确学会 ✅
-- 但只 Write 不 search/answer — 训练数据中 Write token 占 ~90%，search+answer 被淹没
-- Loss 过低（0.076）= 过拟合 Write 模式，丢失 base 推理能力
-- 结论正确：GRPO reward 是教 search+answer 行为的唯一途径
-
-**冲突解决**：
-- 战略反馈区：保留审计 F10-F16 + 训练者 F10 重编号为 F17
-- 待办区：采用训练者更新版（SFT v3 done → GRPO v3 next）
-- F13 追加 A153 更正（correction 追踪 bug，"1/5" 是假阳性）
-
-**不派新 Phase。** 训练方向正确（SFT → GRPO），审计线程确认。
+1. **P1: 训练侧 — correction 处理能力**。SFT 轨迹必须包含 correction→search→edit 的完整示范。当前 SFT 数据是否覆盖了 correction 流程？→ 检查 training/env.py 的 perfect trajectory 是否执行 edit。
+2. **P2: 训练侧 — 多实体打包**。entities_per_write=1.0 是效率瓶颈。SFT 轨迹应示范在单次 write 中存储 2-3 个实体。
+3. **P3: 评测侧 — 检索成功率诊断**。在 eval JSON 中增加 search_hit_rate 指标（搜索命中 vs 未命中），区分"没存"和"存了但搜不到"。
+4. **P4: 不派 Phase**。当前瓶颈在训练侧（模型不会 correction、不会打包），不在评测系统。评测系统本身工作正常。
 
 ---
 
