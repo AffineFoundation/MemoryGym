@@ -93,7 +93,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
                    help="memory backend (chromadb or markdown)")
     p.add_argument("--tier", choices=list(TIERS),
                    default=None, metavar="TIER",
-                   help="evaluation tier (lite/standard/hard)")
+                   help="evaluation tier (lite/standard/hard/multi)")
     p.add_argument("--official", action="store_true",
                    help="official mode: seeds 0-9, all templates, "
                         "standard JSON output")

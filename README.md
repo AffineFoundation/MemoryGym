@@ -65,7 +65,7 @@ python -m memorygym.bench --model moonshotai/Kimi-K2.5-TEE --official -o results
 --seed N             Single seed
 --seeds N            Number of seeds (default: 10)
 --template T         Template: company, research, city, hospital, sport, movie
---tier TIER          Evaluation tier: lite (default), standard, hard
+--tier TIER          Evaluation tier: lite, standard (default), hard, multi
 --backend BACKEND    Memory backend: chromadb (default), markdown
 --validate           Run invariant checks
 --official           Official mode: seeds 0-9, all templates

@@ -71,12 +71,6 @@ get_verifiable_reward() 改用 compute_axis_scores() composite。Edit shaped rew
 
 ## P3 — 评测质量 + 文档（不阻塞训练，可延后）
 
-### Phase 93 — CLI UX 修复：README tier 默认值 + help 补全 + strategy 校验
-
-**问题**：README L68 说 "lite (default)"，实际默认 standard。--tier help 遗漏 "multi"。--strategy 无效名静默忽略。
-
-**修复**：README 改 "standard (default)"，help 加 "multi"，strategy 加校验。
-
 ### Phase 88 — docs/ROADMAP.md 同步更新
 
 **问题**：ROADMAP.md 多处与代码现状不一致（审计 A114 发现）。
@@ -101,6 +95,7 @@ get_verifiable_reward() 改用 compute_axis_scores() composite。Edit shaped rew
 
 ## 已完成
 
+### Phase 93 — CLI UX 修复：README tier 默认值 + help 补全 ✅
 ### Phase 91 — 问题措辞泄漏修复（temporal_trend + comparison） ✅
 ### Phase 92 — RL reward 对齐 4 轴评分 + Edit shaped reward ✅
 ### Phase 89+90 — SFT 轨迹 budget 超支 + json.dumps ✅
