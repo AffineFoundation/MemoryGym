@@ -153,11 +153,11 @@ sessions/AUDITOR.md（你，/loop 30m）— 调度中枢：审计、设计、方
 
 ## 当前任务
 
-### 审计 A111 — 下一轮
+### 审计 A112 — 下一轮
 
 - Phase 86 执行进度
-- 维度 A：训练闭环验证——generate_sft_trajectory → fine-tune → eval 的完整链路能否跑通？
-- 维度 E：多模板 eval 数据需求——只有 company 有 v0.8.x 数据，hospital/research/sport 数据缺失
+- 维度 E：批次 17 hospital/sport/research 数据到位后分析
+- 维度 A：training/cli.py 的 SFT export 命令是否与 generate_sft_trajectory 参数一致
 
 ## 待跟进
 
@@ -171,6 +171,24 @@ sessions/AUDITOR.md（你，/loop 30m）— 调度中枢：审计、设计、方
 ## 审计日志
 
 （每次审计的结论摘要，最新在最上面。保持简洁，详细分析写 devlog/。）
+
+### 审计 A111（2026-03-11）— 训练闭环验证 + eval 数据扩展（维度 A+E）
+
+**训练闭环验证**（维度 A）：
+- **SFT 管线**：generate_sft_trajectory → export_trajectories → JSONL 输出 ✓ 全部 functional
+  - 133 messages/trajectory, valid OpenAI format, JSONL export 正常
+- **RL 管线**：MemoryEnv reset → step(Write) → step(search) → step(next)×N → get_verifiable_reward ✓
+  - shaped reward 正常触发，close() 清理正常
+- **Adapters**：_common.py, verl_adapter, slime_adapter 全部可导入 ✓
+  - parse_tool_calls 和 format_tool_result 正确
+- **结论**：训练代码路径全部可用。瓶颈不在代码——在于从未在真实 GPU 上跑过 fine-tune + eval 闭环
+
+**Eval 数据**（维度 E）：
+- Company v0.8.0: 8/10 seeds 完成（s0-s7），均值 composite=**26.5%**
+- Hospital/sport/research: 仅有 v0.6.7 旧数据
+- **派发批次 17** → EVALUATOR.md：hospital/sport/research × seed 0
+
+**Phase 进度**：Phase 86 待执行。
 
 ### 审计 A110（2026-03-11）— 能力缺口 + maintenance 深分析 + 战略方向（维度 A+E）
 
