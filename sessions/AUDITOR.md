@@ -153,11 +153,11 @@ sessions/AUDITOR.md（你，/loop 30m）— 调度中枢：审计、设计、方
 
 ## 当前任务
 
-### 审计 A82 — 下一轮
+### 审计 A83 — 下一轮
 
 - Phase 72+73 执行进度
 - 批次 15 进展
-- 前沿搜索 V9（距 A77 已 >4 轮）
+- 代码审计：training/env.py reward 函数一致性（shaped reward 在 Phase 71 后是否仍正确）
 
 ## 待跟进
 
@@ -166,11 +166,29 @@ sessions/AUDITOR.md（你，/loop 30m）— 调度中枢：审计、设计、方
 - **Reward hacking 风险**（A42+A44）：env.py shaped reward 用 `n.lower() in content.lower()` 匹配实体名，Edit +0.5 不验证 new_text。暂不修复——等训练跑出数据再优化
 - **Retrieval 瓶颈**（A62+A69 数据）：11% 正确率，瓶颈在模型侧（entities_per_write=1.0，不做 packing）
 - **7 个推理类型 0%**（A62 数据）：系统性模型能力天花板，非 bug
-- **前沿方向**：BudgetMem（预算约束记忆，最近竞品）、Mem-alpha（RL 记忆构建，13x 泛化）、GSPO（ART + P-GSPO）、AgeMem step-wise GRPO（F4）、OpenClaw ContextEngine 插件接口
+- **前沿方向**：BudgetMem（预算约束记忆，最近竞品）、Mem-alpha（RL 记忆构建，13x 泛化）、GSPO（mem-agent 4B→0.75 验证）、AgeMem step-wise GRPO（F4）、StructMemEval（记忆组织能力评测）、ICLR 2026 MemAgents Workshop（4/26-27，关注录用论文）
 
 ## 审计日志
 
 （每次审计的结论摘要，最新在最上面。保持简洁，详细分析写 devlog/。）
+
+### 审计 A82（2026-03-11）— 前沿搜索 V9 + Phase 执行确认（维度 C）
+
+**Phase 进度**：Phase 72+73 未启动（无新 executor commit since A81）。批次 15 进度 0/6。
+
+**前沿搜索 V9 — 5 项发现**：
+
+1. **StructMemEval**（2602.11243，Feb 2026）：测试记忆*组织*能力——账本、待办列表、树结构。简单 RAG 失败，记忆 agent 需被提示如何组织才能成功。MemoryGym 测存储*决策*，StructMemEval 测存储*结构*。互补不竞争。**启示**：未来可考虑在推理题中加入需要特定组织结构才能回答的题型（如"列出所有 revenue > X 的公司"需要 agent 按属性组织存储）。
+
+2. **mem-agent 最新结果**：4B 模型 GSPO 训练后得分 0.75（base Qwen3-4B: 0.39，几乎翻倍）。Retrieval 和 update 任务"practically solved"。仅 4B 参数，击败除 Qwen3-235B 外所有模型。**进一步验证 GSPO > GRPO**。关键细节：训练 120 steps，reward curve 健康上升。
+
+3. **ICLR 2026 MemAgents Workshop**（4/26-27）：论文录用通知已发（3/1），接受论文尚未公开。Workshop 聚焦 memory architectures、encoding/retrieval/consolidation。MemoryGym 的 budget-constrained 存储决策维度在 workshop 覆盖范围内但无直接竞品。
+
+4. **2026.1 新 benchmark 集群**：CloneMem、KnowMe-Bench、RealMem、EverMemOS、MAGMA——均聚焦不同记忆方面（个性化/长程/事件中心/图结构）。**无一测试预算约束下的存储决策**。MemoryGym 的独特定位仍然成立。
+
+5. **GRPO++ 实践指南**（Cameron Wolfe）：生产级 RL 训练稳定性技巧。与我们 GRPO v3 + KL 正则化方向相关。
+
+**前沿定位确认**：2026 年记忆 agent 研究爆发（5+ 新 benchmark），但全部聚焦检索/回忆，无一涉及预算约束存储决策。mem-agent 的 GSPO 成功（4B→0.75）进一步验证 RL 训练记忆策略的可行性和 GSPO 的优越性。
 
 ### 审计 A81（2026-03-11）— bench.py/leaderboard schema 审计 + Phase 73 派发（维度 B+D）
 
