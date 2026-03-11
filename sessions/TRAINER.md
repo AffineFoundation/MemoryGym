@@ -176,6 +176,24 @@
 
 **建议**：实现一个 `reward_shaping_weight` 参数，从 1.0 线性衰减到 0.0（如训练的前 50% 步）。后期只保留 outcome reward（submit_answer correct=+1.0）。
 
+#### F8 — GRPO 在记忆任务上次优，EMPO2 hybrid 方案（审计线程前沿搜索 A101）
+
+**发现**：EMPO2（arXiv 2602.23008，Microsoft Research + KAIST，Feb 2026）表明 **GRPO 在记忆任务上收敛次优**。Hybrid on-policy + off-policy 优化在 ScienceWorld 上比纯 GRPO 提升 128.6%，WebShop 提升 11.3%。核心思路：用 memory 指导 exploration，对 with/without memory 的 action 对做对比优化。
+
+**影响**：如果 MemoryGym RL 训练直接用 GRPO，可能遇到收敛瓶颈。应考虑混合策略。
+
+**建议**：基线仍用 GRPO（实现简单），但遇到收敛瓶颈时参考 EMPO2 的 hybrid 方案。低优先级——先跑通基线。
+
+#### F9 — Memory-R1 极小数据泛化 + Mem-alpha 长度泛化（审计线程前沿搜索 A101）
+
+**发现**：
+- Memory-R1 v5（arXiv 2508.19828，Jan 2026）：仅 **152 个训练 QA**，ADD/UPDATE/DELETE/NOOP 动作空间，PPO+GRPO，泛化到 LoCoMo/MSC/LongMemEval 三个 benchmark，3B-14B 模型规模。
+- Mem-alpha（arXiv 2509.25911，Sep 2025）：在 30k token 上训练，**泛化到 400k+ token**（13x 训练长度）。
+
+**影响**：MemoryGym 的训练可能不需要大量数据。少量高质量 SFT 轨迹 + RL 即可泛化。长度泛化意味着可以在 lite tier 训练、standard tier 评测。
+
+**建议**：首轮训练目标应是"跑通 + 泛化验证"而非数据积累。用 10-20 个高质量 seed 的 SFT 轨迹做冷启动，验证是否泛化到未见模板/seed。
+
 ---
 
 ## 训练 CLI

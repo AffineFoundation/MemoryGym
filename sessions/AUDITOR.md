@@ -153,12 +153,11 @@ sessions/AUDITOR.md（你，/loop 30m）— 调度中枢：审计、设计、方
 
 ## 当前任务
 
-### 审计 A101 — 下一轮
+### 审计 A102 — 下一轮
 
-- Phase 79+80 / 81+82 / 83 执行进度（executor 仍无活动？）
-- 批次 16 扩展：hospital/sport 仍为旧版本，需催促
-- 维度 C：距 A89 前沿搜索已 >10 轮，需做一次前沿搜索
-- 维度 A：bench.py `--official` 模式下 writes_used vs stored_count 语义是否正确
+- Phase 79+80 / 81+82 / 83 执行进度
+- 维度 B：Inspect AI 集成端到端验证（eval_task.py 能否实际跑通？）
+- 维度 A：SFT 轨迹质量验证——generate_sft_trajectory 输出是否能被 OpenAI API 解析
 
 ## 待跟进
 
@@ -167,11 +166,38 @@ sessions/AUDITOR.md（你，/loop 30m）— 调度中枢：审计、设计、方
 - **Reward hacking 风险**（A42+A44）：env.py shaped reward 用 `n.lower() in content.lower()` 匹配实体名，Edit +0.5 不验证 new_text。暂不修复——等训练跑出数据再优化
 - **Retrieval 瓶颈**（A62+A69 数据）：11% 正确率，瓶颈在模型侧（entities_per_write=1.0，不做 packing）
 - **7 个推理类型 0%**（A62 数据）：系统性模型能力天花板，非 bug
-- **前沿方向**（v7, A89）：MemBuilder ADRPO 84% LoCoMo（attributed dense reward）、MemPO（self-memory policy, 25% F1+, 70% token↓）、Memex(RL)（indexed memory + budget-aware reward shaping）、MemoryRewardBench（RM 质量瓶颈）、MIRA（utility decay reward）、AgeMem step-wise GRPO（F4）、ICLR 2026 MemAgents Workshop（4/26-27）
+- **前沿方向**（v8, A101）：EMPO2（GRPO 次优，hybrid on/off-policy +128%）、Memory-R1 v5（152 QA 泛化 3 benchmarks）、Mem-alpha（30k→400k 长度泛化）、AMA-Bench（real agentic trajectories, GPT5.2 仅 72%）、MemoryAgentBench（ICLR 2026, 4 competencies）、memsearch/Zilliz（markdown+BM25+RRF 验证我们 MarkdownBackend）、Mem-T（dense reward for long-horizon）、ICLR 2026 MemAgents Workshop
 
 ## 审计日志
 
 （每次审计的结论摘要，最新在最上面。保持简洁，详细分析写 devlog/。）
+
+### 审计 A101（2026-03-11）— 前沿搜索 v8 + 进度检查（维度 C+A）
+
+**Phase 进度**：Phase 79-83 全部未启动。Executor 自 Phase 78 后无 commit（连续 3 轮审计未动）。
+
+**批次 16 进度**：company s0/s1/s2 完成（v0.8.0），hospital/sport 仍为旧版本。
+
+**bench.py writes_used 语义检查**（维度 A）：
+- 真实 eval 路径 L310-311：正确使用 `writes_used`（agent 实际写入次数）
+- Simulation 路径 L559：`writes_used = stored_count`（intentional，simulation 1 write = 1 entity）
+- `--official` 模式 L132-135：auto eval_salt=1，语义正确
+- **结论**：A95 报告的 writes_used 缺失已不是 bug（L331 正确保存）
+
+**前沿搜索 v8**（维度 C，距 A89 已 12 轮）：
+
+新发现（2025.09-2026.03）：
+1. **EMPO2**（MS Research, 2602.23008）：GRPO 在记忆任务上收敛次优，hybrid on/off-policy +128% → 写入 TRAINER.md F8
+2. **Memory-R1 v5**（2508.19828）：152 个 QA 训练 → 泛化 3 benchmarks，3B-14B 规模 → 写入 TRAINER.md F9
+3. **Mem-alpha**（2509.25911）：30k token 训练 → 400k+ 泛化（13x）→ 写入 TRAINER.md F9
+4. **AMA-Bench**（2602.22769）：real agentic trajectories，GPT 5.2 仅 72.26%
+5. **MemoryAgentBench**（ICLR 2026）：4 competencies 含 Conflict Resolution ≈ 我们 maintenance 轴
+6. **memsearch**（Zilliz）：markdown + vector/BM25/RRF → 验证我们 MarkdownBackend 架构选择正确
+7. **Mem-T**（2601.23014）：densifying rewards for long-horizon memory agents
+
+**MemoryGym 定位确认**：信息过载 + 预算压力 + 更新追踪的组合仍是独特定位。竞品覆盖对话历史/长上下文，不涉及存储决策。Markdown memory + hybrid search 已成行业趋势。
+
+**派发**：F8（EMPO2 hybrid）+ F9（极小数据泛化）→ TRAINER.md。无需新 Phase（训练线程可自行参考）。
 
 ### 审计 A100（2026-03-11）— eval 数据方差分析（维度 E）
 
