@@ -153,11 +153,12 @@ sessions/AUDITOR.md（你，/loop 30m）— 调度中枢：审计、设计、方
 
 ## 当前任务
 
-### 审计 A100 — 下一轮
+### 审计 A101 — 下一轮
 
-- Phase 79+80 / 81+82 / 83 执行进度
-- 批次 16 完成度（目前 1/3）
-- 新 eval 数据分析：Qwen3.5 s0=41% vs s1=4% 方差分析（维度 E）
+- Phase 79+80 / 81+82 / 83 执行进度（executor 仍无活动？）
+- 批次 16 扩展：hospital/sport 仍为旧版本，需催促
+- 维度 C：距 A89 前沿搜索已 >10 轮，需做一次前沿搜索
+- 维度 A：bench.py `--official` 模式下 writes_used vs stored_count 语义是否正确
 
 ## 待跟进
 
@@ -171,6 +172,32 @@ sessions/AUDITOR.md（你，/loop 30m）— 调度中枢：审计、设计、方
 ## 审计日志
 
 （每次审计的结论摘要，最新在最上面。保持简洁，详细分析写 devlog/。）
+
+### 审计 A100（2026-03-11）— eval 数据方差分析（维度 E）
+
+**数据**（Qwen3.5 company v0.8.0，3 seeds）：
+
+| seed | composite | breadth | maint | reason | eff | writes |
+|------|-----------|---------|-------|--------|-----|--------|
+| s0 | **41.2%** | 57% | 25% | 50% | 27% | 30 |
+| s1 | **4.2%** | 0% | 0% | 14% | 3% | 30 |
+| s2 | **39.6%** | 40% | 33% | 56% | 27% | 30 |
+
+**s1 根因分析**：模型用满 30 次写入（与 s0/s2 相同），但检索完全失败（retrieval=0%，update=0%）。
+
+轨迹分析发现：模型做了有损属性打包（每次 Write 存实体名 + 选择性属性），导致问题所问属性不在存储内容中。例如 Lumen Tech 存了 market cap/dividend/IPO/customers/workforce/gross profit/patents，但没存被问的 debt-to-equity ratio。s1 世界的实体-属性组合刚好触发了模型打包策略的盲区。
+
+**结论**：这是**模型侧行为**，非系统 bug。s0/s2 分数接近（41% vs 40%）确认系统是稳定的。s1 是模型策略在特定种子下的极端表现。
+
+**s1 唯一通过的推理类型**：abstention=1.0（正确拒绝回答不知道的）、relationship_lookup=1.0（关系查询不依赖属性值）。
+
+**不派发 Phase**——这是模型能力问题，训练可以优化但评测系统无需修改。
+
+**Phase 进度**：Phase 79-83 全部未启动。Executor 自 Phase 78（`094b5bf`）后无 commit。
+
+**批次 16 进度**：company 3 seeds 完成（v0.8.0），hospital/sport 仍为旧版本。
+
+**训练者反馈**：F1-F7 无新增。
 
 ### 审计 A99（2026-03-11）— 队列清理 + eval 数据初步分析（维度 A+E）
 
