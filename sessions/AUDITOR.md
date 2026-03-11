@@ -153,11 +153,11 @@ sessions/AUDITOR.md（你，/loop 30m）— 调度中枢：审计、设计、方
 
 ## 当前任务
 
-### 审计 A97 — 下一轮
+### 审计 A98 — 下一轮
 
-- Phase 79-81 执行进度
+- Phase 79-82 执行进度（3 个积压 Phase 未启动，需关注 executor 活跃度）
 - 批次 16 进度
-- 代码审计：simulation.py 9 策略一致性 + 评分验证逻辑（维度 B）
+- 代码审计：memory/ 后端（ChromaDB + MarkdownBackend）对等测试覆盖（维度 B）
 
 ## 待跟进
 
@@ -171,6 +171,23 @@ sessions/AUDITOR.md（你，/loop 30m）— 调度中枢：审计、设计、方
 ## 审计日志
 
 （每次审计的结论摘要，最新在最上面。保持简洁，详细分析写 devlog/。）
+
+### 审计 A97（2026-03-11）— simulation.py + adapters/ 审计（维度 B）
+
+**Phase 进度**：Phase 78 ✅。Phase 79-81 全部未启动（executor 无活动，3 个 Phase 积压）。
+
+**simulation.py 审计**（652 行）：✅ 无 bug。
+- 9 策略定义完整，`_construct_and_validate` 逻辑正确（retrieval/update 用 `_format_value`，其余用 GT）
+- `run_validation` 18+ 项不变量检查覆盖全面
+- `simulate_one` vs `simulate_one_stream`：非流模式不含 relationship 文本——设计合理，不影响评分
+- `writes_used=v["stored"]` 对 simulation 是精确的（1 write per entity）
+
+**adapters/ 审计**（_common.py 222 行 + verl 248 行 + slime 155 行）：
+1. **Memory leak: env.close() 未调用**：verl_adapter.run()（L117 创建 env，L239 return 前未 close）和 slime_adapter.generate()（L54 创建 env，L122 return 前未 close）。每个 episode 泄漏一个 ChromaDB collection（`memenv_{uuid}`），训练数千 episode 后 OOM。
+2. **`_common.run_episode` info 未初始化**（L220）：如果 while 循环不执行（max_turns=0 或空 stream），`info` 变量未绑定 → `NameError`。
+3. **Tool parsing 双重实现**：`_common.py` 和 `stream_agent.py` 有并行的 `_TOOL_CALL_RE` / `_KNOWN_TOOLS` / `parse_tool_calls`，无共享代码。Phase 76 已对其他 3 路径分歧添加测试，但 tool parsing 不在测试范围。
+
+**派发 Phase 82 → EXECUTOR.md**：adapters env.close() + info 初始化。
 
 ### 审计 A96（2026-03-11）— protocol.py + training/env.py 审计（维度 B+A）
 

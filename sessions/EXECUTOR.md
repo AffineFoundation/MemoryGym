@@ -77,6 +77,26 @@
 - `python -m pytest tests/ -q` 全部通过
 - 新测试覆盖全部 20 种推理类型
 
+### Phase 82 — adapters env.close() + info 初始化
+
+**依据**：审计 A97 发现 adapters 内存泄漏和变量未绑定。
+
+**问题 1 — env.close() 未调用**：
+- `verl_adapter.py` L117: `env = MemoryEnv(...)`, L239 返回前未 close
+- `slime_adapter.py` L54: `env = MemoryEnv(...)`, L122 返回前未 close
+- `_common.py` `run_episode` 也未 close env
+- 每个 episode 泄漏一个 ChromaDB collection，训练时 OOM
+- **修复**：在所有 env 使用完毕后调用 `env.close()`。推荐 try/finally 确保异常时也清理。
+
+**问题 2 — `_common.py` `run_episode` L220 info 未初始化**：
+- 如果 while 循环不执行，`info` 变量未绑定
+- **修复**：在循环前 `info: dict = {}` 初始化
+
+**验证标准**：
+- `python -m pytest tests/ -q` 全部通过
+- grep 确认 adapters 中 env.close() 存在
+- grep 确认 `info` 在循环前初始化
+
 ### Phase 81 — SFT 轨迹 JSON 转义修复
 
 **依据**：审计 A96 发现 `training/env.py` generate_sft_trajectory 用 f-string 直接嵌入值，未做 JSON 转义。
