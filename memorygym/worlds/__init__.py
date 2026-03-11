@@ -7,6 +7,7 @@ from .city import CityWorld
 from .hospital import HospitalWorld
 from .sport import SportWorld
 from .movie import MovieWorld
+from .university import UniversityWorld
 
 ALL_TEMPLATES: dict[str, type[WorldTemplate]] = {
     "company": CompanyWorld,
@@ -15,10 +16,11 @@ ALL_TEMPLATES: dict[str, type[WorldTemplate]] = {
     "hospital": HospitalWorld,
     "sport": SportWorld,
     "movie": MovieWorld,
+    "university": UniversityWorld,
 }
 
 __all__ = [
     "WorldTemplate", "World", "EntitySpec", "GeneratedQA", "Correction", "Contradiction", "Relationship",
     "CompanyWorld", "ResearchWorld", "CityWorld", "HospitalWorld", "SportWorld",
-    "MovieWorld", "ALL_TEMPLATES",
+    "MovieWorld", "UniversityWorld", "ALL_TEMPLATES",
 ]
