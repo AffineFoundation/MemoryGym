@@ -153,11 +153,11 @@ sessions/AUDITOR.md（你，/loop 30m）— 调度中枢：审计、设计、方
 
 ## 当前任务
 
-### 审计 A102 — 下一轮
+### 审计 A103 — 下一轮
 
-- Phase 79+80 / 81+82 / 83 执行进度
-- 维度 B：Inspect AI 集成端到端验证（eval_task.py 能否实际跑通？）
-- 维度 A：SFT 轨迹质量验证——generate_sft_trajectory 输出是否能被 OpenAI API 解析
+- Phase 79-84 执行进度（executor 连续 4 轮不活跃）
+- 维度 B：bench.py `--backend markdown` 端到端测试（MarkdownBackend 在真实 eval 中能跑通吗？）
+- 维度 A：stream_agent.py 与 eval_task.py 的 tool name 一致性（stream_agent 用 Write/Edit/Read 还是 write_memory?）
 
 ## 待跟进
 
@@ -171,6 +171,24 @@ sessions/AUDITOR.md（你，/loop 30m）— 调度中枢：审计、设计、方
 ## 审计日志
 
 （每次审计的结论摘要，最新在最上面。保持简洁，详细分析写 devlog/。）
+
+### 审计 A102（2026-03-11）— Inspect AI 端到端 + SFT 轨迹质量（维度 B+A）
+
+**Inspect AI 路径关键 bug**（维度 B）：
+- `inspect_task/tools.py` 的 `@tool` 装饰器未指定 `name=` 参数
+- 实际注册工具名：`write_memory`, `edit_memory`, `read_memory`
+- SYSTEM_PROMPT 告诉模型调用：`Write`, `Edit`, `Read`
+- **结果**：模型调用不存在的工具名 → Inspect AI 路径完全无法工作
+- `_count_tool_calls` L150 也用 `"Write"/"Edit"` 匹配，但实际 function name 是 `write_memory`/`edit_memory`
+- **派发 Phase 84**：修复 `@tool(name="Write")` 等
+
+**SFT 轨迹质量验证**（维度 A）：
+- 30 个轨迹（10 seeds × 3 templates）全部 JSON 合法，0 个 broken tool_call 块
+- 原因：世界生成不产生含引号/反斜杠的实体值（360 worlds 验证），所以 f-string 碰巧工作
+- JSON 转义 bug（Phase 81+82）是**潜在 bug**：当前不触发，但代码仍是错的
+- 优先级不变（低于 Phase 84）
+
+**Phase 进度**：79-83 全部未启动。Executor 连续 4 轮不活跃。
 
 ### 审计 A101（2026-03-11）— 前沿搜索 v8 + 进度检查（维度 C+A）
 

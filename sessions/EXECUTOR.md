@@ -88,6 +88,24 @@
 
 **验证**：`python -m pytest tests/ -q` 全部通过
 
+### Phase 84 — Inspect AI 工具名不匹配修复
+
+**依据**：审计 A102。eval_task.py SYSTEM_PROMPT 告诉模型调用 `Write`/`Edit`/`Read`，但实际 Inspect AI 工具注册名是 `write_memory`/`edit_memory`/`read_memory`（Python 函数名）。模型尝试调用不存在的工具名 → 整个 Inspect AI 路径无法工作。
+
+**修复**（`memorygym/inspect_task/tools.py`）：
+- L39: `@tool` → `@tool(name="Write")`
+- L69: `@tool` → `@tool(name="Edit")`
+- L108: `@tool` → `@tool(name="Read")`
+- `memory_search` 和 `submit_answer` 函数名已正确，无需改
+
+**同时修复** eval_task.py L150:
+- `if fn in ("Write", "Edit", "memory_store"):` → `if fn in ("Write", "Edit", "write_memory", "edit_memory", "memory_store"):`
+- L152 同理添加 `"read_memory"` 备选
+
+**验证**：
+- `python -m pytest tests/ -q` 全部通过
+- `python -c "from memorygym.inspect_task.tools import create_memory_tools; tools, _, _ = create_memory_tools(); print([t.__name__ for t in tools])"` 确认工具名正确
+
 ### Phase 83 — MarkdownBackend recall 基准测试
 
 **依据**：审计 A98。ChromaDB 有 recall + accuracy 测试，MarkdownBackend 无对等测试。
