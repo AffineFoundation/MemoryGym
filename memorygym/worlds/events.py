@@ -223,6 +223,17 @@ class EventGeneratorMixin:
         if entities_per_batch is None:
             entities_per_batch = self.entities_per_batch
         events: list[dict] = []
+
+        # Build map of original attr values for corrected/contradicted entities
+        # so ingest documents render pre-correction values
+        _original_attrs: dict[str, dict[str, Any]] = {}
+        if corrections:
+            for c in corrections:
+                _original_attrs.setdefault(c.entity_name, {})[c.attr] = c.old_val
+        if contradictions:
+            for ct in contradictions:
+                _original_attrs.setdefault(ct.entity_name, {})[ct.attr] = ct.old_val
+
         entities = list(world.entities)
         n_batches = max(1, len(entities) // entities_per_batch)
         # Use template-specific correction timing
@@ -276,6 +287,14 @@ class EventGeneratorMixin:
             # Render and emit ingest event (narrative mode)
             docs = []
             for e in batch_entities:
+                # Temporarily restore original attrs for rendering
+                saved: dict[str, Any] = {}
+                if e.name in _original_attrs:
+                    for attr, old_val in _original_attrs[e.name].items():
+                        if attr in e.attrs:
+                            saved[attr] = e.attrs[attr]
+                            e.attrs[attr] = old_val
+
                 doc = self.render_document(e, world.active_attrs, rng,
                                           other_entities=batch_entities)
                 # Append relationship sentences if any
@@ -285,6 +304,10 @@ class EventGeneratorMixin:
                         rel_lines = [self.render_relationship(r) for r in rels]
                         doc += "\n" + " ".join(rel_lines)
                 docs.append(doc)
+
+                # Restore corrected attrs
+                for attr, val in saved.items():
+                    e.attrs[attr] = val
             events.append({
                 "type": "ingest",
                 "batch": batch_idx + 1,

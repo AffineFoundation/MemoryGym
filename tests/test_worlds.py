@@ -373,6 +373,37 @@ def test_corrections_mutate_world():
             f"Correction for {c.entity_name}.{c.attr} didn't change value")
 
 
+def test_ingest_uses_original_values():
+    """Ingest documents must contain pre-correction values, not post-correction."""
+    tmpl = CompanyWorld()
+    world = tmpl.generate_world(seed=42, n_entities=60)
+
+    # Save original values before corrections mutate them
+    corrections = tmpl.generate_corrections(world, Random(42 + 3333), 5)
+    assert len(corrections) > 0
+
+    # Generate stream — ingest docs should use original (old_val) values
+    stream = tmpl.generate_stream(
+        world, Random(42), corrections,
+        stored_names=set(), n_questions=10,
+    )
+
+    ingest_events = [e for e in stream if e["type"] == "ingest"]
+    for c in corrections:
+        old_fmt = tmpl._format_value(c.attr, c.old_val)
+        new_fmt = tmpl._format_value(c.attr, c.new_val)
+        # Find the ingest event containing this entity
+        for ev in ingest_events:
+            if c.entity_name in ev.get("entity_names", []):
+                idx = ev["entity_names"].index(c.entity_name)
+                doc = ev["documents"][idx]
+                # Ingest doc should contain the OLD value, not the new one
+                assert old_fmt in doc, (
+                    f"Ingest doc for {c.entity_name}.{c.attr} should contain "
+                    f"old value {old_fmt} but doesn't:\n{doc[:200]}")
+                break
+
+
 @pytest.mark.slow
 def test_abstraction_generality():
     """All WorldTemplate implementations must produce consistent evaluation."""

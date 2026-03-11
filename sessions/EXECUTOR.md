@@ -57,19 +57,11 @@
 
 ## 当前任务
 
-> **P1+P2 完成，P3 进行中。** 按优先级排序（A118 审计重整）。
+> P0 已修复。待办为空。
 
 ---
 
-## P2 — RL 训练质量 ✅
-
-### Phase 92 — RL reward 对齐 4 轴评分 + Edit shaped reward 验证 ✅
-
-get_verifiable_reward() 改用 compute_axis_scores() composite。Edit shaped reward 验证 new_val 正确性（+0.5 正确 / +0.1 错误）。+2 tests。
-
----
-
-## P1 — Corrections 0/5 系统性修复 ✅
+## P0 — Ingest 文档渲染使用修正后值 ✅
 
 ---
 
@@ -80,6 +72,13 @@ get_verifiable_reward() 改用 compute_axis_scores() composite。Edit shaped rew
 - **用户体验修正**：API key 错误信息改善（docs/Design.md 已删除 A65，LEADERBOARD.md 已填充 A58）
 - **Promise/Progress Reward**：等简单 shaped reward 在真实训练中验证后，再决定是否需要更复杂的 reward 模型
 - **legacy 工具名清理**：移除 _KNOWN_TOOLS 中的 memory_store/memory_forget/memory_get/memory_list（等 v3 评测基线稳定后）
+
+## 已完成
+
+### Phase 98 — Correction 引导消息增强 ✅
+### Phase 97 — Codebase 世界模板（第 8 个领域） ✅
+### Phase 96 — University 模板 Constraint 4 逻辑修复 ✅
+### Phase 94 — 死代码清理 ✅
 
 ## 已完成
 
