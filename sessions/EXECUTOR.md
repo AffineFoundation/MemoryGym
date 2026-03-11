@@ -59,6 +59,23 @@
 
 > **Phase 79-86 全部完成。** 以下是新任务。
 
+### Phase 93 — CLI UX 修复：README tier 默认值 + help 补全 + strategy 校验
+
+**问题**：
+1. README.md L68 说 "lite (default)"，代码实际默认 standard（60/20/5/30）
+2. `--tier` help 遗漏 "multi"（代码支持 4 种 tier）
+3. `--strategy foobar` 静默回退到全部策略，无警告
+
+**修复**：
+1. README.md L68：改为 "standard (default)" 或改代码默认为 lite（**选前者**——standard 是 eval 标准配置）
+2. bench.py L96：help 改为 `"evaluation tier (lite/standard/hard/multi)"`
+3. bench.py L152-153：添加校验，无效 strategy 名打印警告或 raise
+
+**验证**：
+1. `python -m memorygym.bench --help` 输出正确
+2. `python -m pytest tests/test_bench.py -q` 全部通过
+3. 可选：添加测试 `test_invalid_strategy_warns`
+
 ### Phase 92 — RL reward 对齐 4 轴评分 + Edit shaped reward 验证
 
 **问题 1**：`MemoryEnv.get_verifiable_reward()` 用 `correct_count / total_questions`（flat 均值），不映射真实 eval 的 4 轴加权（0.30 breadth + 0.25 maintenance + 0.25 reasoning + 0.20 efficiency）。效率计算也不同（RL: unique_stored/writes_used vs eval: correct_total/write_budget）。

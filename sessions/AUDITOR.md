@@ -153,9 +153,9 @@ sessions/AUDITOR.md（你，/loop 30m）— 调度中枢：审计、设计、方
 
 ## 当前任务
 
-### 审计 A117 — 下一轮
+### 审计 A118 — 下一轮
 
-- 维度 A：Phase 87-92 验证（executor 持续不活跃）
+- 维度 A：Phase 87-93 验证（executor 持续不活跃，7 个 Phase 堆积）
 - 维度 E：批次 17 数据（evaluator 持续不活跃）
 
 ## 待跟进
@@ -170,6 +170,22 @@ sessions/AUDITOR.md（你，/loop 30m）— 调度中枢：审计、设计、方
 ## 审计日志
 
 （每次审计的结论摘要，最新在最上面。保持简洁，详细分析写 devlog/。）
+
+### 审计 A117（2026-03-11）— CLI UX + 文档一致性审计（维度 D）
+
+**Phase 87-92 状态**：executor 未活跃，6 Phase 全部待执行。Batch 17 同样未执行。
+
+**CLI UX 审计**（维度 D — 首次审计此维度）：
+
+1. 🔴 **README tier 默认值文档错误**：README.md L68 说 "lite (default)"，实际代码 `_resolve_config()` 无 `--tier` 时 fallback 到 standard（60/20/5/30）。用户期望 lite 但跑的是 standard。
+2. 🟡 **--tier help 遗漏 "multi"**：argparse help 只写 "lite/standard/hard"，代码支持 4 种 tier 含 multi。
+3. 🟡 **--strategy 无效名静默忽略**：`--strategy foobar` 给空列表 → 回退到全部策略，无警告。
+4. ℹ️ **API key 错误晚到**：`--model` 模式下 API key 缺失在 stream_agent 内才报错，不是 bench.py 入口处 fail-fast。
+5. ✅ **所有 15 个 CLI flag 均有代码实现**，无"静默无效"的 flag。
+6. ✅ **--backend markdown** 正确 wired（bench.py L229-234）。
+7. ✅ **--no-redaction** 正确传递到 stream_agent。
+
+**→ 派发 Phase 93**（README 修复 + CLI help 补全 + strategy 校验）
 
 ### 审计 A116（2026-03-11）— RL 训练路径 vs 真实评估路径对齐审计（维度 A）
 
