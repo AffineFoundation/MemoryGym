@@ -132,6 +132,22 @@
 
 **建议**：如果 SFT v3 效果好，直接进入 GRPO 阶段，不需要扩充数据量。
 
+#### F4 — AgeMem Step-wise GRPO 参考方案（审计线程前沿搜索 A70）
+
+**发现**：AgeMem（arXiv 2601.01885）提出三阶段渐进式 RL + step-wise GRPO，解决记忆操作的稀疏/不连续 reward 问题。平均提升 4.82-8.57%。
+
+**影响**：我们的 GRPO v2 出现 policy collapse（loss→负值），step-wise GRPO 直接解决此类问题。三阶段训练可映射到 curriculum：lite（基础存储）→ standard（更新追踪）→ multi（跨 session）。
+
+**建议**：GRPO v3 参考 AgeMem 的 step-wise reward 设计，将跨阶段依赖转化为可学习信号。详见 `devlog/2026-03-11-frontier-v6.md`。
+
+#### F5 — Utility-aware Reward Shaping（审计线程前沿搜索 A70）
+
+**发现**：A-MAC（arXiv 2603.04549）将记忆准入分解为 5 个因子（utility/confidence/novelty/recency/type prior），LoCoMo F1=0.583。
+
+**影响**：我们的 shaped reward 只区分 "存了新实体(+0.3)" vs "重复(-0.1)"，缺乏 utility/novelty 区分。更细粒度的 reward 可能加速收敛。
+
+**建议**：等训练跑通基线后考虑。低优先级。
+
 ---
 
 ## 训练 CLI
