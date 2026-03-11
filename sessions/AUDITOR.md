@@ -153,11 +153,11 @@ sessions/AUDITOR.md（你，/loop 30m）— 调度中枢：审计、设计、方
 
 ## 当前任务
 
-### 审计 A112 — 下一轮
+### 审计 A113 — 下一轮
 
-- Phase 86 执行进度
-- 维度 E：批次 17 hospital/sport/research 数据到位后分析
-- 维度 A：training/cli.py 的 SFT export 命令是否与 generate_sft_trajectory 参数一致
+- 维度 E：批次 17 数据到位后分析（hospital/sport/research v0.8.x）
+- 维度 A：training CLI `data` subcommand 端到端测试——`python -m memorygym.train data` 能否产出可用 JSONL？
+- 维度 D：文档 audit——CLAUDE.md §常用命令 是否覆盖训练 CLI？docs/ROADMAP.md 是否过时？
 
 ## 待跟进
 
@@ -171,6 +171,21 @@ sessions/AUDITOR.md（你，/loop 30m）— 调度中枢：审计、设计、方
 ## 审计日志
 
 （每次审计的结论摘要，最新在最上面。保持简洁，详细分析写 devlog/。）
+
+### 审计 A112（2026-03-11）— Phase 86 ✅ + CLI 一致性 + eval 数据等待（维度 A+E）
+
+**Phase 进度**：Phase 86 ✅（commit `8b7cd3e`，+5 consistency tests, recall fix）。**队列清零**。Phase 79-86 全部完成。
+
+**test_path_consistency.py**：19 tests，全部通过 ✓
+
+**training/cli.py 一致性**（维度 A）：
+- `data` subcommand 默认值：n_entities=60, n_questions=20, n_corrections=5, write_budget=30 — 与 generate_sft_trajectory 和 standard tier 一致 ✓
+- `sft` subcommand 同上 ✓
+- `grpo` subcommand 使用 tier 参数（默认 lite）✓
+
+**批次 17 数据**（维度 E）：hospital/sport/research 仍为旧版本（Mar 10），evaluator 尚未执行批次 17。
+
+**不派发 Phase**——系统健康，队列空，等待 eval 数据。
 
 ### 审计 A111（2026-03-11）— 训练闭环验证 + eval 数据扩展（维度 A+E）
 
