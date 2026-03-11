@@ -153,11 +153,11 @@ sessions/AUDITOR.md（你，/loop 30m）— 调度中枢：审计、设计、方
 
 ## 当前任务
 
-### 审计 A86 — 下一轮
+### 审计 A87 — 下一轮
 
-- Phase 74 执行进度
+- Phase 75 执行进度
 - 批次 15 进展
-- 代码审计：inspect_task/tools.py + eval_task.py Inspect AI 路径端到端可运行性
+- 代码审计：worlds/eval_scorer.py 评分路径正确性
 
 ## 待跟进
 
@@ -171,6 +171,22 @@ sessions/AUDITOR.md（你，/loop 30m）— 调度中枢：审计、设计、方
 ## 审计日志
 
 （每次审计的结论摘要，最新在最上面。保持简洁，详细分析写 devlog/。）
+
+### 审计 A86（2026-03-11）— Inspect AI 路径深度审计 + Phase 75 派发（维度 B）
+
+**Phase 进度**：Phase 74 ✅ commit `4f120ed`（SYSTEM_PROMPT correction 策略泄漏移除）。grep 确认 0 残留。
+
+**Inspect AI 路径审计发现 2 个 bug + 2 个问题**：
+
+1. **Bug: ChromaDB Edit fallback 缺检查**（`inspect_task/tools.py` L95-99）：Phase 70 修复了 `_tool_helpers.py` 和 `training/env.py`，但**遗漏了 `inspect_task/tools.py`**。同一 bug 的第三个实例：`search()` 返回语义相似结果，`replace()` 可能 no-op，报告 "Edited" 成功。
+
+2. **Bug: 缺 eval_salt**（`eval_task.py` L172）：`generate_world(seed, n_entities)` 未传 `eval_salt`。bench.py 传 `eval_salt=tier_cfg.get("eval_salt", 1)`。Inspect AI 路径缺少防训练过拟合参数。
+
+3. **MarkdownBackend 不支持**（`inspect_task/tools.py` L34-35）：`create_memory_tools` 硬编码 ChromaDB。Inspect AI 路径无法使用 MarkdownBackend。低优先级。
+
+4. **Dead code**（`eval_task.py` L240-242）：`n_corrections_total` 计算后未使用（Phase 71 移除了引用）。
+
+**派发 Phase 75 → EXECUTOR.md**：修复 bug 1+2，清理 dead code。
 
 ### 审计 A85（2026-03-11）— adapters/ 端到端审计（维度 B）
 

@@ -57,7 +57,50 @@
 
 ## 当前任务
 
-### Phase 74 — 系统提示词 Correction 策略泄漏修复（Phase 57/71 遗漏） ⚡ 最高优先级
+### Phase 75 — Inspect AI 路径 bug 修复（Edit fallback + eval_salt + dead code）⚡ 最高优先级
+
+**依据**：审计 A86 发现 Inspect AI 路径 (`inspect_task/tools.py` + `eval_task.py`) 有 2 个 bug。
+
+**Bug 1 — ChromaDB Edit fallback 缺检查**（`memorygym/inspect_task/tools.py` L95-99）：
+Phase 70 修复了 `_tool_helpers.py` 和 `training/env.py`，但遗漏了此文件。
+```python
+# 当前（有 bug）：
+results = backend.search(old_text, top_k=1)
+if results:
+    backend.forget(results[0]["id"])
+    content = results[0]["content"].replace(old_text, new_text, 1)  # no-op 风险
+    backend.store(content)
+    return f"Edited. ..."
+
+# 修复（与 _tool_helpers.py 一致）：
+results = backend.search(old_text, top_k=1)
+if results and old_text in results[0]["content"]:
+    backend.forget(results[0]["id"])
+    content = results[0]["content"].replace(old_text, new_text, 1)
+    backend.store(content)
+    return f"Edited. ..."
+mem_budget.writes_used -= 1
+raise ToolError("Text not found in memory.")
+```
+
+**Bug 2 — 缺 eval_salt**（`memorygym/worlds/eval_task.py` L172）：
+```python
+# 当前：
+world = tmpl.generate_world(seed, n_entities)
+# 修复：
+world = tmpl.generate_world(seed, n_entities, eval_salt=1)
+```
+bench.py 和 env.py 都传 eval_salt，Inspect AI 路径遗漏。
+
+**Dead code 清理**（`eval_task.py` L240-242）：
+`n_corrections_total` 变量计算后未使用（Phase 71 移除了引用的格式字符串）。删除。
+
+**验证标准**：
+- `python -m pytest tests/ -q` 全部通过
+- grep 确认 `inspect_task/tools.py` 的 edit 路径包含 `old_text in results[0]["content"]`
+- grep 确认 `eval_task.py` 包含 `eval_salt`
+
+### Phase 74 — 系统提示词 Correction 策略泄漏修复 ✅ commit `4f120ed`
 
 **依据**：审计 A84 发现 Phase 57（系统提示词中立化）和 Phase 71（事件格式策略提示移除）均遗漏了 SYSTEM_PROMPT 中的 "Handling Corrections" 章节。
 
