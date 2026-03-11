@@ -153,11 +153,11 @@ sessions/AUDITOR.md（你，/loop 30m）— 调度中枢：审计、设计、方
 
 ## 当前任务
 
-### 审计 A90 — 下一轮
+### 审计 A91 — 下一轮
 
-- Phase 76 执行进度
+- Phase 76 + Phase 77 执行进度
 - 批次 15 进展
-- 代码审计：events.py 事件流生成 + 自适应问题替换逻辑（维度 B）
+- 代码审计：base.py gen_adaptive_questions 问题分配逻辑（维度 B）
 
 ## 待跟进
 
@@ -171,6 +171,29 @@ sessions/AUDITOR.md（你，/loop 30m）— 调度中枢：审计、设计、方
 ## 审计日志
 
 （每次审计的结论摘要，最新在最上面。保持简洁，详细分析写 devlog/。）
+
+### 审计 A90（2026-03-11）— events.py 事件流审计：contradiction 丢失 bug + 问题权重不一致（维度 B）
+
+**Phase 进度**：Phase 75 ✅ 完全完成（commit `d481f1d`）。Phase 76 未启动。批次 15 进度 0/6。
+
+**Bug 1 — Contradiction batch 越界导致 contradictions 静默丢失**（events.py L233-234）：
+```python
+contradiction_batch = max(correction_batch + 1, int(n_batches * contra_frac))
+```
+当 `correction_batch` 靠近末尾时，`contradiction_batch` 可能 ≥ `n_batches`。循环 `for batch_idx in range(n_batches)` 永远不会匹配，contradictions 被静默丢弃。
+
+**触发条件**：lite tier（30 entities, 10/batch → n_batches=3）+ 晚 correction（city corr_frac=0.8 → correction_batch=2, contradiction_batch=max(3, ...)=3, 但 batch_idx 最大为 2）。
+
+**修复**：`contradiction_batch = min(n_batches - 1, max(correction_batch + 1, int(n_batches * contra_frac)))`
+
+**Bug 2 — 中流问题忽略 template question_weights**（events.py L464-496）：
+`_generate_one_question()` 用硬编码概率（retrieval 50%, update 25%, synthesis 15%, abstention 10%），而 `gen_adaptive_questions()` 用 `self.question_weights`（Phase 32 模板定制）。中流问题（~40% 总量）完全忽略模板差异化设计。
+
+例如：hospital `update=0.30` 但中流只分 25%；city `retrieval=0.45` 但中流分 50%。
+
+**修复**：`_generate_one_question()` 应读 `self.question_weights` 替代硬编码阈值。
+
+**派发 Phase 77 → EXECUTOR.md**。
 
 ### 审计 A89（2026-03-11）— 前沿搜索 v7 + Phase 进度检查（维度 C）
 

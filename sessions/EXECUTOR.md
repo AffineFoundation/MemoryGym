@@ -57,7 +57,34 @@
 
 ## 当前任务
 
-### Phase 76 — 3 路径一致性自动化测试 ⚡ 最高优先级
+### Phase 77 — events.py contradiction 丢失 bug + 中流问题权重不一致 ⚡ 最高优先级
+
+**依据**：审计 A90 发现 events.py 事件流生成 2 个问题。
+
+**Bug 1 — Contradiction batch 越界**（`memorygym/worlds/events.py` L233-234）：
+```python
+# 当前（有 bug）：
+contradiction_batch = max(correction_batch + 1, int(n_batches * contra_frac))
+# 当 correction_batch 靠近末尾时，contradiction_batch >= n_batches
+# 循环 for batch_idx in range(n_batches) 永远不匹配 → contradictions 静默丢弃
+
+# 修复：
+contradiction_batch = min(n_batches - 1, max(correction_batch + 1, int(n_batches * contra_frac)))
+```
+触发条件：lite tier（30 entities, 10/batch → n_batches=3）+ 晚 correction timing（city）。
+
+**Bug 2 — 中流问题忽略 template question_weights**（`memorygym/worlds/events.py` L464-496）：
+`_generate_one_question()` 用硬编码概率（retrieval 50%, update 25%, synthesis 15%, abstention 10%），而 `gen_adaptive_questions()` 用 `self.question_weights`（Phase 32 模板定制）。
+
+修复方案：`_generate_one_question()` 读 `self.question_weights`，用 `w["retrieval"]`、`w["update"]`、`w["comprehension"]` 替代硬编码阈值。保留现有的 fallback-to-abstention 逻辑。
+
+#### 验证标准
+- `python -m pytest tests/ -q` 全部通过
+- `python -m memorygym.bench --seeds 3 --validate` ALL PASS
+- 新测试：验证 lite tier（n_entities=30）生成的 stream 包含 contradiction 事件（type=="ingest" with is_contradiction=True）
+- 新测试：验证 `_generate_one_question` 对不同 template 产生不同的问题类型分布（hospital 应有更多 update 类型）
+
+### Phase 76 — 3 路径一致性自动化测试
 
 **依据**：审计 A87-A88 发现"修了 2 处漏了第 3 处"模式已发生 4 次（Phase 70 Edit fallback、Phase 71/74 策略泄漏、Phase 75 eval_salt）。根因：bench.py / training/env.py / eval_task.py 三条评测路径有重复参数传递但无自动化一致性检查。
 
