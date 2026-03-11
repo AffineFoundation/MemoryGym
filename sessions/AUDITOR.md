@@ -54,7 +54,7 @@ sessions/AUDITOR.md（你，/loop 30m）— 调度中枢：审计、设计、方
 声称有的功能是否**真的可用**？
 
 - 每个 CLI flag（`--backend`, `--tier`, `--template`, `--no-redaction`）是否端到端测试过？
-- 每个后端（ChromaDB, mem0）是否有对等的测试覆盖？
+- 每个后端（ChromaDB, MarkdownBackend）是否有对等的测试覆盖？
 - Inspect AI 集成（eval_task.py）能跑通吗？
 - adapters/（verl, slime）是否在真实框架上验证过？
 - scripts/ 是否能开箱即用？
@@ -153,11 +153,11 @@ sessions/AUDITOR.md（你，/loop 30m）— 调度中枢：审计、设计、方
 
 ## 当前任务
 
-### 审计 A71 — 下一轮
+### 审计 A73 — 下一轮
 
-- 训练线程 SFT v3 是否启动
-- Phase 66（ROADMAP 数据同步）是否完成
-- 批次 15 是否有进展
+- Phase 67/68 执行进度
+- 前沿搜索 V7 结果处理
+- 批次 15 进展
 
 ## 待跟进
 
@@ -171,6 +171,52 @@ sessions/AUDITOR.md（你，/loop 30m）— 调度中枢：审计、设计、方
 ## 审计日志
 
 （每次审计的结论摘要，最新在最上面。保持简洁，详细分析写 devlog/。）
+
+### 审计 A72（2026-03-11）— 代码深度审计 + 文档恢复 + 任务派发（维度 A+B）
+
+**代码审计发现 2 个真实 bug**：
+
+1. **ChromaDB 资源泄漏**（中等）：`training/env.py` L472 `_make_backend()` 每次 reset 创建新 collection，旧的不删除。训练循环 100+ episodes → 内存膨胀。
+2. **MarkdownBackend 临时目录泄漏**（低）：`markdown_backend.py` L39 创建 `/tmp/memorygym_md_*` 目录无清理。
+
+**RNG 一致性问题**（低）：bench.py/training/env.py 用单一 `Random(seed)` 跨 corrections 和 stream，simulation.py 用分离 RNG（seed+3333, seed+5555）。各路径内部确定性不受影响，但跨路径不可比。
+
+**stale 元数据**：mem0 __pycache__ 残留 + egg-info 仍引用 mem0。
+
+**文档恢复**：4 个文档（STATUS_REPORT.md, ROADMAP.md, CLAUDE.md, README.md）更新恢复，此前被 linter 还原。用户确认 linter 还原非有意。
+
+**派发 Phase 67（资源泄漏修复 + 清理）+ Phase 68（RNG 对齐）→ EXECUTOR.md**。
+
+**前沿搜索 V7 后台进行中**：mem0 openclaw plugin 调研 + 最新 memory 训练进展。
+
+### 审计 A71（2026-03-11）— 线程活动审查 + 训练反馈处理（维度 A+B）
+
+**线程活动**：全部不活跃。
+- 执行者：Phase 66 未执行（待办仍在 EXECUTOR.md）
+- 评测者：批次 15 进度 0/6（无新 eval 文件）
+- 训练者：SFT v3 未启动，无新 commit
+
+**Phase 66 状态**：内容已由用户直接更新 ROADMAP.md 和 STATUS_REPORT.md（v0.6.7, 50 evals, 341 tests, backend 对比结论等），但**外部 linter 还原了所有变更**。ROADMAP.md 仍显示 "340 tests, 46 evals"。EXECUTOR.md Phase 66 保留——等执行者活跃时可直接完成。
+
+**工具对齐验证**（维度 B）：✅ 完全对齐
+- training/env.py、adapters/_common.py、agents/_tool_helpers.py、stream_agent.py 全部支持 Write/Edit/Read + legacy 名
+- SFT 数据生成仅用新名（Write/Edit/Read）
+- 无代码级问题
+
+**Eval 数据质量**（维度 E）：✅ 干净
+- 50 files: 25 versioned (v0.5.0+), 25 unversioned (pre-v0.5.0)。全部为 v2 format（22-23 attrs）
+- 所有文件 corrections > 0（无 batch 12 correction bug 污染）
+- Leaderboard 脚本正确生成：Qwen3.5=30.3%(15), Kimi=28.3%(18)
+- 1 个 multi 格式文件（Kimi company_s0_multi）被脚本正确跳过
+
+**训练反馈处理**（F1-F5）：
+- F1（GSPO）→ 已读，待 SFT v3 + GRPO v3 后评估
+- F2（KL 梯度审计）→ 已读，GRPO v3 启动前检查
+- F3（小数据训练）→ 已读，480 trajectories 可能足够
+- F4（AgeMem step-wise）→ 已读（审计 A70 写入），最相关——直接解决 policy collapse
+- F5（A-MAC 准入因子）→ 已读，低优先级
+
+**判断**：系统代码健康，无新 bug。主要风险是线程不活跃导致进展停滞。无新 Phase 派发——Phase 66 仍有效。
 
 ### 审计 A70（2026-03-11）— 前沿搜索 V6（维度 C）
 

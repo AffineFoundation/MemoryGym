@@ -66,7 +66,7 @@ python -m memorygym.bench --model moonshotai/Kimi-K2.5-TEE --official -o results
 --seeds N            Number of seeds (default: 10)
 --template T         Template: company, research, city, hospital, sport, movie
 --tier TIER          Evaluation tier: lite (default), standard, hard
---backend BACKEND    Memory backend: chromadb (default)
+--backend BACKEND    Memory backend: chromadb (default), markdown
 --validate           Run invariant checks
 --official           Official mode: seeds 0-9, all templates
 ```
@@ -98,7 +98,7 @@ Top models (averaged across templates and seeds):
 
 | Model | Avg Score | Evals |
 |-------|-----------|-------|
-| Qwen3.5-397B | 30% | 12 |
+| Qwen3.5-397B | 30% | 15 |
 | Kimi-K2.5 | 28% | 18 |
 | Qwen3-235B | 18% | 7 |
 | MiniMax-M2.5 | 13% | 7 |

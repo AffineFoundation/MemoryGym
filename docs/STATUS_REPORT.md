@@ -1,10 +1,10 @@
 # MemoryGym Status Report
 
-> Version 0.5.0 | 2026-03-10 | Phase 44 complete
+> Version 0.6.7 | 2026-03-11 | Phase 65 complete
 
 ## Executive Summary
 
-MemoryGym is the only benchmark that simultaneously tests **budget-constrained storage decisions**, provides **RL training environments**, and **proves anti-gaming robustness** through 9 simulation strategies. 35 real evaluations across 5 models and 6 domains confirm the system produces meaningful, reproducible scores with clear discriminative power.
+MemoryGym is the only benchmark that simultaneously tests **budget-constrained storage decisions**, provides **RL training environments**, and **proves anti-gaming robustness** through 9 simulation strategies. 50 real evaluations across 5 models and 6 domains confirm the system produces meaningful, reproducible scores with clear discriminative power.
 
 ---
 
@@ -41,7 +41,7 @@ seed → WorldTemplate → generate N entities (22-23 attributes each)
                            ├── NOISE documents (entity names, no useful data)
                            ├── SESSION BREAKS (clear conversation, keep memory)
                            └── QUESTIONS (adaptive, based on world state)
-                       → agent uses tools: memory_store / memory_search / memory_forget
+                       → agent uses tools: Write / Edit / Read / memory_search
                        → 4-axis scoring against ground truth
 ```
 
@@ -93,6 +93,15 @@ Each template uses 6 data types: `int`, `float`, `text`, `enum`, `date`, `list_f
 | Relationship (5) | lookup, hop, chain, count, filter | "What is Company A's supplier's revenue?" |
 | New dtype (4) | temporal_trend, temporal_extreme, text_match, enum_filter | "Is revenue trending up or down over the last 5 quarters?" |
 
+### 2.6 Memory Interface (OpenClaw Compatible)
+
+Tools: `Write` / `Edit` / `Read` / `memory_search`. Two backends:
+
+- **ChromaDB**: Embedding-based vector search (all-MiniLM-L6-v2)
+- **MarkdownBackend**: MEMORY.md file + hybrid search (BM25 70% + vector 30% + RRF fusion)
+
+Backend comparison (batch 14, 4 evals each): MarkdownBackend avg 30% vs ChromaDB avg 31.7% — no significant difference. Retrieval bottleneck is model-side, not backend-side.
+
 ---
 
 ## 3. Anti-Gaming: Why Scores Cannot Be Faked
@@ -125,63 +134,44 @@ abstainer (store all, always "IDK")    <  15%   ← proves blanket abstention ha
 | Learn distractor patterns | Distractor templates are direction-neutral (no linguistic markers distinguish correct from incorrect) |
 | Game correction detection | Empty search results don't trigger correction reward (Phase 44 fix) |
 
-### 3.3 Why This Matters
-
-Most benchmarks are vulnerable to "teaching to the test." MemoryGym's 9-strategy validation proves that **the only way to score well is to actually manage memory well**. This is not a claim — it is a mathematical property verified on every code change.
-
 ---
 
-## 4. Empirical Evidence: 35 Real Evaluations
+## 4. Empirical Evidence: 50 Real Evaluations
 
 ### 4.1 Multi-Model Results (V2, standard tier, lite tier)
 
 | Model | N | Composite | Breadth | Maintenance | Reasoning | Efficiency |
 |-------|---|-----------|---------|-------------|-----------|------------|
-| Qwen3.5-397B | 12 | **23% ± 12%** | 13% | 49% | 16% | 13% |
-| Kimi-K2.5 | 18 | **20% ± 13%** | 14% | 40% | 13% | 12% |
-| MiniMax-M2.5 | 3 | **6% ± 6%** | 8% | 11% | 0% | 3% |
-| Qwen3-235B | 1 | **14%** | 0% | 50% | 0% | 7% |
-| GLM-5 | 1 | **0%** | 0% | 0% | 0% | 0% |
+| Qwen3.5-397B | 15 | **30%** | 12% | 49% | 12% | 13% |
+| Kimi-K2.5 | 18 | **28%** | 14% | 40% | 13% | 12% |
+| Qwen3-235B | 7 | **18%** | 16% | 48% | 2% | 11% |
+| MiniMax-M2.5 | 7 | **13%** | 3% | 27% | 4% | 5% |
+| GLM-5 | 2 | **8%** | 0% | 0% | 0% | 0% |
 
 ### 4.2 What These Numbers Prove
 
 **1. The benchmark discriminates genuine capability differences.**
 
-The score distribution (0% to 42%) spans a wide range. Models are not clustered — there are clear tiers:
-- **Tier 1** (20-23%): Qwen3.5-397B, Kimi-K2.5 — can store, search, and partially update
-- **Tier 2** (6-14%): MiniMax, Qwen3-235B — can store but struggle with search/reasoning
-- **Tier 3** (0%): GLM-5 — stores data but cannot search it back (tool use failure)
+The score distribution (0% to 55%) spans a wide range with clear tiers:
+- **Tier 1** (28-30%): Qwen3.5-397B, Kimi-K2.5 — can store, search, and partially update
+- **Tier 2** (13-18%): MiniMax, Qwen3-235B — can store but struggle with search/reasoning
+- **Tier 3** (0-8%): GLM-5 — stores data but cannot search it back (tool use failure)
 
-**2. Top model scores are statistically equivalent.**
+**2. Maintenance is the easiest axis; reasoning is the hardest.**
 
-Qwen3.5 (23% ± 12%) vs Kimi-K2.5 (20% ± 13%) — the difference is within noise. This means the benchmark is measuring a **real capability ceiling**, not model-specific artifacts. Two independently developed models hit the same wall.
+Across all models: maintenance (27-49%) >> breadth (12-16%) > reasoning (2-13%). 7 reasoning types at 0% across all models (outlier, comparison, cross_category, text_match, enum_filter, aggregation, multi_hop) — genuinely hard competencies.
 
-**3. Maintenance is the easiest axis; reasoning is the hardest.**
+**3. Retrieval is the biggest bottleneck.**
 
-Across all models: maintenance (40-49%) >> breadth (13-14%) > reasoning (13-16%). This reveals a systematic pattern:
-- Models can detect and apply corrections (maintenance) better than they can selectively store (breadth)
-- Computational reasoning on stored data is the weakest capability
-- This matches expectations: corrections are explicit ("X changed from A to B"), while storage requires strategic prioritization
+Retrieval accuracy is only 11% — with 60% abstention rate meaning models store entities but cannot search them back. Backend comparison (ChromaDB vs MarkdownBackend) confirms this is model-side, not backend-side.
 
-**4. Abstention is a model capability indicator.**
+**4. entities_per_write = 1.0 across all models.**
 
-Qwen3.5 and Kimi-K2.5 both achieve 100% abstention diagnostic — they correctly say "I don't know" when they haven't stored the data. MiniMax (50%) and GLM-5 (50%) sometimes guess incorrectly. This is not part of the composite score, but it reveals model honesty.
-
-**5. GLM-5's 0% exposes a tool-use failure, not a system bug.**
-
-GLM-5 used 26/30 writes, stored 32 entities — it can use the store tool. But every search returned empty results, yielding 0% across all axes. This is a model-level failure (inability to format search queries correctly), not a system failure. The benchmark correctly assigns 0% to an agent that stores data but cannot retrieve any of it.
+No model packs multiple entities per write operation. This represents a major untapped optimization.
 
 ### 4.3 Variance Analysis
 
-Both top models show high variance (CV ≈ 55-65%). Root cause analysis:
-
-| Factor | Impact | Evidence |
-|--------|--------|----------|
-| ChromaDB embedding instability | HIGH | Same entity name gets different search rankings across seeds due to surrounding attribute text |
-| Template difficulty variation | MEDIUM | company (27%) > research (22%) > sport (15%) across models |
-| Random seed entity composition | LOW | Name combinations affect embedding similarity (e.g., "Argon Labs" vs "Argon Robotics" confusion) |
-
-**This variance is informative, not problematic.** It reflects the real-world instability of embedding-based memory systems. An agent that handles this instability well (e.g., by using more precise queries) should score consistently higher. Current models have not learned this skill yet.
+Both top models show high variance (CV ≈ 55-65%). Root cause: ChromaDB embedding instability (HIGH), template difficulty variation (MEDIUM), entity name composition (LOW).
 
 Recommendation: use 5+ seeds per evaluation for stable mean estimates.
 
@@ -189,12 +179,12 @@ Recommendation: use 5+ seeds per evaluation for stable mean estimates.
 
 ## 5. RL Training: The Unique Differentiator
 
-No competing benchmark provides an RL training environment. MemoryGym's `MemoryEnv` is production-ready:
+No competing benchmark provides an RL training environment.
 
 ### 5.1 Training Architecture
 
 ```
-MemoryEnv (training.py)
+MemoryEnv (training/env.py)
 ├── reset() → observation (formatted text, same as real eval)
 ├── step(action) → (observation, reward, done, info)
 ├── Reward modes:
@@ -203,37 +193,24 @@ MemoryEnv (training.py)
 ├── get_verifiable_reward() → accuracy (for GRPO)
 └── Tier support: lite → standard → hard (curriculum)
 
+Training Module (training/)
+├── env.py         — MemoryEnv + SFT trajectory generation
+├── common.py      — Shared tools (model loading, assistant mask, chat template)
+├── cli.py         — Unified CLI (data/sft/grpo/smoke)
+└── __main__.py    — python -m memorygym.training entry
+
 Adapters (adapters/)
 ├── verl_adapter.py — AgentLoopBase integration, token masking
 ├── verl_reward.py — GRPO compute_score function
 └── slime_adapter.py — custom generate/reward interface
 ```
 
-### 5.2 Shaped Reward Design
+### 5.2 Training Progress
 
-The shaped reward provides intermediate learning signals beyond episode-level accuracy:
+SFT v2b achieved the first model that correctly answers questions:
+- Loss: 1.785 → 0.674 (8 epochs), 9/15 writes, 3/10 correct, reward=0.46
 
-| Signal | Value | Trigger | Purpose |
-|--------|-------|---------|---------|
-| Store relevant entity | +0.3 | Successful memory_store during ingest | Reward storage behavior |
-| Correction flow complete | +0.5 | search → forget → store sequence with results | Reward maintenance behavior |
-| Correct answer | +1.0 | Submit correct answer to question | Reward accuracy |
-| Budget waste | -0.05 | Action after budget exhausted | Penalize inefficiency |
-
-### 5.3 Training Pipeline
-
-```bash
-# 1. Generate SFT data from simulation strategies
-python -m memorygym.training generate_sft --strategy strategic --seeds 100
-
-# 2. Configure GRPO training
-# memorygym/scripts/verl_memorygym.yaml — ready-to-use config
-
-# 3. Curriculum: lite → standard → hard
-# Automatic tier selection based on MemoryEnv configuration
-```
-
-**Status**: Code complete. Awaiting GPU cluster for end-to-end verification. Target: 7B model achieving composite ≥ 45%, maintenance ≥ 30%.
+GRPO v2 identified policy collapse (loss → negative). Next: KL regularization (v3) + step-wise GRPO (AgeMem reference).
 
 ---
 
@@ -248,102 +225,71 @@ python -m memorygym.training generate_sft --strategy strategic --seeds 100
 | Anti-gaming verification | **9 strategies** | No | No | No | No |
 | Deterministic reproduction | **Seed-based** | No | No | No | No |
 | Multi-session evaluation | Yes (3 sessions) | Yes | No | Yes | No |
-| Correction/update testing | Yes (explicit + implicit) | No | Conflict resolution | No | No |
-| Noise injection | Yes | No | No | No | No |
+| Correction/update testing | Yes | No | Conflict resolution | No | No |
 | Domain templates | 6 | Schema-based | Multi-turn tasks | Chat logs | Real trajectories |
-| Real-world trajectories | No | No | No | No | **Yes** |
-| Free-form interaction | No | **Yes** | No | No | No |
 
-### 6.2 MemoryGym's Defensible Advantages
+### 6.2 Emerging Competitors (2026)
 
-**1. Only benchmark with RL training integration.**
-
-MemoryEnv provides `reset()/step()/reward()` compatible with standard RL frameworks (verl, slime). No other memory benchmark is designed for training — they are all evaluation-only. This means MemoryGym is the only system where you can both **measure** and **improve** memory management capability.
-
-**2. Only benchmark with proven anti-gaming.**
-
-The 9-strategy simulation is not just a test — it's a formal proof that the evaluation function is aligned with actual capability. Specifically:
-- `guesser=0%` proves the evaluation cannot be passed without storing data
-- `smart_guesser<5%` proves statistical guessing fails
-- `strategic>naive+10%` proves the evaluation rewards intelligent storage decisions
-- `perfect=100%` proves perfect memory management achieves perfect scores
-
-No other benchmark provides this level of scoring validity guarantee.
-
-**3. Only benchmark with hard budget constraints.**
-
-Budget constraints transform the evaluation from "can you find it?" to "should you keep it?" This is the fundamental difference between retrieval benchmarks and memory management benchmarks. Without budget pressure, there is no trade-off, and without trade-offs, there is no strategy to evaluate.
-
-### 6.3 Known Gaps
-
-| Gap | Severity | Mitigation |
-|-----|----------|------------|
-| No real-world trajectories | Medium | Synthetic data enables anti-gaming and determinism — trade-off is intentional |
-| Reasoning is mechanical (formula-based, not semantic) | Medium | Axis correctly measures "computation on stored data" — rename to "data processing" under consideration |
-| Single memory backend focus (ChromaDB) | Low | Backend choice is orthogonal to memory management strategy evaluation |
-| No causal reasoning | Low | Could add "why did X change?" questions in future phase |
+| System | Approach | Relevance |
+|--------|----------|-----------|
+| mem-agent (Dria/HF) | Markdown file memory + GSPO training | Validates RL for memory; reward shaping >> algorithm |
+| Memory-R1 | ADD/UPDATE/DELETE/NOOP + GRPO/PPO | Small-data generalization |
+| AgeMem (2601.01885) | Step-wise GRPO + 3-stage curriculum | Addresses sparse reward |
+| A-MAC (2603.04549) | 5-factor admission | Fine-grained memory admission |
+| PlugMem (Microsoft) | Hierarchical memory architecture | Production memory management |
 
 ---
 
 ## 7. Engineering Maturity
 
 ```
-Codebase:     11,436 lines of production code
-              4,133 lines of test code
-              270 tests passing, 1 skipped
+Codebase:     12,478 lines of production code
+              4,500+ lines of test code
+              341 tests passing, 1 skipped
               All files ≤ 987 lines (limit: 1,000)
-              0 TODO/FIXME in production code
 
 Templates:    6 domains × 600+ entity names × 22-23 attributes × 6 dtypes
-              = effectively infinite evaluation space per seed
 
-Eval data:    35 real evaluations, 5 models, 4 vendors
-              68 JSON files (results + trajectories with full conversation history)
+Eval data:    50 real evaluations, 5 models, 5 vendors
+
+Backends:     ChromaDB (embedding) + MarkdownBackend (BM25+vector hybrid)
 
 Training:     MemoryEnv (binary + shaped reward)
-              verl adapter + slime adapter
-              SFT trajectory generation from simulation strategies
-              Curriculum support (lite → standard → hard)
+              verl + slime adapters
+              SFT v2b: first correct answers (3/10, reward=0.46)
+              Remote training CLI (scripts/train.py)
 
 Anti-gaming:  9 simulation strategies
               eval_salt prevents training overfit
-              Noise injection, distractor hardening
-              270+ invariant checks per validation run
+              341+ invariant checks per validation run
 ```
 
 ### Version History
 
 | Version | Phase | Key Changes |
 |---------|-------|-------------|
-| 0.1.x | 1-7 | Initial system: company template, basic scoring, first evaluations |
-| 0.2.x | 8-17 | 6 templates, 18 reasoning types, Inspect AI integration |
-| 0.3.x | 18-24 | Self-audit, affinetes SDK, RL training (SFT + MemoryEnv) |
-| 0.4.x | 25-28 | Scoring unification, red team audit, eval_scorer fix |
-| 0.5.0 | 29-44 | V2 system: counterfactual/multi_constraint questions, template stream differentiation, entity importance, noise injection, multi-session support, ChromaDB keyword fallback, shaped reward tuning |
+| 0.1.x | 1-7 | Initial system: company template, basic scoring |
+| 0.2.x | 8-17 | 6 templates, 18 reasoning types, Inspect AI |
+| 0.3.x | 18-24 | Self-audit, affinetes SDK, RL training |
+| 0.4.x | 25-28 | Scoring unification, red team audit |
+| 0.5.0 | 29-44 | V2 system: counterfactual questions, template differentiation, noise injection |
+| 0.6.x | 45-65 | OpenClaw tools (Write/Edit/Read), MarkdownBackend, mem0 removal, training module restructure |
 
 ---
 
-## 8. Honest Assessment: What's Not Perfect
+## 8. Honest Assessment
 
-### 8.1 High Evaluation Variance
+### 8.1 Retrieval is the Primary Bottleneck
+11% retrieval accuracy with 60% abstention. Backend comparison confirms model-side query formulation, not backend quality.
 
-Both top models show CV ≈ 60%. With 3 seeds, the confidence interval on mean composite is ±15 percentage points. This makes it difficult to claim statistically significant differences between models without 5-10 seeds. However, the variance itself is informative — it reflects real embedding search instability.
+### 8.2 Training Not Yet Validated End-to-End
+SFT v2b achieved first correct answers, but GRPO v2 hit policy collapse. Largest open risk.
 
-### 8.2 ChromaDB is a Confound
+### 8.3 Reasoning Tests Computation, Not Understanding
+All 20 reasoning types are formula-based. Measures "can you compute on stored data?" not semantic understanding.
 
-The evaluation partially tests ChromaDB's embedding search quality rather than pure memory management. The keyword fallback (Phase 38) mitigated worst cases (0% → 10%), but embedding instability remains the largest source of score variance. A backend-agnostic evaluation mode would isolate memory strategy from retrieval quality.
-
-### 8.3 Reasoning Axis Tests Computation, Not Understanding
-
-All 20 reasoning types are formula-based: given the right data, a calculator can solve them. The axis measures "can you compute on stored data?" not "do you understand the domain?" This is aligned with the memory management north star (real agents compute on stored data), but the axis name "reasoning" may overstate what's being tested.
-
-### 8.4 No Evidence of Training Improvement Yet
-
-MemoryEnv is code-complete but has not been validated on GPU. Until an RL-trained model demonstrably improves on the benchmark, the training claim remains theoretical. This is the largest open risk.
-
-### 8.5 Synthetic-Only Data
-
-All evaluation scenarios are procedurally generated. While this enables anti-gaming and determinism, it means we cannot claim the evaluation transfers to real-world agent memory scenarios without additional validation against real trajectories.
+### 8.4 Known Resource Leaks
+MemoryEnv creates ChromaDB collections per reset without cleanup. MarkdownBackend creates temp directories without cleanup. Both need fixing for training loops.
 
 ---
 
@@ -351,12 +297,4 @@ All evaluation scenarios are procedurally generated. While this enables anti-gam
 
 MemoryGym answers a question no other benchmark asks: **can an LLM agent make intelligent storage decisions under resource pressure?**
 
-The evidence supports three claims:
-
-1. **The evaluation is valid.** 9 simulation strategies prove that scoring is aligned with actual capability. Guessing scores 0%. Perfect memory scores 100%. Strategy beats naivety. These are mathematical properties, not empirical observations.
-
-2. **The evaluation is discriminative.** 35 real evaluations across 5 models show a 0-42% score range. Top models (Qwen3.5, Kimi-K2.5) score ≈20%, weak models (MiniMax) score ≈6%, and tool-incompatible models (GLM-5) score 0%. Maintenance is the strongest axis (40-49%), reasoning the weakest (13-16%).
-
-3. **The platform is unique.** No competing benchmark combines budget constraints + RL training + anti-gaming verification + deterministic reproduction + multi-session evaluation. MemoryGym occupies a niche that no other system addresses.
-
-Current best model score: **23% ± 12% (Qwen3.5-397B)**. This means the strongest open-source model achieves less than a quarter of perfect memory management. The gap between 23% and 100% represents a concrete, measurable capability deficit — and MemoryGym is the only system designed to both measure and close it through RL training.
+50 real evaluations across 5 models show a 0-55% score range. Current best: **30% (Qwen3.5-397B, 15 evals)**. The gap between 30% and 100% represents a concrete capability deficit — and MemoryGym is the only system designed to both measure and close it through RL training.

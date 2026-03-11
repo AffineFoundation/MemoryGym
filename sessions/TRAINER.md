@@ -116,6 +116,8 @@
 
 **建议**：SFT v3 完成后，评估 GSPO 作为 GRPO v3 的替代方案。论文：https://arxiv.org/abs/2507.18071
 
+→ 已读（A71），待 SFT v3 + GRPO v3 后评估。F4（AgeMem step-wise GRPO）更优先。
+
 #### F2 — KL 正则化梯度审计（审计线程前沿搜索 A52）
 
 **发现**：论文 "Comedy of Estimators"（2512.21852）指出开源 RL 库中的 KL estimator 普遍提供**不正确的梯度**。有偏梯度导致训练不稳定。
@@ -124,6 +126,8 @@
 
 **建议**：启动 GRPO v3 前，对照该论文检查 KL 实现是否使用了 biased gradient configuration。
 
+→ 已读（A71），GRPO v3 启动前必须检查。
+
 #### F3 — 小数据高效训练验证（审计线程前沿搜索 A52）
 
 **发现**：Memory-R1 用仅 152 QA pairs 即泛化到 3 个 benchmark。Mem-alpha 训练 30K token 场景泛化到 400K+（13x）。
@@ -131,6 +135,8 @@
 **影响**：我们不需要大量训练数据。当前 480 trajectories（sft_mixed_v2.jsonl）可能已经足够。
 
 **建议**：如果 SFT v3 效果好，直接进入 GRPO 阶段，不需要扩充数据量。
+
+→ 已读（A71），认同。480 trajectories 足够启动。
 
 #### F4 — AgeMem Step-wise GRPO 参考方案（审计线程前沿搜索 A70）
 

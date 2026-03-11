@@ -57,31 +57,66 @@
 
 ## 当前任务
 
-### Phase 66 — ROADMAP.md 数据同步 + 后端对比结论
+### Phase 67 — MemoryEnv 资源泄漏修复 + stale 元数据清理
 
-**依据**：审计 A69 发现 ROADMAP.md 多处数据过时：
-- §0 test count 停在 ~263，实际 341（`python -m pytest tests/ -q`）
-- §3 eval count 停在 46，实际 50
-- 批次 13（v3 基线）和批次 14（MarkdownBackend 对比）结果未记录
+**依据**：审计 A72 代码深度审计发现 2 个真实 bug + 1 个元数据问题。
 
-**后端对比结论**（批次 14 数据）：
-- MarkdownBackend avg 30% vs ChromaDB avg 31.7% — 无显著差异
-- Retrieval 瓶颈在模型侧（entities_per_write=1.0，不做 packing），非后端搜索精度
+#### Bug 1 — ChromaDB Collection 泄漏（中等严重度）
 
-#### Step 1 — 更新 ROADMAP.md
+`memorygym/training/env.py` L472: `reset()` 每次创建新 ChromaDB collection（`_make_backend()` → `ChromaDBBackend(collection_name=f"memenv_{uuid...}")`），但旧 collection 永远不被删除。
 
-1. §0：test count → 341, eval count → 50
-2. §3.1 数据表：添加批次 13/14 结果，50 个有效 eval
-3. §3 新增后端对比分析小节：markdown vs chromadb 结论
+**影响**：训练循环 100+ episodes → 100+ orphaned collections 累积在内存中，导致内存膨胀。
 
-#### Step 2 — 更新 CLAUDE.md eval 数据描述（如有过时）
+**修复方案**：
+1. 在 `_make_backend()` 调用前，如果 `self._backend` 已存在且是 ChromaDBBackend，调用清理（delete collection 或 reset）
+2. 或者：给 MemoryEnv 添加 `close()` 方法 + `__del__` fallback
+3. ChromaDBBackend 需要暴露 cleanup 接口（目前没有）
 
-检查 CLAUDE.md 中的 eval 数据相关描述是否与 50 evals 一致。
+**验证**：在 `tests/test_training.py` 添加测试：多次 `env.reset()` 后，旧 collections 不再存在。
+
+#### Bug 2 — MarkdownBackend 临时目录泄漏（低严重度）
+
+`memorygym/memory/backends/markdown_backend.py` L39-41: `__init__` 创建 `/tmp/memorygym_md_*` 目录，无清理。
+
+**修复方案**：添加 `close()` 方法清理目录，`__del__` fallback。
+
+#### 清理 — stale mem0 元数据
+
+1. 删除 `memorygym/memory/backends/__pycache__/mem0_backend.cpython-312.pyc`（Phase 58 删了源文件但 pycache 残留）
+2. 重新生成 egg-info：`pip install -e .`（会更新 SOURCES.txt 和 requires.txt，移除 mem0 引用）
 
 #### 验证标准
-- `docs/ROADMAP.md` 中 test count = 341, eval count = 50
-- 后端对比结论有数据支撑
-- `python -m pytest tests/ -q` 通过（无代码改动，仅文档）
+- `python -m pytest tests/ -q` 全部通过
+- `python -m memorygym.training smoke` 通过
+- 新测试：MemoryEnv 多次 reset() 后无 orphan collections
+- `find /tmp -name "memorygym_md_*" -mmin +1` 无残留（close 后清理）
+- `grep mem0 memorygym.egg-info/SOURCES.txt` 无结果
+
+### Phase 68 — 训练-评测 RNG 一致性对齐
+
+**依据**：审计 A72 发现 bench.py 和 training/env.py 的 RNG 种子策略与 simulation.py 不一致。
+
+**现状**：
+- `simulation.py` 用分离的 RNG：`rng_correct = Random(seed + 3333)`, `rng_stream = Random(seed + 5555)`, `rng_q = Random(seed + 7777)`
+- `bench.py` 和 `training/env.py` 用单一 `rng = Random(seed)`，corrections 和 stream 共享同一 RNG
+
+**影响**：同一 seed 在 simulation、bench、training 三个路径产生不同的 corrections 和 stream 顺序。虽然各路径内部确定性，但无法跨路径对比调试。
+
+**修复方案**：
+1. 在 `bench.py` L193 将 `rng = Random(seed)` 改为：
+   ```python
+   rng_correct = Random(seed + 3333)
+   corrections = tmpl.generate_corrections(world, rng_correct, n_corrections)
+   ```
+2. stream 生成用 `rng_stream = Random(seed + 5555)`
+3. `training/env.py` L452 做同样修改
+4. `env.py`（根目录 affinetes）L228 做同样修改
+5. `worlds/eval_task.py` L182 做同样修改
+
+**验证标准**：
+- `python -m pytest tests/ -q` 全部通过
+- `python -m memorygym.bench --seeds 3 --validate` ALL PASS
+- grep 确认所有 4 个文件使用 `seed + 3333` / `seed + 5555` 模式
 
 ---
 
