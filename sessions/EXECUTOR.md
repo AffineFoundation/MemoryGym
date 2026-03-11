@@ -71,6 +71,104 @@ get_verifiable_reward() 改用 compute_axis_scores() composite。Edit shaped rew
 
 ## P3 — 评测质量 + 文档（不阻塞训练，可延后）
 
+### Phase 97 — 新增 Codebase 世界模板（第 8 个领域）
+
+新建 `memorygym/worlds/codebase.py`，模拟大型软件系统中的模块/服务。参考 `university.py`（585 行）的结构。
+
+**场景**：AI 开发助手在大型项目中工作，需要记住各模块的技术细节、状态、依赖关系。信息过载（模块太多）+ 预算有限 + 状态持续变化（重构、incident、升级）。
+
+**实体**：软件模块/服务。名字 = `{功能词30} × {架构词20}` = 600 个。如 `Auth Gateway`、`Data Pipeline`、`Cache Manager`。
+
+**类别**（8 种）：`Backend Service`、`Frontend Module`、`Data Pipeline`、`Infrastructure`、`API Gateway`、`ML Service`、`DevOps Tool`、`Shared Library`
+
+**属性**（23 个，6 种 dtype）：
+
+```
+# int (9)
+lines_of_code          50 ~ 500000        代码行数
+test_count             0 ~ 5000           测试用例数
+open_bugs              0 ~ 200            未关闭 bug 数
+contributors           1 ~ 50             贡献者数
+api_endpoints          0 ~ 300            API 端点数
+dependencies           1 ~ 80             直接依赖数
+deployment_count       0 ~ 2000           累计部署次数
+avg_response_ms        1 ~ 5000           平均响应时间(ms)
+star_count             0 ~ 10000          内部评分/关注数
+
+# float (7)
+test_coverage_pct      0 ~ 99%            测试覆盖率        agg_ops=("average",)
+uptime_pct             90 ~ 99.999%       可用性             agg_ops=("average",)
+code_churn_pct         0.5 ~ 30%          月代码变更率       agg_ops=("average",)
+tech_debt_hours        0 ~ 2000           技术债务(工时)
+memory_usage_mb        10 ~ 16000         内存占用(MB)
+error_rate_pct         0 ~ 15%            错误率             agg_ops=("average",)
+cpu_utilization_pct    1 ~ 95%            CPU 利用率         agg_ops=("average",)
+
+# enum (2)
+primary_language       python/java/go/rust/typescript/kotlin
+status                 active/beta/maintenance/deprecated
+
+# text (2)
+architecture_notes     池子 20 条，如 "基于事件驱动架构，使用 Kafka 做消息队列，支持水平扩展到 50 节点"
+known_issues           池子 20 条，如 "高并发下连接池泄漏，已有临时修复但根因未解"
+
+# list_float (2)
+weekly_deploys         最近 5 周部署次数，min=0, max=50, list_len=5
+error_rate_trend       最近 5 周期错误率，min=0, max=15, list_len=5
+
+# date (1)
+created_date           2015 ~ 2026        模块创建日期
+```
+
+**约束关系**（generate_entity 中实现）：
+1. **test_count ↔ lines_of_code**：test_count / LOC ∈ [0.005, 0.15]，超出则调整 test_count
+2. **test_coverage ↔ open_bugs**：负相关。coverage > 80% → open_bugs 压低；coverage < 30% → open_bugs 拉高
+3. **status=deprecated → deployment_count 低, tech_debt_hours 高**
+4. **avg_response_ms ↔ cpu_utilization**：正相关，CPU > 70% → 响应时间拉高
+5. **memory_usage ↔ lines_of_code**：大模块内存更高（但不严格线性）
+
+**list_float 模式**：
+- `weekly_deploys`：随机波动（CI/CD 节奏），可能有 spike（紧急修复周）
+- `error_rate_trend`：平稳或 incident 后 spike 再回落
+
+**question_weights**：`{"retrieval": 0.30, "comprehension": 0.35, "update": 0.20, "abstention": 0.15}` — 推理占比高（bug 密度、ratio 计算等技术推理常见）
+
+**correction_rate**：0.12（软件状态变化频繁）
+
+**correction_timing**：(0.4, 0.7)（标准）
+
+**ratio_pairs**（6 个）：
+```python
+("open_bugs", "lines_of_code", "bug density (bugs per KLOC)"),
+("test_count", "lines_of_code", "test density"),
+("lines_of_code", "contributors", "code per contributor"),
+("memory_usage_mb", "lines_of_code", "memory per KLOC"),
+("deployment_count", "contributors", "deploys per contributor"),
+("api_endpoints", "dependencies", "endpoints per dependency"),
+```
+
+**relationship_types**（2 个）：
+```python
+("depends_on", "depends on", False),           # 有向：A depends on B
+("maintained_by_same_team", "shares a team with", True),  # 无向
+```
+
+**render_correction 示例**：
+```
+"INCIDENT REPORT: {name}'s {label} has changed from {old} to {new} following a production deployment."
+```
+
+**document styles**（4 种）：`service_profile`、`incident_report`、`code_review`、`status_brief`
+
+**注册**：`worlds/__init__.py` 加入 `CodebaseWorld`，CLAUDE.md 更新为 8 个模板。
+
+**验证**：
+1. `python tests/test_worlds.py`
+2. `python -m memorygym.bench --seeds 3 --validate`（simulation 全通过）
+3. 确认 23 属性 × 6 dtype × 每个属性有 _Q_TEXTS 和 _SENTENCE_TMPLS
+
+**版本号**：patch 递增（如 0.10.0 → 0.10.1）
+
 ### 低优先级 Backlog
 
 - **用户体验修正**：API key 错误信息改善（docs/Design.md 已删除 A65，LEADERBOARD.md 已填充 A58）
@@ -79,6 +177,7 @@ get_verifiable_reward() 改用 compute_axis_scores() composite。Edit shaped rew
 
 ## 已完成
 
+### Phase 96 — University 模板 Constraint 4 逻辑修复 ✅
 ### Phase 94 — 死代码清理 ✅
 ### Phase 88 — docs/ROADMAP.md 同步更新 ✅
 ### Phase 93 — CLI UX 修复：README tier 默认值 + help 补全 ✅

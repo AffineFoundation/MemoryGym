@@ -515,10 +515,10 @@ class UniversityWorld(WorldTemplate):
             jitter = rng.randint(-50, 50)
             attrs["avg_sat"] = max(800, min(1580, expected_sat + jitter))
 
-        # Constraint 4: graduation ≥ retention (logically)
+        # Constraint 4: retention ≥ graduation (freshmen who stay ≥ those who finish)
         if ("graduation_rate_pct" in attrs
                 and "retention_rate_pct" in attrs):
-            if attrs["graduation_rate_pct"] > attrs["retention_rate_pct"] + 5:
+            if attrs["retention_rate_pct"] < attrs["graduation_rate_pct"]:
                 attrs["retention_rate_pct"] = min(
                     99.0,
                     attrs["graduation_rate_pct"] + rng.uniform(2, 10),
