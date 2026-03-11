@@ -46,9 +46,13 @@ class MarkdownBackend:
 
         self._model = SentenceTransformer(model_name)
         self._paragraphs: list[str] = []
+        self._para_seqs: list[int] = []  # write sequence per paragraph
+        self._write_seq: int = 0
         self._embeddings: np.ndarray | None = None
         self._bm25: BM25Okapi | None = None
         self._reindex()
+        # Initial paragraphs all get seq 0
+        self._para_seqs = [0] * len(self._paragraphs)
 
     def _reindex(self) -> None:
         """Rebuild paragraph-level index from current file content."""
@@ -65,12 +69,17 @@ class MarkdownBackend:
 
     def write(self, content: str) -> str:
         """Append content to MEMORY.md. Returns line range description."""
+        self._write_seq += 1
+        old_n = len(self._paragraphs)
         current = self._file.read_text()
         start_line = current.count("\n") + 1 if current else 1
         separator = "\n\n" if current.strip() else ""
         self._file.write_text(current + separator + content)
         end_line = start_line + content.count("\n")
         self._reindex()
+        # New paragraphs get current write sequence
+        for _ in range(len(self._paragraphs) - old_n):
+            self._para_seqs.append(self._write_seq)
         return f"lines {start_line}-{end_line}"
 
     def edit(self, old_text: str, new_text: str) -> bool:
@@ -78,9 +87,20 @@ class MarkdownBackend:
         content = self._file.read_text()
         if old_text not in content:
             return False
+        self._write_seq += 1
+        old_paras = list(self._paragraphs)
         updated = content.replace(old_text, new_text, 1)
         self._file.write_text(updated)
         self._reindex()
+        # Update seq for changed paragraphs
+        for i, p in enumerate(self._paragraphs):
+            if i < len(old_paras) and p != old_paras[i]:
+                if i < len(self._para_seqs):
+                    self._para_seqs[i] = self._write_seq
+        # Handle paragraph count changes from edit
+        while len(self._para_seqs) < len(self._paragraphs):
+            self._para_seqs.append(self._write_seq)
+        self._para_seqs = self._para_seqs[:len(self._paragraphs)]
         return True
 
     def read(self, start_line: int | None = None,
@@ -117,6 +137,14 @@ class MarkdownBackend:
             rrf_scores[idx] += 0.7 / (k_rrf + rank_pos + 1)
         for rank_pos, idx in enumerate(bm25_ranks):
             rrf_scores[idx] += 0.3 / (k_rrf + rank_pos + 1)
+
+        # Temporal decay: newer writes score higher (tiebreaker)
+        if self._write_seq > 0 and self._para_seqs:
+            decay = 0.99
+            max_seq = self._write_seq
+            for i in range(n):
+                seq = self._para_seqs[i] if i < len(self._para_seqs) else 0
+                rrf_scores[i] *= decay ** (max_seq - seq)
 
         # Top-k by RRF score
         top_indices = np.argsort(-rrf_scores)[:top_k]
@@ -158,6 +186,8 @@ class MarkdownBackend:
         """Clear the memory file and index."""
         self._file.write_text("")
         self._reindex()
+        self._para_seqs = []
+        self._write_seq = 0
 
     def close(self) -> None:
         """Remove the temp directory if it exists under /tmp."""
