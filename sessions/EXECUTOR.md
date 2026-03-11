@@ -92,6 +92,23 @@
 
 **验证**：`python -m pytest tests/ -q` 全部通过
 
+### Phase 85 — eval_task.py 默认值 + pyproject.toml 版本同步
+
+**依据**：审计 A104。
+
+**Bug 1 — eval_task.py 默认 n_entities=200 vs bench.py 默认 60**：
+- `eval_task.py` L160 `build_worldbench_stream(n_entities=200)` 和 L443 `n_entities or 200`
+- `bench.py` `_resolve_config` L117 默认 `entities=60`（= standard tier）
+- 运行 `inspect eval eval_task.py -T seed=0` 和 `bench.py --seed 0` 给出完全不同的评测（200 vs 60 entities）
+- **修复**：eval_task.py L160 改为 `n_entities=60`，L161 改为 `n_corrections=5`，L443-444 改为 `n_entities or 60`、`n_corrections or 5` — 与 standard tier 一致
+
+**Bug 2 — pyproject.toml version 滞后**：
+- `pyproject.toml` L2: `version = "0.4.0"`
+- `memorygym/__init__.py` L3: `__version__ = "0.8.0"`
+- **修复**：`pyproject.toml` version 改为 `"0.8.0"`
+
+**验证**：`python -m pytest tests/ -q` 全部通过
+
 ### Phase 84 — Inspect AI 工具名不匹配修复
 
 **依据**：审计 A102。eval_task.py SYSTEM_PROMPT 告诉模型调用 `Write`/`Edit`/`Read`，但实际 Inspect AI 工具注册名是 `write_memory`/`edit_memory`/`read_memory`（Python 函数名）。模型尝试调用不存在的工具名 → 整个 Inspect AI 路径无法工作。

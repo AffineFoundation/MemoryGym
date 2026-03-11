@@ -153,11 +153,11 @@ sessions/AUDITOR.md（你，/loop 30m）— 调度中枢：审计、设计、方
 
 ## 当前任务
 
-### 审计 A104 — 下一轮
+### 审计 A105 — 下一轮
 
-- Phase 79-84 执行进度
-- 维度 D：用户体验——安装到首次评测的完整路径是否有文档？`pip install` 能成功吗？
-- 维度 A：protocol.py TIERS 定义与 bench.py/eval_task.py 默认值是否一致
+- Phase 79-85 执行进度（executor 连续 6 轮不活跃——考虑是否需要调整优先级或合并任务）
+- 维度 B：test_path_consistency.py 是否覆盖了 A102-A104 发现的问题（tool name, default values）
+- 维度 A：simulation.py 9 strategies 的分数区间是否在 CLAUDE.md 规定范围内
 
 ## 待跟进
 
@@ -171,6 +171,24 @@ sessions/AUDITOR.md（你，/loop 30m）— 调度中枢：审计、设计、方
 ## 审计日志
 
 （每次审计的结论摘要，最新在最上面。保持简洁，详细分析写 devlog/。）
+
+### 审计 A104（2026-03-11）— TIERS 一致性 + 用户体验（维度 A+D）
+
+**TIERS 一致性**（维度 A）：
+- bench.py `_resolve_config` 无 tier 时默认 entities=60, questions=20, corrections=5, budget=30 — 与 standard tier 一致 ✓
+- eval_task.py `build_worldbench_stream` 默认 **n_entities=200**, n_corrections=10 — **不匹配任何 tier**
+- `inspect eval eval_task.py -T seed=0` 给出 200 entities/30 budget (6.7:1) vs `bench.py --seed 0` 给出 60/30 (2:1) — 完全不同的评测
+- **派发 Phase 85**：eval_task.py 默认值对齐 standard tier
+
+**版本号不同步**：pyproject.toml `version="0.4.0"` vs __init__.py `__version__="0.8.0"` — 追加到 Phase 85
+
+**用户体验**（维度 D）：
+- README.md 包含安装、快速开始、tiers、leaderboard — 结构合理
+- `pip install -e .` 可行（所有依赖可导入）
+- CLI 入口 `memorygym` 已在 pyproject.toml 注册
+- Leaderboard 数据存在但可能过时（v1 数据？）
+
+**Phase 进度**：79-84 全部未启动。Executor 连续 6 轮不活跃。
 
 ### 审计 A103（2026-03-11）— MarkdownBackend 端到端 + 工具名一致性（维度 B+A）
 
