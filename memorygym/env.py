@@ -23,6 +23,7 @@ from typing import Any
 
 from affinetes.core.openenv import OpenEnvResponse
 
+from memorygym import __version__
 from memorygym.agents.stream_agent import run_stream_agent
 from memorygym.memory.backends.chromadb_backend import ChromaDBBackend
 from memorygym.protocol import TIERS, compute_axis_scores, trajectory_to_conversation
@@ -223,10 +224,12 @@ def _run_evaluation(
 
     tmpl_cls = ALL_TEMPLATES[template_name]
     tmpl = tmpl_cls()
-    world = tmpl.generate_world(seed=seed, n_entities=n_entities)
+    world = tmpl.generate_world(
+        seed=seed, n_entities=n_entities,
+        eval_salt=tier_cfg.get("eval_salt", 1))
 
-    rng = Random(seed)
-    corrections = tmpl.generate_corrections(world, rng, n_corrections)
+    rng_correct = Random(seed + 3333)
+    corrections = tmpl.generate_corrections(world, rng_correct, n_corrections)
     n_contras = max(1, n_corrections // 3)
     exclude_corrected = {c.entity_name for c in corrections}
     rng_contra = Random(seed + 7373)
@@ -234,15 +237,20 @@ def _run_evaluation(
         world, rng_contra, n_contras,
         exclude_entities=exclude_corrected)
 
+    rng_stream = Random(seed + 5555)
     stream = tmpl.generate_stream(
-        world, rng, corrections,
+        world, rng_stream, corrections,
         stored_names=set(),
         n_questions=n_questions,
         entities_per_batch=10,
         contradictions=contradictions,
     )
 
-    backend_obj = ChromaDBBackend()
+    if backend_type == "markdown":
+        from memorygym.memory.backends.markdown_backend import MarkdownBackend
+        backend_obj = MarkdownBackend()
+    else:
+        backend_obj = ChromaDBBackend()
 
     agent_results, writes_used, stored, eval_error, traj = run_stream_agent(
         model=model,
@@ -319,5 +327,6 @@ def _run_evaluation(
             "by_competency": comp_scores,
             "answer_details": answer_details,
             "conversation": conversation,
+            "version": __version__,
         },
     }
