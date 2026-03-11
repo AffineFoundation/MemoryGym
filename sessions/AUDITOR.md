@@ -153,11 +153,11 @@ sessions/AUDITOR.md（你，/loop 30m）— 调度中枢：审计、设计、方
 
 ## 当前任务
 
-### 审计 A109 — 下一轮
+### 审计 A110 — 下一轮
 
-- Phase 85 commit 验证（代码已改，待 commit）
-- 维度 A：全部 7 个 Phase（79-85）完成后，做一次**全局一致性扫描**——3 路径 × 核心参数（默认值、工具名、RNG offsets、eval_salt）
-- 维度 E：有 6 个 v0.8.x eval 数据点（company s0/s1/s2, hospital_s0_markdown, research_s0, hospital_s0）——汇总分析趋势
+- 维度 A：**能力缺口扫描**——所有已知 bug 修完，下一个最高价值改进方向是什么？
+- 维度 E：Qwen3.5 7-seed 数据分析——maintenance=0% 在 4/7 seeds，是系统问题还是模型问题？
+- 维度 D：README leaderboard 数据过时——是否值得更新？
 
 ## 待跟进
 
@@ -171,6 +171,37 @@ sessions/AUDITOR.md（你，/loop 30m）— 调度中枢：审计、设计、方
 ## 审计日志
 
 （每次审计的结论摘要，最新在最上面。保持简洁，详细分析写 devlog/。）
+
+### 审计 A109（2026-03-11）— Phase 85 ✅ + 全局一致性 + eval 数据汇总（维度 A+B+E）
+
+**Phase 进度**：**Phase 79-85 全部 ✅**。队列清零。
+- 79+80: `4c8f3a1` stream_agent + bench.py 修复
+- 81+82: `1b3ba20` SFT JSON + adapters
+- 83: `a6dd4b0` MarkdownBackend recall tests
+- 84: `a12e441` Inspect AI tool names
+- 85: `3e744d4` eval_task defaults + pyproject version
+
+**全局一致性扫描**：
+- test_path_consistency.py: **14 passed** ✓
+- Simulation `--seeds 3 --validate`: ALL PASS ✓
+- 3 路径默认值：bench.py=60, eval_task.py=60, training/env.py=60 ✓
+- 工具名：stream_agent/execute_tool=Write/Edit/Read, inspect_task=@tool(name="Write/Edit/Read") ✓
+- RNG offsets：+3333/+7373/+5555 全部一致 ✓
+- eval_salt：bench.py auto 1(official), eval_task.py=1, SFT=1, MemoryEnv default=0(RL) ✓
+
+**v0.8.x eval 数据汇总**（Qwen3.5 company, 7 seeds）：
+
+| 指标 | 值 |
+|------|-----|
+| 均值 composite | **25.8%** |
+| 标准差 | 13.5% |
+| 最高 | 41.2% (s0) |
+| 最低 | 4.2% (s1, outlier) |
+| maintenance=0% | 4/7 seeds |
+| breadth 均值 | 37% |
+| reasoning 均值 | 28% |
+
+**关键洞察**：maintenance 是最弱轴——模型存了实体但不处理 corrections。这是模型策略问题（不执行 Edit），非系统 bug。训练（RL shaped reward Edit +0.5）可直接改善。
 
 ### 审计 A108（2026-03-11）— Phase 85 进行中 + 全量验证（维度 A+B）
 

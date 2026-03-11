@@ -67,9 +67,9 @@ commit `4c8f3a1`：stream_agent dead code + write count fix + backend.close(), b
 
 commit `1b3ba20`：SFT JSON escaping (json.dumps), adapters env.close() + info init
 
-### Phase 85 — eval_task.py 默认值 + pyproject.toml 版本同步（进行中）
+### Phase 85 — eval_task.py 默认值 + pyproject.toml 版本同步 ✅
 
-代码变更已完成（eval_task.py 200→60, pyproject.toml 0.4.0→0.8.4），待 commit。
+commit `3e744d4`：eval_task defaults 200→60, pyproject 0.4.0→0.8.5
 
 ### Phase 84 — Inspect AI 工具名不匹配修复 ✅
 
