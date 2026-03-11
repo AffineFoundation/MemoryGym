@@ -57,28 +57,15 @@
 
 ## 当前任务
 
-> **P1 完成，P2/P3 进行中。** 按优先级排序（A118 审计重整）。
+> **P1+P2 完成，P3 进行中。** 按优先级排序（A118 审计重整）。
 
 ---
 
-## P2 — RL 训练质量（RL 闭环验证前必须完成）
+## P2 — RL 训练质量 ✅
 
-### Phase 92 — RL reward 对齐 4 轴评分 + Edit shaped reward 验证
+### Phase 92 — RL reward 对齐 4 轴评分 + Edit shaped reward 验证 ✅
 
-**问题 1**：`MemoryEnv.get_verifiable_reward()` 用 `correct_count / total_questions`（flat），不映射真实 eval 的 4 轴加权（0.30 breadth + 0.25 maintenance + 0.25 reasoning + 0.20 efficiency）。
-
-**修复 1**：
-- 在 `step()` 处理 submit_answer 时，按 competency 记录 `{competency: [True/False]}` 到 `self._by_competency`
-- `get_verifiable_reward()` 调用 `compute_axis_scores()` 返回 composite
-- 导入 `from ..protocol import compute_axis_scores`
-
-**问题 2**：Edit shaped reward +0.5（L586-587）不验证 new_text 正确性。
-
-**修复 2**：仅当 `new_text` 包含 correction event 的 `new_val` 时给 +0.5，否则 +0.1。
-
-**验证**：
-1. 添加 `test_env_verifiable_reward_uses_4axis` + `test_env_edit_reward_requires_correct_value`
-2. `python -m pytest tests/test_training.py -q` 全部通过
+get_verifiable_reward() 改用 compute_axis_scores() composite。Edit shaped reward 验证 new_val 正确性（+0.5 正确 / +0.1 错误）。+2 tests。
 
 ---
 
@@ -126,6 +113,7 @@
 
 ## 已完成
 
+### Phase 92 — RL reward 对齐 4 轴评分 + Edit shaped reward ✅
 ### Phase 89+90 — SFT 轨迹 budget 超支 + json.dumps ✅
 ### Phase 87 — SFT 轨迹连续 user 消息合并 ✅
 ### Phase 86 — test_path_consistency 扩展 + flaky test 修复 ✅

@@ -502,6 +502,7 @@ class MemoryEnv:
         self._writes_used = 0
         self._questions_answered = 0
         self._correct_count = 0
+        self._by_competency: dict[str, list[bool]] = {}
         self._world = world
         self._correction_searched = False
         self._correction_forgot = False
@@ -599,7 +600,8 @@ class MemoryEnv:
                         info["remaining"] = (self.write_budget
                                              - self._writes_used)
                         if shaped and event_type == "correction":
-                            reward = 0.5
+                            corr_new = str(current_event.get("new_val", ""))
+                            reward = 0.5 if corr_new in new_text else 0.1
                 else:
                     # Fallback for ChromaDB: search + forget + store
                     results = self._backend.search(old_text, top_k=1)
@@ -614,7 +616,8 @@ class MemoryEnv:
                         info["remaining"] = (self.write_budget
                                              - self._writes_used)
                         if shaped and event_type == "correction":
-                            reward = 0.5
+                            corr_new = str(current_event.get("new_val", ""))
+                            reward = 0.5 if corr_new in new_text else 0.1
                     else:
                         self._writes_used -= 1  # Refund on miss
                         info["edited"] = False
@@ -661,6 +664,8 @@ class MemoryEnv:
                 info["correct"] = is_correct
                 info["ground_truth"] = gt
                 self._questions_answered += 1
+                self._by_competency.setdefault(competency, []).append(
+                    is_correct)
                 if is_correct:
                     self._correct_count += 1
             # Advance after answering
@@ -691,17 +696,20 @@ class MemoryEnv:
         return obs, reward, done, info
 
     def get_verifiable_reward(self) -> float:
-        """Episode accuracy for GRPO outcome reward.
+        """Episode reward using 4-axis composite (aligned with eval scoring).
 
-        Returns correct_count / total_questions plus efficiency bonus in
-        shaped mode. Shaped per-step rewards are orthogonal to this.
+        Uses compute_axis_scores() for consistent reward signal between
+        RL training and real evaluation.
         """
+        from ..protocol import compute_axis_scores
+
         if self._total_questions == 0:
             return 0.0
-        base = self._correct_count / self._total_questions
-        # Efficiency bonus: reward high info-density per write
-        if self.reward_mode == "shaped" and self._writes_used > 0:
-            unique_stored = len(self._stored_entity_names)
-            efficiency_bonus = min(unique_stored / self._writes_used, 1.0) * 0.2
-            base += efficiency_bonus
-        return base
+        scores = compute_axis_scores(
+            by_competency=self._by_competency,
+            n_entities=self.n_entities,
+            stored_count=len(self._stored_entity_names),
+            writes_used=self._writes_used,
+            write_budget=self.write_budget,
+        )
+        return scores["composite"]

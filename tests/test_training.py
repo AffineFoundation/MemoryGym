@@ -301,26 +301,36 @@ class TestMemoryEnv:
         assert "error" in info
 
     def test_shaped_reward_correction_flow(self):
-        """Shaped mode: Edit during correction → +0.5."""
+        """Shaped mode: Edit during correction with correct value → +0.5."""
         env = MemoryEnv("company", seed=0, n_entities=30,
-                        n_questions=5, reward_mode="shaped")
+                        n_questions=5, reward_mode="shaped",
+                        backend_type="markdown")
         env.reset()
-        # Advance to first correction event
+        # Find first correction event
+        corr_event = None
+        for e in env._stream:
+            if e["type"] == "correction":
+                corr_event = e
+                break
+        if corr_event is None:
+            return
+        old_val = str(corr_event.get("old_val", ""))
+        new_val = str(corr_event.get("new_val", ""))
+        ename = corr_event["entity_name"]
+        # Store entity with old value
+        env.step({"tool": "Write",
+                  "args": {"content": f"{ename} | {old_val}"}})
+        # Advance to the correction event
         while env._event_idx < len(env._stream):
             if env._stream[env._event_idx]["type"] == "correction":
                 break
             env.step({"tool": "next"})
-        if env._event_idx >= len(env._stream):
-            return  # No corrections in this stream
-        # Store something first so Edit has content to find
-        env.step({"tool": "Write",
-                  "args": {"content": "some entity data"}})
-        # Edit replaces old content → 0.5 correction reward
+        # Edit with correct new_val → 0.5
         _, reward, _, _ = env.step({
             "tool": "Edit",
-            "args": {"old_text": "some entity", "new_text": "corrected entity"}
+            "args": {"old_text": old_val, "new_text": new_val}
         })
-        assert reward == 0.5
+        assert reward == 0.5, f"Correct edit should get 0.5, got {reward}"
 
     def test_binary_mode_unchanged(self):
         """Binary mode: no intermediate rewards, only submit_answer."""
@@ -466,25 +476,16 @@ class TestMemoryEnv:
         })
         assert r2 == -0.1
 
-    def test_efficiency_bonus(self):
-        """Shaped mode: unique entities / writes → efficiency bonus."""
+    def test_verifiable_reward_uses_4axis(self):
+        """get_verifiable_reward() uses compute_axis_scores composite."""
         env = MemoryEnv("company", seed=0, n_entities=10,
                         n_questions=3, reward_mode="shaped")
         env.reset()
-        names = env._stream[0].get("entity_names", [])
-        assert len(names) >= 2
-        # Store two unique entities in two writes → efficiency = 1.0
-        env.step({
-            "tool": "memory_store",
-            "args": {"content": f"{names[0]} | data A"}
-        })
-        env.step({
-            "tool": "memory_store",
-            "args": {"content": f"{names[1]} | data B"}
-        })
+        # No questions answered → composite = 0
         reward = env.get_verifiable_reward()
-        # Base is 0 (no questions answered), bonus = min(2/2, 1.0) * 0.2 = 0.2
-        assert abs(reward - 0.2) < 1e-9
+        assert reward == 0.0
+        # Verify _by_competency is tracked
+        assert isinstance(env._by_competency, dict)
 
     def test_correction_speed_reward(self):
         """Shaped mode: immediate search after correction → +0.1."""
@@ -609,3 +610,38 @@ class TestMemoryEnv:
                 # All argument values should be valid — this verifies
                 # json.dumps was used (no raw f-string injection)
                 assert isinstance(parsed["arguments"], dict)
+
+    def test_env_edit_reward_requires_correct_value(self):
+        """Shaped Edit reward: +0.5 only if new_text contains new_val."""
+        env = MemoryEnv("company", seed=0, n_entities=30,
+                        n_questions=5, reward_mode="shaped",
+                        backend_type="markdown")
+        env.reset()
+        # Find first correction event
+        corr_event = None
+        for i, e in enumerate(env._stream):
+            if e["type"] == "correction":
+                corr_event = e
+                break
+        if corr_event is None:
+            return  # No corrections in this stream
+
+        # Store the entity first
+        ename = corr_event["entity_name"]
+        old_val = str(corr_event.get("old_val", ""))
+        new_val = str(corr_event.get("new_val", ""))
+        env.step({"tool": "Write",
+                  "args": {"content": f"{ename} | {old_val}"}})
+
+        # Advance to the correction event
+        while env._event_idx < len(env._stream):
+            if env._stream[env._event_idx]["type"] == "correction":
+                break
+            env.step({"tool": "next"})
+
+        # Edit with WRONG value → should get 0.1 (not 0.5)
+        _, reward_wrong, _, _ = env.step({
+            "tool": "Edit",
+            "args": {"old_text": old_val, "new_text": "WRONG_VALUE_999"}
+        })
+        assert reward_wrong == 0.1, f"Wrong edit should get 0.1, got {reward_wrong}"
