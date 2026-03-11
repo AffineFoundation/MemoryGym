@@ -57,7 +57,7 @@
 
 ## 当前任务
 
-> 待办为空。
+（无待办任务，等待新任务写入）
 
 ---
 
@@ -72,6 +72,7 @@
 
 ## 已完成
 
+### Phase 109 — LEADERBOARD.md 4 轴补全 + leaderboard.py Reasoning/Efficiency 列 ✅
 ### Phase 108 — CLI UX 打磨（表格对齐/API 前置检查/choices 显示/HF 噪音） ✅
 ### Phase 107 — 文档同步：README/LEADERBOARD/pyproject.toml/EVALUATOR ✅
 ### Phase 106 — relationship_hop/chain validator dispatch + GT 格式化解析 ✅

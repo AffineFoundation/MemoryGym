@@ -16,6 +16,7 @@ import json
 import os
 import sys
 from collections import defaultdict
+from datetime import datetime, timezone
 from pathlib import Path
 
 
@@ -143,24 +144,28 @@ def format_markdown(results: list[dict], aggregated: list[dict]) -> str:
     lines.append("")
     lines.append("## Detailed Results")
     lines.append("")
-    lines.append("| Model                                    | Template | Seed | Tier | Composite | Score | Retrieval | Update | Traj |")
-    lines.append("| ---------------------------------------- | -------- | ---- | ---- | --------- | ----- | --------- | ------ | ---- |")
+    lines.append("| Model                                    | Template | Seed | Tier | Composite | Breadth | Maint. | Reasoning | Efficiency | Traj |")
+    lines.append("| ---------------------------------------- | -------- | ---- | ---- | --------- | ------- | ------ | --------- | ---------- | ---- |")
 
     sorted_results = sorted(results, key=lambda r: (-r["composite"], r["model"]))
     for r in sorted_results:
-        bc = r["by_competency"]
-        ret = f"{bc.get('retrieval', 0)*100:.0f}%"
-        upd = f"{bc.get('update', 0)*100:.0f}%"
+        pa = r["per_axis"]
+        breadth = f"{pa.get('breadth', 0)*100:.0f}%"
+        maint = f"{pa.get('maintenance', 0)*100:.0f}%"
+        reasoning = f"{pa.get('reasoning', 0)*100:.0f}%"
+        efficiency = f"{pa.get('efficiency', 0)*100:.0f}%"
         traj = "yes" if r["has_trajectory"] else ""
         comp = f"{r['composite']*100:4.0f}%"
         lines.append(
             f"| {r['model']:40} | {r['template']:8} | {r['seed']:4} "
-            f"| {r['tier']:4} | {comp:9} | {r['score']*100:4.0f}% | {ret:9} | {upd:6} | {traj:4} |"
+            f"| {r['tier']:4} | {comp:9} | {breadth:7} | {maint:6} | {reasoning:9} | {efficiency:10} | {traj:4} |"
         )
 
     lines.append("")
+    now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
     lines.append(f"*Generated from {len(results)} evaluations across "
-                 f"{len(set(r['model'] for r in results))} models.*")
+                 f"{len(set(r['model'] for r in results))} models. "
+                 f"Last updated: {now}.*")
     return "\n".join(lines)
 
 
