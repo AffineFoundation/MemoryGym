@@ -52,17 +52,9 @@ Call tools by outputting JSON blocks:
 **submit_answer** — Submit your final answer:
 <tool_call>{{"name": "submit_answer", "arguments": {{"answer": "your answer"}}}}</tool_call>
 
-## Critical: Handling Corrections
-When you receive a CORRECTION:
-1. memory_search the entity name to find existing data
-2. Edit the old value to the corrected value
-This costs 1 write but ensures your answers reflect current data.
-Failing to update = wrong answers on update questions.
-
 ## Memory Budget
 - You have limited write operations — plan your usage carefully
 - Each Write or Edit counts against your budget
-- Corrections will arrive later and each update costs 1 write
 
 ## Answering Questions
 - Search by entity name, then submit_answer with the value
