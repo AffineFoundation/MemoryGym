@@ -194,6 +194,14 @@
 
 **建议**：首轮训练目标应是"跑通 + 泛化验证"而非数据积累。用 10-20 个高质量 seed 的 SFT 轨迹做冷启动，验证是否泛化到未见模板/seed。
 
+#### F10 — GPU 机器重启，驱动需手动恢复
+
+**发现**：GPU 机器宕机重启后 NVIDIA 驱动未自动加载。通过 `sudo apt install dkms && sudo dkms install nvidia/590.48.01` 为新内核 5.15.0-171-generic 编译安装驱动后恢复。
+
+**影响**：所有训练进程和 `/tmp/` 日志丢失。GRPO v2（step 8/10）结果部分丢失。
+
+**建议**：长期建议：训练 checkpoint 保存到持久目录而非 `/tmp/`
+
 ---
 
 ## 训练 CLI
@@ -252,18 +260,14 @@ memorygym/training/
 
 ## 待办
 
-1. **SFT v3：新工具接口训练**（当前优先）
-   - v2b 完成：loss 1.785→0.674，smoke test 9 writes, 3/10 correct, reward=0.46
-   - 但 v2b 用旧工具名（memory_store/memory_forget），上游已改为 Write/Edit/Read
-   - 已生成新数据：`data/sft_mixed_v2.jsonl`（480 trajectories，Write/Edit/Read）
-   - 训练 v3：用新数据 + 相同超参（8ep, lr=3e-5, lora-rank=32）
-2. **GRPO v3：KL 正则化**
-   - v2 实验确认 policy collapse（loss→负值，reward 不增）详见 `devlog/grpo-v2.md`
-   - 已实现：`--kl-coeff 0.05`，用 peft disable_adapter_layers() 零拷贝获取 ref logits
-   - 用 SFT v2b（或 v3）作为 base，对比效果
-   - v2 运行中（GPU 0，step 8/10），完成后启动 v3
-3. 更多 shaped reward 信号（如 search 精准度奖励、correction 完成奖励）
-4. 多模板 curriculum 效果验证（lite → standard → multi）
+1. **GRPO v3：KL 正则化 + SFT v3 base**（当前优先）
+   - SFT v3 完成：正确 Write/Edit/Read 格式，但 0/10 答题（详见 `devlog/sft-v3.md`）
+   - SFT 只教格式不教策略，GRPO reward 才能教 search+answer 行为
+   - v2 确认 policy collapse（loss→负值），v3 加 `--kl-coeff 0.05`
+   - Base checkpoint: `checkpoints/sft-v3-write-edit-read`（GPU 机）
+   - 参考 F2 审计 KL 梯度实现
+2. 更多 shaped reward 信号（如 search 精准度奖励、correction 完成奖励、F6 attributed reward）
+3. 多模板 curriculum 效果验证（lite → standard → multi）
 
 ## 已完成
 
@@ -301,4 +305,10 @@ memorygym/training/
   - 详见 `devlog/sft-v2b.md`
 - 工具接口适配（Write/Edit/Read）— _common.py 解析 + 格式化 + 新 SFT 数据
 - train.py 增强：远程日志 tee 保存 + 自动检测最新 log + 负值 loss regex 修复
+- SFT v3 — Write/Edit/Read 工具名训练，8 卡并行（7.5x 加速）
+  - loss 0.1975→0.076，正确 `<tool_call>` 格式 + Write 工具名
+  - smoke test: 15 writes, 0/10 correct — SFT 只教格式，答题需 GRPO
+  - 详见 `devlog/sft-v3.md`
+- GPU 驱动恢复：DKMS 编译 nvidia 590.48.01 for kernel 5.15.0-171 + fabricmanager 启动
+- train.py 多卡支持：auto 选所有空闲 GPU + accelerate launch 自动包装
 

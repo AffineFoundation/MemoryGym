@@ -176,12 +176,11 @@ def print_gpu_table(gpus: list[GPUInfo], min_free_mb: int = 8000) -> None:
 
 def select_gpus(gpus: list[GPUInfo], requested: str,
                 min_free_mb: int = 8000) -> list[int]:
-    """Select GPUs to use. 'auto' picks first available."""
+    """Select GPUs to use. 'auto' picks all available."""
     if requested != "auto":
         return [int(x) for x in requested.split(",")]
     available = [g.index for g in gpus if g.free_mb >= min_free_mb]
-    # Default: pick only the first available GPU (be conservative)
-    return available[:1] if available else []
+    return available
 
 
 # ---------------------------------------------------------------------------
@@ -361,6 +360,7 @@ def build_env_prefix(remote_dir: str, gpu_ids: str) -> str:
     remote_dir = remote_dir.replace("~", "$HOME")
     return (
         f"cd {remote_dir} && "
+        f"PATH=$HOME/.local/bin:$PATH "
         f"PYTHONPATH=. "
         f"PYTHONUNBUFFERED=1 "
         f"HF_HUB_OFFLINE=1 "
@@ -502,6 +502,13 @@ def launch_training(args: argparse.Namespace, mode: str) -> int:
     else:
         train_cmd = build_grpo_cmd(args)
         parser = GRPOLogParser(verbose=args.verbose)
+
+    # Multi-GPU: wrap with accelerate launch
+    num_gpus = len(available)
+    if num_gpus > 1 and mode == "sft":
+        # Replace "python3 scripts/..." with "accelerate launch --num_processes N scripts/..."
+        train_cmd = train_cmd.replace(
+            "python3 scripts/", f"accelerate launch --num_processes {num_gpus} scripts/")
 
     # Save log file on remote — training writes to file, survives SSH drops
     output_name = Path(args.output).name if args.output else mode
