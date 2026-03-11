@@ -611,6 +611,40 @@ class TestMemoryEnv:
                 # json.dumps was used (no raw f-string injection)
                 assert isinstance(parsed["arguments"], dict)
 
+    def test_sft_write_uses_original_values(self):
+        """SFT Write calls must contain pre-correction values, not post-correction."""
+        from memorygym.simulation import TEMPLATES
+        from random import Random
+
+        messages = generate_sft_trajectory("company", seed=42)
+        # Regenerate corrections to know what changed
+        tmpl = TEMPLATES["company"]()
+        world = tmpl.generate_world(seed=42, n_entities=60, eval_salt=1)
+        # Render original docs before corrections
+        rng_doc = Random(42)
+        orig_docs = {e.name: tmpl.render_document(e, world.active_attrs, rng_doc)
+                     for e in world.entities}
+        rng_correct = Random(42 + 3333)
+        corrections = tmpl.generate_corrections(world, rng_correct, 5)
+        # For each corrected entity, check Write calls use old_val not new_val
+        for c in corrections:
+            old_fmt = tmpl._format_value(c.attr, c.old_val)
+            new_fmt = tmpl._format_value(c.attr, c.new_val)
+            for m in messages:
+                if m["role"] != "assistant" or '"name": "Write"' not in m["content"]:
+                    continue
+                if c.entity_name not in m["content"]:
+                    continue
+                # Write should contain original value
+                assert old_fmt in m["content"], (
+                    f"Write for {c.entity_name} missing original {c.attr}={old_fmt}"
+                )
+                # Write should NOT contain corrected value
+                if old_fmt != new_fmt:
+                    assert new_fmt not in m["content"], (
+                        f"Write for {c.entity_name} has post-correction {c.attr}={new_fmt}"
+                    )
+
     def test_env_edit_reward_requires_correct_value(self):
         """Shaped Edit reward: +0.5 only if new_text contains new_val."""
         env = MemoryEnv("company", seed=0, n_entities=30,

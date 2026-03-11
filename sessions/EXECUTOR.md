@@ -57,11 +57,7 @@
 
 ## 当前任务
 
-> P0 已修复。待办为空。
-
----
-
-## P0 — Ingest 文档渲染使用修正后值 ✅
+> 待办为空。
 
 ---
 
@@ -75,13 +71,8 @@
 
 ## 已完成
 
-### Phase 98 — Correction 引导消息增强 ✅
-### Phase 97 — Codebase 世界模板（第 8 个领域） ✅
-### Phase 96 — University 模板 Constraint 4 逻辑修复 ✅
-### Phase 94 — 死代码清理 ✅
-
-## 已完成
-
+### Phase 100 — SFT 轨迹 _compact_document 使用原始值修复 ✅
+### Phase 99 — generate_stream ingest 文档渲染时序修复 ✅
 ### Phase 98 — Correction 引导消息增强 ✅
 ### Phase 97 — Codebase 世界模板（第 8 个领域） ✅
 ### Phase 96 — University 模板 Constraint 4 逻辑修复 ✅

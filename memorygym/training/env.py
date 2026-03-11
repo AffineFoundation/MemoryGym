@@ -6,6 +6,7 @@ using the same WorldTemplate infrastructure as evaluation.
 
 from __future__ import annotations
 
+import copy
 import json
 import uuid
 from pathlib import Path
@@ -83,6 +84,9 @@ def generate_sft_trajectory(
 
     stored_names = {all_docs[i][0].name for i in stored_indices}
 
+    # Save original attrs before corrections mutate them
+    original_attrs = {e.name: copy.deepcopy(e.attrs) for e in world.entities}
+
     # Generate corrections (mutates world)
     rng_correct = Random(seed + 3333)
     corrections = tmpl.generate_corrections(world, rng_correct, n_corrections)
@@ -135,7 +139,16 @@ def generate_sft_trajectory(
                 entity = world.get_entity(ename)
                 if not entity:
                     continue
+                # Temporarily restore original attrs (before corrections)
+                saved = {}
+                if ename in original_attrs:
+                    for attr, val in entity.attrs.items():
+                        if attr in original_attrs[ename] and val != original_attrs[ename][attr]:
+                            saved[attr] = val
+                            entity.attrs[attr] = original_attrs[ename][attr]
                 compact = tmpl._compact_document(entity, world.active_attrs)
+                for attr, val in saved.items():
+                    entity.attrs[attr] = val
                 content = f"{ename} | {compact}"
                 mem_id_counter += 1
                 mid = f"mem_{mem_id_counter:03d}"
