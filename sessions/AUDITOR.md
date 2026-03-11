@@ -153,11 +153,11 @@ sessions/AUDITOR.md（你，/loop 30m）— 调度中枢：审计、设计、方
 
 ## 当前任务
 
-### 审计 A110 — 下一轮
+### 审计 A111 — 下一轮
 
-- 维度 A：**能力缺口扫描**——所有已知 bug 修完，下一个最高价值改进方向是什么？
-- 维度 E：Qwen3.5 7-seed 数据分析——maintenance=0% 在 4/7 seeds，是系统问题还是模型问题？
-- 维度 D：README leaderboard 数据过时——是否值得更新？
+- Phase 86 执行进度
+- 维度 A：训练闭环验证——generate_sft_trajectory → fine-tune → eval 的完整链路能否跑通？
+- 维度 E：多模板 eval 数据需求——只有 company 有 v0.8.x 数据，hospital/research/sport 数据缺失
 
 ## 待跟进
 
@@ -171,6 +171,25 @@ sessions/AUDITOR.md（你，/loop 30m）— 调度中枢：审计、设计、方
 ## 审计日志
 
 （每次审计的结论摘要，最新在最上面。保持简洁，详细分析写 devlog/。）
+
+### 审计 A110（2026-03-11）— 能力缺口 + maintenance 深分析 + 战略方向（维度 A+E）
+
+**能力缺口扫描**（维度 A）：
+所有已知 bug 修完（Phase 79-85），系统稳定。最高价值改进方向排序：
+1. **训练闭环验证**（最高优先）：MemoryEnv/SFT 代码存在但从未端到端验证。Memory-R1 证明 152 个 QA 即可泛化——MemoryGym 应验证同样路径可行
+2. **test_path_consistency 扩展**：A102-A104 发现的问题缺少回归测试 → 派发 Phase 86
+3. **多模板 eval 数据**：只有 company 有 v0.8.x 数据，需扩展
+4. **README leaderboard**：数据混合 v1/v2 版本，不太可靠。暂不更新——等 v0.8.x 数据充足后再统一
+
+**Maintenance 轴深分析**（维度 E）：
+- 7 seeds 中 3 个 update_comp=0.00（s1/s4/s6），3 个有部分成功（s0=25%, s2=33%, s5=25%），1 个高成功（s3=67%）
+- 模型收到 corrections（trajectory 确认 5 corrections/seed），但不执行 Edit 操作
+- **结论**：模型策略问题——不知道如何用 Edit 更新已有记忆。RL shaped reward（Edit +0.5）直接对准此问题
+- 这不是系统 bug，但验证了训练的价值：训练后 maintenance 应显著提升
+
+**flaky test**：`test_search_recall` 偶发失败（短名嵌入区分度低），追加到 Phase 86
+
+**派发 Phase 86**：test_path_consistency 扩展 + flaky test 修复
 
 ### 审计 A109（2026-03-11）— Phase 85 ✅ + 全局一致性 + eval 数据汇总（维度 A+B+E）
 
