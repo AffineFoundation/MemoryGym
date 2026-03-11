@@ -57,37 +57,7 @@
 
 ## 当前任务
 
-### Phase 102 — Correction 追踪误报修复
-
-**依据**：审计 A153 发现 `agents/stream_agent.py:506-540` 的 correction 追踪检查 tool call arguments（intent）而非 results（outcome）。当 Edit 因 budget exhaustion 被拒时仍报 [OK]。证据：movie eval Steel Legacy correction = false positive。
-
-#### Step 1 — 修改 correction 结果判定
-
-`agents/stream_agent.py:506-540`，在判定 `correction_ok` 前，增加对 tool 执行结果的验证：
-
-当前逻辑（有 bug）：
-```python
-did_edit = any(c.get("name") == "Edit" for t in stats.turns for c in t.get("tool_calls", []))
-# ...
-correction_ok = (did_store or did_edit) and stored_new
-```
-
-需要额外检查：Edit tool 的 response 不包含 "Budget exhausted" 或 "Text not found"。
-
-方案选择（二选一，执行者自行判断最简方案）：
-- **A**：检查 `stats.turns` 中 Edit tool call 对应的 response message 是否包含 "Edited."
-- **B**：在 tool loop 前后记录 `budget.writes_used`，如果 Edit 后 budget 未变化则 `did_edit = False`
-
-#### Step 2 — 添加测试
-
-`tests/test_stream_agent.py` 或 `tests/test_bench.py`（看哪里更合适），测试：
-- 当 budget=0 时 correction tracker 应报 `success=False`（不是 True）
-- 当 Edit 成功时 correction tracker 应报 `success=True`
-
-#### 验证标准
-- `python -m pytest tests/ -q` 全量通过
-- 新测试覆盖 budget-exhausted correction 场景
-- `python -m memorygym.bench --seeds 3 --validate` 通过
+> 待办为空。
 
 ---
 
@@ -95,12 +65,14 @@ correction_ok = (did_store or did_edit) and stored_new
 
 ### 低优先级 Backlog
 
+- **README + LEADERBOARD 文档同步**（A155）：README 写 6 模板实际 8 个，缺训练 CLI/multi tier/backend 文档。LEADERBOARD 数据 pre-Phase99 过时，列名 Retrieval/Update 应为 Breadth/Maintenance
 - **用户体验修正**：API key 错误信息改善（docs/Design.md 已删除 A65，LEADERBOARD.md 已填充 A58）
 - **Promise/Progress Reward**：等简单 shaped reward 在真实训练中验证后，再决定是否需要更复杂的 reward 模型
 - **legacy 工具名清理**：移除 _KNOWN_TOOLS 中的 memory_store/memory_forget/memory_get/memory_list（等 v3 评测基线稳定后）
 
 ## 已完成
 
+### Phase 102 — Correction 追踪误报修复 ✅
 ### Phase 101 — university + codebase 加入 OFFICIAL_TEMPLATES ✅
 ### Phase 100 — SFT 轨迹 _compact_document 使用原始值修复 ✅
 ### Phase 99 — generate_stream ingest 文档渲染时序修复 ✅

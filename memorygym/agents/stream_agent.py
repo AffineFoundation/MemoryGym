@@ -505,32 +505,31 @@ def run_stream_agent(
 
             # Determine if correction was actually applied
             chain = _extract_action_chain(stats.turns)
-            did_store = any(
-                c.get("name") in ("Write", "memory_store")
-                for t in stats.turns for c in t.get("tool_calls", [])
-            )
-            did_edit = any(
-                c.get("name") == "Edit"
-                for t in stats.turns for c in t.get("tool_calls", [])
-            )
-            did_search = any(
-                c.get("name") == "memory_search"
-                for t in stats.turns for c in t.get("tool_calls", [])
-            )
-            # Check if stored/edited content contains new value
+            did_store = False
+            did_edit = False
+            did_search = False
             stored_new = False
             for t in stats.turns:
-                for c in t.get("tool_calls", []):
+                calls = t.get("tool_calls", [])
+                results = t.get("tool_results", [])
+                for i, c in enumerate(calls):
                     cname = c.get("name", "")
                     cargs = c.get("arguments", {})
-                    if cname in ("Write", "memory_store"):
-                        sc = str(cargs.get("content", ""))
-                        if str(new_val) in sc:
-                            stored_new = True
+                    result = results[i] if i < len(results) else ""
+                    if cname == "memory_search":
+                        did_search = True
+                    elif cname in ("Write", "memory_store"):
+                        # Check result indicates success (not budget exhausted)
+                        if "Budget exhausted" not in result:
+                            did_store = True
+                            if str(new_val) in str(cargs.get("content", "")):
+                                stored_new = True
                     elif cname == "Edit":
-                        sc = str(cargs.get("new_text", ""))
-                        if str(new_val) in sc:
-                            stored_new = True
+                        # Check result indicates success (Edited, not rejected)
+                        if "Edited." in result:
+                            did_edit = True
+                            if str(new_val) in str(cargs.get("new_text", "")):
+                                stored_new = True
 
             correction_ok = (did_store or did_edit) and stored_new
             correction_results.append({

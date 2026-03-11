@@ -329,6 +329,89 @@ def test_xml_preferred_over_code_block():
     assert calls[0]["arguments"]["answer"] == "from_xml"
 
 
+def _check_correction_tracking(turns, new_val):
+    """Replicate correction tracking logic from stream_agent for testing."""
+    did_store = False
+    did_edit = False
+    stored_new = False
+    for t in turns:
+        calls = t.get("tool_calls", [])
+        results = t.get("tool_results", [])
+        for i, c in enumerate(calls):
+            cname = c.get("name", "")
+            cargs = c.get("arguments", {})
+            result = results[i] if i < len(results) else ""
+            if cname in ("Write", "memory_store"):
+                if "Budget exhausted" not in result:
+                    did_store = True
+                    if str(new_val) in str(cargs.get("content", "")):
+                        stored_new = True
+            elif cname == "Edit":
+                if "Edited." in result:
+                    did_edit = True
+                    if str(new_val) in str(cargs.get("new_text", "")):
+                        stored_new = True
+    return (did_store or did_edit) and stored_new
+
+
+def test_correction_tracker_edit_success():
+    """Correction tracker reports success when Edit succeeds."""
+    turns = [{
+        "tool_calls": [
+            {"name": "memory_search", "arguments": {"query": "Alice"}},
+            {"name": "Edit", "arguments": {"old_text": "100k", "new_text": "120k"}},
+        ],
+        "tool_results": [
+            "[memory_search] Alice | salary: 100k",
+            "[Edit] Edited. 4 writes left.",
+        ],
+    }]
+    assert _check_correction_tracking(turns, "120k") is True
+
+
+def test_correction_tracker_edit_budget_exhausted():
+    """Correction tracker reports failure when Edit fails due to budget."""
+    turns = [{
+        "tool_calls": [
+            {"name": "memory_search", "arguments": {"query": "Alice"}},
+            {"name": "Edit", "arguments": {"old_text": "100k", "new_text": "120k"}},
+        ],
+        "tool_results": [
+            "[memory_search] Alice | salary: 100k",
+            "[Edit] Budget exhausted (30/30).",
+        ],
+    }]
+    assert _check_correction_tracking(turns, "120k") is False
+
+
+def test_correction_tracker_edit_text_not_found():
+    """Correction tracker reports failure when Edit can't find old text."""
+    turns = [{
+        "tool_calls": [
+            {"name": "memory_search", "arguments": {"query": "Alice"}},
+            {"name": "Edit", "arguments": {"old_text": "100k", "new_text": "120k"}},
+        ],
+        "tool_results": [
+            "[memory_search] Alice | salary: 100k",
+            "[Edit] Text not found in memory.",
+        ],
+    }]
+    assert _check_correction_tracking(turns, "120k") is False
+
+
+def test_correction_tracker_write_budget_exhausted():
+    """Correction tracker reports failure when Write fails due to budget."""
+    turns = [{
+        "tool_calls": [
+            {"name": "Write", "arguments": {"content": "Alice | salary: 120k"}},
+        ],
+        "tool_results": [
+            "[Write] Budget exhausted (30/30).",
+        ],
+    }]
+    assert _check_correction_tracking(turns, "120k") is False
+
+
 if __name__ == "__main__":
     import sys
     tests = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
