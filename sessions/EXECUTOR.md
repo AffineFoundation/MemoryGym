@@ -77,6 +77,28 @@
 - `python -m pytest tests/ -q` 全部通过
 - 新测试覆盖全部 20 种推理类型
 
+### Phase 81 — SFT 轨迹 JSON 转义修复
+
+**依据**：审计 A96 发现 `training/env.py` generate_sft_trajectory 用 f-string 直接嵌入值，未做 JSON 转义。
+
+**问题点**（3 处）：
+1. L137-140: Write content — `f'"arguments": {{"content": "{content}"}}'`
+2. L178-181: Edit old_val/new_val — `f'"old_text": "{old_val}"'`
+3. L263-264: submit_answer — `f'"answer": "{answer}"'`
+
+**修复方案**：用 `json.dumps(value)` 替代 `f'"{value}"'`，确保 tool_call 内部是合法 JSON。
+
+```python
+# Before:
+f'"arguments": {{"content": "{content}"}}'
+# After:
+f'"arguments": {{"content": {json.dumps(content)}}}'
+```
+
+**验证标准**：
+- `python -m pytest tests/ -q` 全部通过
+- 生成一个轨迹，验证 tool_call 块内的 JSON 可被 `json.loads` 解析
+
 ### Phase 80 — bench.py 时间计量 + writes_used 传递修复
 
 **依据**：审计 A95 发现 bench.py 两个数据质量 bug。

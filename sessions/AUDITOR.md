@@ -153,11 +153,11 @@ sessions/AUDITOR.md（你，/loop 30m）— 调度中枢：审计、设计、方
 
 ## 当前任务
 
-### 审计 A96 — 下一轮
+### 审计 A97 — 下一轮
 
-- Phase 79 + 80 执行进度
-- 批次 16 进度（需 post-Phase 77 版本）
-- 代码审计：protocol.py compute_axis_scores + 评分公式完整性（维度 B）
+- Phase 79-81 执行进度
+- 批次 16 进度
+- 代码审计：simulation.py 9 策略一致性 + 评分验证逻辑（维度 B）
 
 ## 待跟进
 
@@ -171,6 +171,27 @@ sessions/AUDITOR.md（你，/loop 30m）— 调度中枢：审计、设计、方
 ## 审计日志
 
 （每次审计的结论摘要，最新在最上面。保持简洁，详细分析写 devlog/。）
+
+### 审计 A96（2026-03-11）— protocol.py + training/env.py 审计（维度 B+A）
+
+**Phase 进度**：Phase 78 ✅ commit `094b5bf`（已验证 22 测试通过）。Phase 79/80 未启动。批次 16 未完成（现有文件为 v0.6.7）。
+
+**protocol.py 审计**（257 行）：✅ 评分公式无 bug。
+- `compute_axis_scores` 逻辑正确：breadth=retrieval准确率, maintenance=update×storage_gate, reasoning=20类型平均, efficiency=correct/budget ✅
+- `WEIGHTS` 和为 1.0 ✅
+- 所有 5 个调用者（bench.py, eval_scorer.py, simulation.py, env.py×2）使用一致参数 ✅
+- `trajectory_to_conversation` 静默丢弃 session_break 事件 — 低优先级数据完整性问题
+
+**training/env.py 审计**（693 行）— **SFT 轨迹 JSON 转义缺失**：
+- L137-140: Write 内容用 f-string 直接嵌入 `"{content}"` 而非 `json.dumps(content)`
+- L178-181: Edit old_val/new_val 同样无转义
+- L263-264: submit_answer 答案同样无转义
+- **当前数据无 double-quote**（已验证 6 模板），但这是潜在正确性 bug：任何含引号的属性值会生成畸形 JSON，训练模型学到错误的 tool_call 格式
+- MemoryEnv（L305-692）：step 逻辑、budget/refund、shaped reward 与 _tool_helpers.py 一致 ✅
+
+**派发 Phase 81 → EXECUTOR.md**：修复 SFT 轨迹 JSON 转义。
+
+**训练反馈**：F1-F7 无变化。
 
 ### 审计 A95（2026-03-11）— bench.py CLI 审计 + Phase 78 验证（维度 B）
 
