@@ -153,11 +153,12 @@ sessions/AUDITOR.md（你，/loop 30m）— 调度中枢：审计、设计、方
 
 ## 当前任务
 
-### 审计 A88 — 下一轮
+### 审计 A89 — 下一轮
 
-- Phase 75 执行进度
+- Phase 75 Bug 3 提交进度（training/env.py SFT eval_salt 仍未提交）
+- Phase 76 执行进度
 - 批次 15 进展
-- 代码审计：evaluation/llm_judge.py + validators.py 验证层完整性
+- 前沿搜索（距上次 A70 已 19 轮，严重超期）
 
 ## 待跟进
 
@@ -171,6 +172,28 @@ sessions/AUDITOR.md（你，/loop 30m）— 调度中枢：审计、设计、方
 ## 审计日志
 
 （每次审计的结论摘要，最新在最上面。保持简洁，详细分析写 devlog/。）
+
+### 审计 A88（2026-03-11）— 验证层审计 + 3 路径一致性测试 Phase 派发（维度 B）
+
+**Phase 进度**：Phase 75 commit `afc3113` ✅（Bug 1+2+dead code），但 **Bug 3（SFT eval_salt）仍未提交** — `git diff HEAD -- memorygym/training/env.py` 显示 L57 的 `eval_salt=1` 变更未 commit。执行线程需补提交。
+
+**批次 15**：进度 0/6。评测线程持续未活跃。
+
+**validators.py 审计**（267 行）：✅ 无 bug。
+- `AnswerValidator` 4 层匹配（exact → numeric → synthesis → abstention）逻辑正确
+- `_numeric_match()`：整数精确、浮点 2% 容差、K/M 后缀消歧 — 设计合理
+- `_synthesis_match()`：实体名 + 数值双重匹配 — 防猜测
+- `_abstention_match()`：拒绝模式 + 无数字守卫 — 防"不知道但恰好猜对"
+- `validate_with_fallback()` / `async_validate_with_fallback()`：规则优先、judge 兜底、失败关闭 — 正确
+
+**llm_judge.py 审计**（196 行）：✅ 无 bug。
+- 注入防御：`_parse_verdict` 取最后匹配（L42），`safe_answer` 三层清洗（控制字符+VERDICT redact+HTML 转义）
+- 失败关闭：无 verdict → ValueError，全模型失败 → RuntimeError，超时 300s
+- 次要：`safe_answer` 清洗在 async(L107-111) 和 sync(L147-151) 完全重复——可提取但不紧急
+
+**根因修复——"修了 2 处漏了第 3 处"模式**：A87 识别此模式已 4 次发生。根因：3 条评测路径（bench.py/training/env.py/eval_task.py）有重复参数传递但无自动化一致性检查。**派发 Phase 76**：添加自动化测试防止此类回归。
+
+**测试**：347 passed, 1 skipped ✅
 
 ### 审计 A87（2026-03-11）— eval_scorer.py 审计 + 3 路径系统性一致性检查（维度 B）
 

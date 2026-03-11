@@ -57,7 +57,39 @@
 
 ## 当前任务
 
-### Phase 75 — Inspect AI 路径 bug 修复（Edit fallback + eval_salt + dead code）⚡ 最高优先级
+### Phase 76 — 3 路径一致性自动化测试 ⚡ 最高优先级
+
+**依据**：审计 A87-A88 发现"修了 2 处漏了第 3 处"模式已发生 4 次（Phase 70 Edit fallback、Phase 71/74 策略泄漏、Phase 75 eval_salt）。根因：bench.py / training/env.py / eval_task.py 三条评测路径有重复参数传递但无自动化一致性检查。
+
+**⚠️ 先完成 Phase 75 Bug 3**：training/env.py L57 的 `eval_salt=1` 变更仍未 commit（`git diff HEAD -- memorygym/training/env.py` 可确认）。先 commit 此变更再开始 Phase 76。
+
+**目标**：在 `tests/` 中添加一致性测试，从源码级验证 3 条路径的关键参数同步。
+
+#### Step 1 — 新建 `tests/test_path_consistency.py`
+
+验证以下一致性：
+
+1. **eval_salt 传递**：bench.py 的 `--official` 模式、eval_task.py 的 `build_worldbench_stream()`、training/env.py 的 `generate_sft_trajectory()` 都应传 `eval_salt=1`。方法：用 AST 解析或 grep 确认 `generate_world` 调用包含 `eval_salt`。
+
+2. **Edit fallback guard**：`_tool_helpers.py` 和 `inspect_task/tools.py` 的 Edit 路径都应包含 `old_text in results[0]["content"]` 检查。方法：读源码文本匹配。
+
+3. **SYSTEM_PROMPT 无策略泄漏**：`stream_agent.py` 和 `eval_task.py` 的 SYSTEM_PROMPT 不应包含 `memory_search the entity`、`Corrections will arrive`、`Handling Corrections` 等策略指导文本。
+
+4. **工具计数一致**：所有路径使用 `MemoryBudget` 且 Edit 失败时 refund（`writes_used -= 1`）。
+
+#### Step 2 — 确保测试通过
+
+```bash
+python -m pytest tests/test_path_consistency.py -v
+python -m pytest tests/ -q
+```
+
+#### 验证标准
+- 新测试至少 6 个 test case（上述 4 类 × 覆盖关键路径）
+- `python -m pytest tests/ -q` 全部通过
+- 测试通过源码分析（AST/文本匹配），不依赖运行时
+
+### Phase 75 — Inspect AI 路径 bug 修复（Edit fallback + eval_salt + dead code）✅ commit `d481f1d`
 
 **依据**：审计 A86 发现 Inspect AI 路径 (`inspect_task/tools.py` + `eval_task.py`) 有 2 个 bug。
 
