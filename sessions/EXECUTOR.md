@@ -57,7 +57,27 @@
 
 ## 当前任务
 
-### Phase 77 — events.py contradiction 丢失 bug + 中流问题权重不一致 ⚡ 最高优先级
+### Phase 78 — 推理题型全覆盖测试
+
+**依据**：审计 A92 发现无综合测试验证所有 20 种 REASONING_COMPETENCIES 都能生成。如果新增类型但忘记加生成器，无测试捕获。
+
+**目标**：在 `tests/test_worlds.py` 或新文件中添加测试：
+
+1. 验证 `protocol.REASONING_COMPETENCIES` 中每种类型都在 `gen_question()` 分发表中注册
+2. 验证每种类型至少在 10 个 seed（标准 tier: 60 entities）中成功生成 ≥1 次
+3. 验证 `gen_adaptive_questions()` 产出的 competency 集合覆盖全部 20 种中的 ≥15 种（某些类型需要 corrections/relationships，不一定每次都触发）
+
+**实现提示**：
+- 用 `gen_question(world, rng, competency, available, corrections)` 逐类型测试
+- counterfactual 和 delta 需传 corrections
+- relationship_* 需世界有 relationships（所有 6 个模板都有）
+- 如果某类型在 10 seeds 中从未生成成功，说明生成器有 bug 或前置条件过严
+
+#### 验证标准
+- `python -m pytest tests/ -q` 全部通过
+- 新测试覆盖全部 20 种推理类型
+
+### Phase 77 — events.py contradiction 丢失 bug + 中流问题权重不一致 ✅
 
 **依据**：审计 A90 发现 events.py 事件流生成 2 个问题。
 

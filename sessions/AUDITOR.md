@@ -153,11 +153,11 @@ sessions/AUDITOR.md（你，/loop 30m）— 调度中枢：审计、设计、方
 
 ## 当前任务
 
-### 审计 A92 — 下一轮
+### 审计 A93 — 下一轮
 
-- Phase 77 提交进度
+- Phase 77 + Phase 78 执行进度
 - 批次 15 进展
-- 代码审计：questions.py 20 种推理题型生成器覆盖验证（维度 B）
+- 代码审计：render_document + render_correction 叙事生成（维度 B）
 
 ## 待跟进
 
@@ -171,6 +171,24 @@ sessions/AUDITOR.md（你，/loop 30m）— 调度中枢：审计、设计、方
 ## 审计日志
 
 （每次审计的结论摘要，最新在最上面。保持简洁，详细分析写 devlog/。）
+
+### 审计 A92（2026-03-11）— questions.py 20 种推理题型生成器审计 + Phase 78 派发（维度 B）
+
+**Phase 进度**：Phase 76 ✅ commit `cbd9cbe`。Phase 77 代码完成 + 测试通过（22 passed），待 commit。
+
+**questions.py + questions_advanced.py 审计**：✅ 全部 20 种推理题型生成器逻辑正确。
+
+覆盖验证：
+- questions.py（712 行）：retrieval, synthesis, aggregation, cross_category, conditional, ratio, comparison, multi_hop, outlier, temporal_trend, temporal_extreme, text_match, enum_filter + update/abstention/trick_retrieval/delta
+- questions_advanced.py：relationship_lookup/hop/chain/count/filter, counterfactual, multi_constraint
+- `gen_question()` 分发表（L36-57）覆盖全部 20 种 REASONING_COMPETENCIES ✅
+- delta 通过独立的 n_delta 分配路径生成，不在 comp_fn_map 中——正确 ✅
+- `_gq_multi_constraint`：2-3 约束组合过滤 + 计数，阈值选在 30/70 分位——反猜测 ✅
+- `_gq_counterfactual`：问更正前旧值——测记忆维护深度 ✅
+
+**测试缺口**：无综合测试验证所有 20 种 REASONING_COMPETENCIES 都能成功生成。单类型测试存在（test_new_dtypes.py），但缺完整覆盖保证。如果新增类型但忘记加生成器，无测试捕获。
+
+**派发 Phase 78 → EXECUTOR.md**：添加推理题型全覆盖测试。
 
 ### 审计 A91（2026-03-11）— Phase 76 验证 + gen_adaptive_questions 审计 + Phase 77 验证（维度 B）
 
