@@ -57,7 +57,17 @@
 
 ## 当前任务
 
-### Phase 71 — 事件格式策略提示移除（Phase 57 遗漏修复）⚡ 最高优先级
+### Phase 70 — ChromaDB Edit fallback 静默失败修复 ⚡ 最高优先级
+
+（详见下方 Phase 70 描述）
+
+### Phase 72 — Simulation 轴分数不变量验证
+
+（详见下方 Phase 72 描述）
+
+---
+
+### Phase 71 — 事件格式策略提示移除 ✅ commit `2849257`
 
 **依据**：审计 A75 发现 Phase 57 只中立化了 system prompt，但 INGEST 事件格式中仍嵌入策略提示。这违反 CLAUDE.md "存储策略本身是被测能力的一部分"。
 
@@ -120,11 +130,44 @@ f"Budget: {budget.remaining()} writes remaining."
 - grep 确认 3 个文件中无 "Corrections coming"、"Suggestion: store"、"ACTION REQUIRED"
 - **注意**：此变更会影响 v3 eval 分数（模型失去策略提示可能表现更差），这是预期行为——v4 基线需重新建立
 
+### Phase 72 — Simulation 轴分数不变量验证
+
+**依据**：审计 A79+A80 发现 `run_validation()`（simulation.py L510-610）只检查 raw accuracy 不变量，不验证 4-axis composite scores。`compute_axis_scores` 在 simulation 路径中从未被调用。轴权重或门控逻辑 bug 不会被 `--validate` 捕获。
+
+**修复方案**：在 `run_validation()` 末尾添加轴分数不变量检查。需要在 `simulate_one` 返回值中包含 `stored_count` 和 `writes_used`（已有 `stored`），然后调用 `compute_axis_scores`。
+
+新增检查（每 template）：
+```python
+# 在 run_validation() 中，用 _build_per_seed_axis_scores 或直接调用 compute_axis_scores
+# perfect: composite > 0.90 (允许 maintenance gate 小幅降低)
+# guesser: composite == 0.0
+# strategic: composite > naive composite
+# abstainer: composite < 0.15
+```
+
+具体实现：
+1. `bench.py` 的 `_build_per_seed_axis_scores` 已能从 simulation 数据计算轴分数——复用此逻辑
+2. 在 `run_validation()` 中 import `compute_axis_scores`，对每个策略计算平均 composite
+3. 添加 4 条新 invariant check
+
+**验证标准**：
+- `python -m pytest tests/ -q` 全部通过
+- `python -m memorygym.bench --seeds 3 --validate` ALL PASS（新检查也通过）
+- 故意修改 WEIGHTS 为错误值 → 新检查 FAIL
+
 ### Phase 70 — ChromaDB Edit fallback 静默失败修复
 
 （内容不变，见下方）
 
-### Phase 69 — MarkdownBackend temporal decay 搜索
+### Phase 71 — 事件格式策略提示移除 ✅
+
+commit `2849257`。INGEST + CORRECTION 策略提示全部移除。346 passed, simulation ALL PASS。
+
+### Phase 69 — MarkdownBackend temporal decay 搜索 ✅
+
+commit `1283a80`。temporal decay 实现完整。
+
+### Phase 69（原文） — MarkdownBackend temporal decay 搜索
 
 **依据**：审计 A73 前沿搜索发现 OpenClaw 官方记忆系统使用 temporal decay（指数衰减）对搜索结果排序——最近写入的记忆分数更高，旧记忆逐渐衰减。这直接影响 maintenance 轴评分：模型更新了记忆后，新版本应优先于旧版本被检索到。
 

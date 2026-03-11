@@ -153,11 +153,11 @@ sessions/AUDITOR.md（你，/loop 30m）— 调度中枢：审计、设计、方
 
 ## 当前任务
 
-### 审计 A79 — 下一轮
+### 审计 A81 — 下一轮
 
-- Phase 69-71 执行进度
+- Phase 70+72 执行进度
 - 批次 15 进展
-- 代码审计：simulation.py 策略 vs 评分一致性
+- 代码审计：bench.py 显示逻辑 + eval JSON schema 一致性
 
 ## 待跟进
 
@@ -171,6 +171,37 @@ sessions/AUDITOR.md（你，/loop 30m）— 调度中枢：审计、设计、方
 ## 审计日志
 
 （每次审计的结论摘要，最新在最上面。保持简洁，详细分析写 devlog/。）
+
+### 审计 A80（2026-03-11）— Phase 执行验证 + compute_axis_scores 审计 + Phase 72 派发（维度 B）
+
+**Phase 进度**：
+- Phase 71 ✅ commit `2849257`：INGEST 移除 "Corrections coming" + "Suggestion: store"，CORRECTION 移除 "ACTION REQUIRED" 步骤提示。grep 确认 0 残留。5 文件变更，346 passed，simulation ALL PASS。
+- Phase 69 ✅ commit `1283a80`：temporal decay 实现完整。
+- Phase 70 未启动（ChromaDB Edit fallback）。
+
+**compute_axis_scores 代码审计**（`protocol.py` L118-169）：
+
+1. **权重正确**：breadth=0.30, maintenance=0.25, reasoning=0.25, efficiency=0.20。与 CLAUDE.md 一致，sum=1.0。
+2. **Maintenance gate**：`maintenance_raw * min(storage_coverage / 0.5, 1.0)`。50% 覆盖率门槛合理——存一半才能拿满维护分。
+3. **Efficiency**：`min(correct_total / write_budget, 1.0)`，排除 abstention。correct_total 跨所有轴（retrieval+update+reasoning），这是设计意图——效率测总产出/预算比。
+4. **Reasoning 汇总**：遍历 20 个 REASONING_COMPETENCIES，合并所有 bool。正确。
+5. **无 bug**。
+
+**Simulation 轴分数验证缺口**（A79 延续）：
+
+`run_validation()`（simulation.py L510-610）只检查 raw accuracy 不变量。`compute_axis_scores` 从未在 simulation 中被验证。bench.py 的 `_build_per_seed_axis_scores` 计算轴分数仅用于显示，不做断言。
+
+**影响**：如果轴权重或门控逻辑引入 bug（如 maintenance gate 公式错误），simulation `--validate` 不会捕获。
+
+**派发 Phase 72 → EXECUTOR.md**：在 `run_validation()` 中添加轴分数不变量检查。
+
+### 审计 A79（2026-03-11）— simulation.py 策略 vs 评分一致性（维度 B）
+
+**发现**：`run_validation()`（simulation.py L510-610）验证 9 种策略的 raw accuracy 不变量（perfect=100%, guesser=0% 等），但不验证 4-axis composite scores。`compute_axis_scores` 在 simulation 路径中从未被调用或验证。
+
+**风险**：轴权重错误、maintenance gate 公式 bug、efficiency 计算 bug 等都不会被 simulation invariant checks 捕获。当前 `protocol.py` 代码审计确认无 bug，但未来变更缺少安全网。
+
+**决定**：合并到 A80 的 Phase 72 派发中。
 
 ### 审计 A78（2026-03-11）— stream_agent.py 代码审计 + Phase 71 扩展（维度 B）
 
