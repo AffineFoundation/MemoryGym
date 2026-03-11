@@ -568,3 +568,34 @@ class TestMemoryEnv:
         results = env._backend.search("Company A", top_k=1)
         assert "500" in results[0]["content"]
         env.close()
+
+    def test_sft_respects_budget(self):
+        """SFT trajectory Write calls must not exceed write_budget."""
+        for strategy in ("perfect", "strategic"):
+            messages = generate_sft_trajectory(
+                "company", seed=0, n_entities=60,
+                write_budget=30, strategy=strategy,
+            )
+            write_count = sum(
+                1 for m in messages
+                if m["role"] == "assistant" and '"name": "Write"' in m["content"]
+            )
+            assert write_count <= 30, (
+                f"strategy={strategy}: {write_count} Writes > budget 30"
+            )
+
+    def test_sft_json_dumps_all_queries(self):
+        """All tool call arguments in SFT trajectory must use json.dumps."""
+        import re
+        messages = generate_sft_trajectory("company", seed=0)
+        for m in messages:
+            if m["role"] != "assistant":
+                continue
+            # Find any bare (non-json.dumps) string in arguments
+            # Pattern: "query": "..." without proper escaping
+            # A properly json.dumps'd value won't have unescaped quotes
+            for call in re.findall(r'<tool_call>(.*?)</tool_call>', m["content"]):
+                parsed = json.loads(call)
+                # All argument values should be valid — this verifies
+                # json.dumps was used (no raw f-string injection)
+                assert isinstance(parsed["arguments"], dict)

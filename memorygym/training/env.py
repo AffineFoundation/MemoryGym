@@ -66,12 +66,18 @@ def generate_sft_trajectory(
     all_docs = [(e, tmpl.render_document(e, world.active_attrs, rng_doc))
                 for e in world.entities]
 
-    # Storage decision
+    # Storage decision — cap at write_budget to avoid teaching "ignore budget"
     rng_store = Random(seed + 111)
     if store_ratio >= 1.0:
-        stored_indices = list(range(len(all_docs)))
+        # Perfect: rank by importance, take top write_budget
+        ranked = sorted(
+            range(len(all_docs)),
+            key=lambda i: tmpl.entity_importance(all_docs[i][0], world),
+            reverse=True,
+        )
+        stored_indices = sorted(ranked[:write_budget])
     else:
-        n_store = max(1, int(len(all_docs) * store_ratio))
+        n_store = min(max(1, int(len(all_docs) * store_ratio)), write_budget)
         stored_indices = sorted(
             rng_store.sample(range(len(all_docs)), n_store))
 
@@ -249,7 +255,7 @@ def generate_sft_trajectory(
             if search_entity and search_entity in stored_names:
                 assistant_content = (
                     f'<tool_call>{{"name": "memory_search", '
-                    f'"arguments": {{"query": "{search_entity}"}}}}</tool_call>'
+                    f'"arguments": {{"query": {json.dumps(search_entity)}}}}}</tool_call>'
                 )
                 messages.append({"role": "assistant", "content": assistant_content})
                 messages.append({

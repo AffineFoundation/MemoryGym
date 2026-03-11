@@ -65,23 +65,9 @@
 
 ## P1 — 训练信号质量（阻塞 RL 训练闭环）
 
-### Phase 89+90 合并 — SFT 轨迹 budget 超支 + json.dumps ⚡
+### Phase 89+90 合并 — SFT 轨迹 budget 超支 + json.dumps ✅
 
-**问题 A**：`generate_sft_trajectory()` 中 `store_ratio` 只控制选哪些实体，不限制总写入数。perfect=61 writes / budget=30（超 2x），strategic=43（超 43%）。**模型从 SFT 学到"无视预算"**。
-
-**问题 B**：L252 memory_search 用裸 `"{search_entity}"`，其他 5 处都用 `json.dumps()`。
-
-**修复 A**：
-1. `stored_indices` 数量 cap 在 `write_budget`
-2. perfect 策略：用 `entity_importance()` 排序取 top-budget（不是随机截断）
-3. strategic：`n_store = min(int(len(all_docs) * store_ratio), write_budget)`
-4. Edit（corrections）不消耗 Write budget（与真实 eval 一致）
-
-**修复 B**：L252 改为 `{json.dumps(search_entity)}`
-
-**验证**：
-1. 添加 `test_sft_respects_budget`：Write 调用数 ≤ write_budget
-2. `python -m pytest tests/test_training.py -q` 全部通过
+perfect 策略用 entity_importance 排序取 top-budget，strategic cap 在 write_budget。json.dumps 修复 L252。+2 tests (budget + json parsing)。
 
 ### Phase 87 — SFT 轨迹连续 user 消息合并
 
