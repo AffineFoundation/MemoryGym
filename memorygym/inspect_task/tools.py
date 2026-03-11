@@ -36,7 +36,7 @@ def create_memory_tools(
 
     mem_budget = MemoryBudget(total_writes=budget)
 
-    @tool
+    @tool(name="Write")
     def write_memory() -> Tool:
         """Write information to your memory file. Costs 1 write from budget."""
         async def execute(content: str) -> str:
@@ -66,7 +66,7 @@ def create_memory_tools(
             )
         return execute
 
-    @tool
+    @tool(name="Edit")
     def edit_memory() -> Tool:
         """Edit existing content in your memory file. Costs 1 write."""
         async def execute(old_text: str, new_text: str) -> str:
@@ -105,7 +105,7 @@ def create_memory_tools(
             raise ToolError("Text not found in memory.")
         return execute
 
-    @tool
+    @tool(name="Read")
     def read_memory() -> Tool:
         """Read your memory file contents. Free operation."""
         async def execute(start_line: int | None = None,

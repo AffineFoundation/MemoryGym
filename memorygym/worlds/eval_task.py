@@ -147,9 +147,9 @@ def _count_tool_calls(messages: list, start_idx: int = 0) -> tuple[int, int]:
         if hasattr(msg, "content") and isinstance(msg.content, list):
             for part in msg.content:
                 fn = getattr(part, "function", None)
-                if fn in ("Write", "Edit", "memory_store"):
+                if fn in ("Write", "Edit", "write_memory", "edit_memory", "memory_store"):
                     n_writes += 1
-                elif fn in ("memory_search", "memory_list", "memory_get", "Read"):
+                elif fn in ("memory_search", "memory_list", "memory_get", "Read", "read_memory"):
                     n_searches += 1
     return n_writes, n_searches
 
