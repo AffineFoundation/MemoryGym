@@ -275,7 +275,16 @@ def generate_sft_trajectory(
                 "content": f"[submit_answer] ANSWER_SUBMITTED: {answer}",
             })
 
-    return messages
+    # Merge consecutive same-role messages (SFT trainers require strict
+    # user/assistant alternation; tool results followed by next event
+    # creates consecutive user messages).
+    merged: list[dict] = [messages[0]]  # system prompt
+    for msg in messages[1:]:
+        if merged and msg["role"] == merged[-1]["role"]:
+            merged[-1]["content"] += "\n\n---\n\n" + msg["content"]
+        else:
+            merged.append(msg)
+    return merged
 
 
 def export_trajectories(

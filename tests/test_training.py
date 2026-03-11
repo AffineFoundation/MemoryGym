@@ -584,6 +584,16 @@ class TestMemoryEnv:
                 f"strategy={strategy}: {write_count} Writes > budget 30"
             )
 
+    def test_sft_no_consecutive_same_role(self):
+        """SFT trajectory must strictly alternate user/assistant roles."""
+        messages = generate_sft_trajectory("company", seed=0)
+        non_system = [m for m in messages if m["role"] != "system"]
+        for i in range(1, len(non_system)):
+            assert non_system[i]["role"] != non_system[i-1]["role"], (
+                f"Consecutive {non_system[i]['role']} messages at index {i}: "
+                f"{non_system[i-1]['content'][:80]}... | {non_system[i]['content'][:80]}..."
+            )
+
     def test_sft_json_dumps_all_queries(self):
         """All tool call arguments in SFT trajectory must use json.dumps."""
         import re

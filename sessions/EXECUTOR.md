@@ -69,18 +69,9 @@
 
 perfect 策略用 entity_importance 排序取 top-budget，strategic cap 在 write_budget。json.dumps 修复 L252。+2 tests (budget + json parsing)。
 
-### Phase 87 — SFT 轨迹连续 user 消息合并
+### Phase 87 — SFT 轨迹连续 user 消息合并 ✅
 
-**问题**：`generate_sft_trajectory()` 产出的消息序列中有 28/132（21%）连续 user 消息对。模式：tool result (role=user) 后紧接 next event (role=user)。TRL SFTTrainer 和 unsloth 要求严格 user/assistant 交替，这会导致训练失败。
-
-**修复**：在 `memorygym/training/env.py` 的 `generate_sft_trajectory()` 中，当 tool result 后紧接新 event 时，合并为单条 user 消息（用 `\n\n---\n\n` 分隔）。
-
-**验证**：
-1. `python -m pytest tests/test_training.py -q` 全部通过
-2. 添加测试：`test_sft_no_consecutive_same_role` — 验证无连续同角色消息
-3. 生成 JSONL 验证消息数减少但内容完整
-
-**注意**：只改 SFT 轨迹生成，不改 MemoryEnv step 接口（RL 不需要严格交替）。
+Post-build merge: consecutive same-role messages joined with `---` separator. 27 merges per trajectory, strict alternation verified. +1 test.
 
 ---
 
