@@ -194,13 +194,13 @@
 
 **建议**：首轮训练目标应是"跑通 + 泛化验证"而非数据积累。用 10-20 个高质量 seed 的 SFT 轨迹做冷启动，验证是否泛化到未见模板/seed。
 
-#### F10 — GPU 机器重启，驱动需手动恢复
+#### F10 — GPU 机器重启，训练进程丢失
 
-**发现**：GPU 机器宕机重启后 NVIDIA 驱动未自动加载。通过 `sudo apt install dkms && sudo dkms install nvidia/590.48.01` 为新内核 5.15.0-171-generic 编译安装驱动后恢复。
+**发现**：GPU 机器宕机重启后驱动未自动加载，所有训练进程和 `/tmp/` 日志丢失。
 
-**影响**：所有训练进程和 `/tmp/` 日志丢失。GRPO v2（step 8/10）结果部分丢失。
+**影响**：GRPO v2（step 8/10）结果部分丢失。
 
-**建议**：长期建议：训练 checkpoint 保存到持久目录而非 `/tmp/`
+**建议**：训练 checkpoint 保存到持久目录而非 `/tmp/`
 
 ---
 
@@ -309,6 +309,6 @@ memorygym/training/
   - loss 0.1975→0.076，正确 `<tool_call>` 格式 + Write 工具名
   - smoke test: 15 writes, 0/10 correct — SFT 只教格式，答题需 GRPO
   - 详见 `devlog/sft-v3.md`
-- GPU 驱动恢复：DKMS 编译 nvidia 590.48.01 for kernel 5.15.0-171 + fabricmanager 启动
+- GPU 驱动恢复：机器重启后手动恢复驱动和 CUDA 环境
 - train.py 多卡支持：auto 选所有空闲 GPU + accelerate launch 自动包装
 
