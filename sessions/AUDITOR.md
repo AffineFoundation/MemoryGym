@@ -153,11 +153,11 @@ sessions/AUDITOR.md（你，/loop 30m）— 调度中枢：审计、设计、方
 
 ## 当前任务
 
-### 审计 A91 — 下一轮
+### 审计 A92 — 下一轮
 
-- Phase 76 + Phase 77 执行进度
+- Phase 77 提交进度
 - 批次 15 进展
-- 代码审计：base.py gen_adaptive_questions 问题分配逻辑（维度 B）
+- 代码审计：questions.py 20 种推理题型生成器覆盖验证（维度 B）
 
 ## 待跟进
 
@@ -171,6 +171,30 @@ sessions/AUDITOR.md（你，/loop 30m）— 调度中枢：审计、设计、方
 ## 审计日志
 
 （每次审计的结论摘要，最新在最上面。保持简洁，详细分析写 devlog/。）
+
+### 审计 A91（2026-03-11）— Phase 76 验证 + gen_adaptive_questions 审计 + Phase 77 验证（维度 B）
+
+**Phase 进度**：Phase 76 ✅ commit `cbd9cbe`（14 test cases, 5 categories）。Phase 77 代码完成（events.py 2 处修复），待 commit。
+
+**Phase 76 代码质量**：✅ 良好。源码级正则检查 eval_salt/Edit guard/策略泄漏/Edit refund/RNG offsets。参数化测试覆盖所有 3 路径文件。
+
+**Phase 77 验证**：
+- contradiction_batch 越界修复：✅ `min(n_batches-1, ...)` 确保 lite tier 不丢失 contradictions
+- 中流问题权重修复：✅ 读 `self.question_weights` 替代硬编码。hospital update=5/20(25%) vs city update=2/20(10%)——匹配模板权重
+- `python -m memorygym.bench --seeds 3 --validate` ALL PASS ✅
+
+**gen_adaptive_questions 审计**（base.py L503-729）：✅ 逻辑正确。
+- 权重分配使用 `self.question_weights`（Phase 32）✅
+- Retrieval dedup（entity+attr）✅，importance-weighted 选择 ✅
+- Update 用相同 `_q_text` 防措辞攻击 ✅
+- Contradiction 问题从 update 预算分配 ✅
+- n_comprehension 作为 remainder 计算——当前所有模板 weights 和 = 1.0 所以不会负，但无 max(0, ...) 守卫
+- Trick retrieval 防 always-abstain ✅
+- 19 种 comp_types + priority 机制 ✅
+
+**次要发现**：base.py L137 docstring 声称 "Values are relative weights (normalized internally)" 但代码未归一化——仅因当前所有模板权重和 = 1.0 而正常工作。不值得单独 Phase。
+
+**无新 Phase 派发**——Phase 77 完成后，待办为空。
 
 ### 审计 A90（2026-03-11）— events.py 事件流审计：contradiction 丢失 bug + 问题权重不一致（维度 B）
 
