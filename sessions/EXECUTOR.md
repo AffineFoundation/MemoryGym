@@ -77,6 +77,23 @@
 - `python -m pytest tests/ -q` 全部通过
 - 新测试覆盖全部 20 种推理类型
 
+### Phase 80 — bench.py 时间计量 + writes_used 传递修复
+
+**依据**：审计 A95 发现 bench.py 两个数据质量 bug。
+
+**Bug 1 — `seed_elapsed` 累积计时**（L251）：
+`t0` 在 L173 设置（所有 seed 前），`seed_elapsed = time.time() - t0` 对后续 seed 包含前序时间。
+**修复**：在每个 seed 的 model eval 块开头添加 `seed_t0 = time.time()`，`seed_elapsed = time.time() - seed_t0`。
+
+**Bug 2 — `writes_used` 缺失于 result dict**（L287-302）：
+model eval result dict 无 `writes_used`，导致 `_build_per_seed_axis_scores`（L559）用 `stored_count` 近似，效率分错误。
+**修复**：在 result dict 中添加 `"writes_used": writes_used`，在 `_build_per_seed_axis_scores` 中优先使用 `v.get("writes_used", stored_count)`。
+
+**验证标准**：
+- `python -m pytest tests/ -q` 全部通过
+- `seed_elapsed` 使用 per-seed 计时
+- `_build_per_seed_axis_scores` 使用真实 writes_used
+
 ### Phase 79 — stream_agent.py 死代码清理 + write 计数修复
 
 **依据**：审计 A94 发现两个问题。

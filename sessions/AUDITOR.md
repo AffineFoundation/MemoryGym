@@ -153,11 +153,11 @@ sessions/AUDITOR.md（你，/loop 30m）— 调度中枢：审计、设计、方
 
 ## 当前任务
 
-### 审计 A95 — 下一轮
+### 审计 A96 — 下一轮
 
-- Phase 78 + 79 执行进度
-- 批次 16 进度
-- 代码审计：bench.py CLI 入口 + 评分输出逻辑（维度 B）
+- Phase 79 + 80 执行进度
+- 批次 16 进度（需 post-Phase 77 版本）
+- 代码审计：protocol.py compute_axis_scores + 评分公式完整性（维度 B）
 
 ## 待跟进
 
@@ -171,6 +171,18 @@ sessions/AUDITOR.md（你，/loop 30m）— 调度中枢：审计、设计、方
 ## 审计日志
 
 （每次审计的结论摘要，最新在最上面。保持简洁，详细分析写 devlog/。）
+
+### 审计 A95（2026-03-11）— bench.py CLI 审计 + Phase 78 验证（维度 B）
+
+**Phase 进度**：Phase 78 ✅ commit `094b5bf`（22 个推理题型覆盖测试）。Phase 79 未启动。批次 16 未完成（现有 Qwen3.5 文件为 v0.6.7，需 v≥0.7.0 post-Phase 77）。
+
+**bench.py 审计**（588 行）：
+
+1. **Bug: `seed_elapsed` 是累积值**（L251）：`t0` 在 L173 设置一次（所有 seed 前），`seed_elapsed = time.time() - t0` 对后续 seed 包含所有前序 seed 时间。eval JSON `time_taken` 对多 seed 运行逐步偏大。现有数据因单 seed 运行未受影响。
+2. **Bug: `writes_used` 缺失于 result dict**（L287-302）：model eval 结果字典无 `writes_used` 字段。`_build_per_seed_axis_scores`（L559）回退到 `writes_used = stored_count`，对 model eval 效率分计算错误（agent 可能有失败的 Edit/Write 消耗预算但未增加 stored_count）。
+3. **`doc_chars` 硬编码为 0**（L296）：数据质量小问题，不影响评分。
+
+**派发 Phase 80 → EXECUTOR.md**：修复 bench.py 时间计量 + writes_used 传递。
 
 ### 审计 A94（2026-03-11）— stream_agent.py 运行循环 + 自适应问题替换审计（维度 B）
 
