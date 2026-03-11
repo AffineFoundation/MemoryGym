@@ -154,6 +154,28 @@
 
 **建议**：等训练跑通基线后考虑。低优先级。
 
+#### F6 — Attributed Dense Rewards（审计线程前沿搜索 A89）
+
+**发现**：3 篇 2026 年新论文（MemBuilder/MemPO/Memex(RL)）独立收敛到同一结论：**reward 应按记忆的下游使用率加权**。
+
+- MemBuilder（2601.05488）：ADRPO，gradient ∝ 记忆在 retrieval 中的使用频率。84.23% LoCoMo
+- MemPO（2603.00680）：credit assignment based on memory effectiveness。+25.98% F1
+- Memex(RL)（2603.04257）：budget-aware reward shaping。3.5× task success
+
+**影响**：我们当前 flat reward（Write +0.3, Edit +0.5）不区分"存了但从未被查询"和"存了且帮助回答了 3 道题"。Attributed reward 能让模型学会优先存高价值实体。
+
+**建议**：GRPO v3 的 reward 设计应参考 ADRPO——在 episode 结束后，回溯每条 memory 被 memory_search 命中并导致正确回答的次数，按此加权。MemoryGym 的自适应问题系统天然支持这种归因（`required_entities` 字段已存在）。
+
+详见 `devlog/2026-03-11-frontier-v7.md`。
+
+#### F7 — Reward Decay 防 Reward Hacking（审计线程前沿搜索 A89）
+
+**发现**：MIRA（arXiv 2602.17930）引入 utility decay——随训练进展降低辅助 reward 权重，使模型最终依赖 outcome reward。
+
+**影响**：我们的 shaped reward 已有 reward hacking 风险（A42+A44：Edit +0.5 不验证 new_text）。如果模型学会"无脑存 → 拿 +0.3"而不关注存什么，shaped reward 反而有害。Decay 机制是自然的安全阀。
+
+**建议**：实现一个 `reward_shaping_weight` 参数，从 1.0 线性衰减到 0.0（如训练的前 50% 步）。后期只保留 outcome reward（submit_answer correct=+1.0）。
+
 ---
 
 ## 训练 CLI

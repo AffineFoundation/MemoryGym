@@ -153,12 +153,11 @@ sessions/AUDITOR.md（你，/loop 30m）— 调度中枢：审计、设计、方
 
 ## 当前任务
 
-### 审计 A89 — 下一轮
+### 审计 A90 — 下一轮
 
-- Phase 75 Bug 3 提交进度（training/env.py SFT eval_salt 仍未提交）
 - Phase 76 执行进度
 - 批次 15 进展
-- 前沿搜索（距上次 A70 已 19 轮，严重超期）
+- 代码审计：events.py 事件流生成 + 自适应问题替换逻辑（维度 B）
 
 ## 待跟进
 
@@ -167,11 +166,29 @@ sessions/AUDITOR.md（你，/loop 30m）— 调度中枢：审计、设计、方
 - **Reward hacking 风险**（A42+A44）：env.py shaped reward 用 `n.lower() in content.lower()` 匹配实体名，Edit +0.5 不验证 new_text。暂不修复——等训练跑出数据再优化
 - **Retrieval 瓶颈**（A62+A69 数据）：11% 正确率，瓶颈在模型侧（entities_per_write=1.0，不做 packing）
 - **7 个推理类型 0%**（A62 数据）：系统性模型能力天花板，非 bug
-- **前沿方向**：BudgetMem（预算约束记忆，最近竞品）、Mem-alpha（RL 记忆构建，13x 泛化）、GSPO（mem-agent 4B→0.75 验证）、AgeMem step-wise GRPO（F4）、StructMemEval（记忆组织能力评测）、ICLR 2026 MemAgents Workshop（4/26-27，关注录用论文）
+- **前沿方向**（v7, A89）：MemBuilder ADRPO 84% LoCoMo（attributed dense reward）、MemPO（self-memory policy, 25% F1+, 70% token↓）、Memex(RL)（indexed memory + budget-aware reward shaping）、MemoryRewardBench（RM 质量瓶颈）、MIRA（utility decay reward）、AgeMem step-wise GRPO（F4）、ICLR 2026 MemAgents Workshop（4/26-27）
 
 ## 审计日志
 
 （每次审计的结论摘要，最新在最上面。保持简洁，详细分析写 devlog/。）
+
+### 审计 A89（2026-03-11）— 前沿搜索 v7 + Phase 进度检查（维度 C）
+
+**Phase 进度**：Phase 75 ✅ 完全完成（commit `d481f1d` 包含 Bug 3 SFT eval_salt）。Phase 76 未启动。批次 15 进度 0/6。
+
+**前沿搜索 v7**（详见 `devlog/2026-03-11-frontier-v7.md`）：
+
+6 篇新论文（2026 年 1-3 月），3 篇 Tier 1：
+1. **MemBuilder**（2601.05488）：Attributed Dense Rewards PO（ADRPO），84.23% LoCoMo。关键：contribution-aware gradient weighting——按记忆的下游使用率缩放梯度。优于我们的 flat +0.3/+0.5
+2. **MemPO**（2603.00680）：Self-memory policy optimization。credit assignment based on memory effectiveness。+25.98% F1，67-73% token reduction
+3. **Memex(RL)**（2603.04257）：Budget-aware reward shaping for indexed memory。3.5× task success + 43% context reduction
+
+**对 MemoryGym 训练的启示**（3 个优先级）：
+- P1：Attributed reward shaping——reward 按下游 utility 加权（取代 flat reward）
+- P2：Dense intermediate rewards——利用现有自适应问题系统在流中提供中间 reward
+- P3：Reward decay——随训练进展降低 shaped reward 权重，防 reward hacking
+
+**无新 Phase 派发**——前沿发现为训练方向参考，当前优先级仍是 Phase 76（一致性测试）和 batch 15 评测。将 P1-P3 写入 TRAINER.md 战略反馈区。
 
 ### 审计 A88（2026-03-11）— 验证层审计 + 3 路径一致性测试 Phase 派发（维度 B）
 
