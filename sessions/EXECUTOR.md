@@ -57,117 +57,46 @@
 
 ## 当前任务
 
-### Phase 79 — stream_agent.py 死代码清理 + write 计数修复
+> **注意**：5 个 Phase 积压（A99 审计清理）。按优先级排序，从上往下执行。每个 Phase 都是独立的小任务（<30 行改动）。
 
-**依据**：审计 A94。删除 `_parse_and_execute`（L160-183，死代码），修复 `stats.writes` 在 execute_tool 前计数的问题。
+### Phase 79+80 合并 — 数据质量修复（stream_agent + bench.py）
 
-**修复**：
-1. 删除 `_parse_and_execute`
-2. 通过比较 `budget.writes_used` 前后差值计数实际写入
+**这是 2 个小修复合并为 1 个 commit，涉及 2 个文件。**
 
-### Phase 80 — bench.py 时间计量 + writes_used 传递修复
+**修复 1 — stream_agent.py 死代码 + write 计数**（审计 A94）：
+- 删除 `_parse_and_execute`（L160-183，死代码，从未调用）
+- 修复 `_run_tool_loop` L270-282: write 计数在 execute_tool 前。改为比较 `budget.writes_used` 前后差值
 
-**依据**：审计 A95。`seed_elapsed` 用全局 `t0` 导致累积计时；result dict 缺 `writes_used`。
+**修复 2 — bench.py 时间计量 + writes_used**（审计 A95）：
+- L251 `seed_elapsed = time.time() - t0` 是累积值。改为每 seed 前 `seed_t0 = time.time()`
+- L287-302 result dict 添加 `"writes_used": writes_used`
+- L559 `_build_per_seed_axis_scores` 改为 `v.get("writes_used", stored_count)`
 
-**修复**：
-1. 每个 seed 前 `seed_t0 = time.time()`
-2. result dict 添加 `"writes_used": writes_used`
-3. `_build_per_seed_axis_scores` 用 `v.get("writes_used", stored_count)`
+**验证**：`python -m pytest tests/ -q` 全部通过
 
-### Phase 81 — SFT 轨迹 JSON 转义修复
+### Phase 81+82 合并 — 训练基础设施修复（SFT 转义 + adapters 泄漏）
 
-**依据**：审计 A96。`training/env.py` generate_sft_trajectory 用 f-string 嵌入值未做 JSON 转义。3 处：Write content、Edit old/new、submit_answer。
+**修复 1 — SFT JSON 转义**（审计 A96，`training/env.py`）：
+3 处 f-string 直接嵌入值 → 用 `json.dumps(value)` 替代 `f'"{value}"'`：
+- L137-140: Write content
+- L178-181: Edit old_val/new_val
+- L263-264: submit_answer
 
-**修复**：用 `json.dumps(value)` 替代 `f'"{value}"'`。
+**修复 2 — adapters env.close()**（审计 A97）：
+- `verl_adapter.py` run() 末尾、`slime_adapter.py` generate() 末尾、`_common.py` run_episode() 末尾添加 `env.close()`（用 try/finally）
+- `_common.py` L170 前添加 `info: dict = {}`
 
-### Phase 82 — adapters env.close() + info 初始化
-
-**依据**：审计 A97 发现 adapters 内存泄漏和变量未绑定。
-
-**问题 1 — env.close() 未调用**：
-- `verl_adapter.py` L117: `env = MemoryEnv(...)`, L239 返回前未 close
-- `slime_adapter.py` L54: `env = MemoryEnv(...)`, L122 返回前未 close
-- `_common.py` `run_episode` 也未 close env
-- 每个 episode 泄漏一个 ChromaDB collection，训练时 OOM
-- **修复**：在所有 env 使用完毕后调用 `env.close()`。推荐 try/finally 确保异常时也清理。
-
-**问题 2 — `_common.py` `run_episode` L220 info 未初始化**：
-- 如果 while 循环不执行，`info` 变量未绑定
-- **修复**：在循环前 `info: dict = {}` 初始化
-
-**验证标准**：
-- `python -m pytest tests/ -q` 全部通过
-- grep 确认 adapters 中 env.close() 存在
-- grep 确认 `info` 在循环前初始化
-
-### Phase 81 — SFT 轨迹 JSON 转义修复
-
-**依据**：审计 A96 发现 `training/env.py` generate_sft_trajectory 用 f-string 直接嵌入值，未做 JSON 转义。
-
-**问题点**（3 处）：
-1. L137-140: Write content — `f'"arguments": {{"content": "{content}"}}'`
-2. L178-181: Edit old_val/new_val — `f'"old_text": "{old_val}"'`
-3. L263-264: submit_answer — `f'"answer": "{answer}"'`
-
-**修复方案**：用 `json.dumps(value)` 替代 `f'"{value}"'`，确保 tool_call 内部是合法 JSON。
-
-```python
-# Before:
-f'"arguments": {{"content": "{content}"}}'
-# After:
-f'"arguments": {{"content": {json.dumps(content)}}}'
-```
-
-**验证标准**：
-- `python -m pytest tests/ -q` 全部通过
-- 生成一个轨迹，验证 tool_call 块内的 JSON 可被 `json.loads` 解析
-
-### Phase 80 — bench.py 时间计量 + writes_used 传递修复
-
-**依据**：审计 A95 发现 bench.py 两个数据质量 bug。
-
-**Bug 1 — `seed_elapsed` 累积计时**（L251）：
-`t0` 在 L173 设置（所有 seed 前），`seed_elapsed = time.time() - t0` 对后续 seed 包含前序时间。
-**修复**：在每个 seed 的 model eval 块开头添加 `seed_t0 = time.time()`，`seed_elapsed = time.time() - seed_t0`。
-
-**Bug 2 — `writes_used` 缺失于 result dict**（L287-302）：
-model eval result dict 无 `writes_used`，导致 `_build_per_seed_axis_scores`（L559）用 `stored_count` 近似，效率分错误。
-**修复**：在 result dict 中添加 `"writes_used": writes_used`，在 `_build_per_seed_axis_scores` 中优先使用 `v.get("writes_used", stored_count)`。
-
-**验证标准**：
-- `python -m pytest tests/ -q` 全部通过
-- `seed_elapsed` 使用 per-seed 计时
-- `_build_per_seed_axis_scores` 使用真实 writes_used
-
-### Phase 79 — stream_agent.py 死代码清理 + write 计数修复
-
-**依据**：审计 A94 发现两个问题。
-
-**问题 1 — 死代码 `_parse_and_execute`**（`stream_agent.py` L160-183）：
-定义但从未被调用。其功能已内联到 `_run_tool_loop`（L266-281）。直接删除。
-
-**问题 2 — `stats.writes` 过度计数**（`stream_agent.py` L270-282）：
-Write/Edit 在 `execute_tool` 前就计数（`n_w += 1`），被拒绝的写入也被统计。应该在 execute_tool 之后，根据返回结果判断是否实际消费了写入预算。
-
-**修复方案**：
-1. 删除 `_parse_and_execute` 函数
-2. 在 `_run_tool_loop` 中，将 write 计数移到 `execute_tool` 之后，检查是否实际消费了预算（通过比较 `budget.writes_used` 前后差值）
-
-**验证标准**：
-- `python -m pytest tests/ -q` 全部通过
-- `_parse_and_execute` 不存在
-- stats.writes 只计实际消费的写入
+**验证**：`python -m pytest tests/ -q` 全部通过
 
 ### Phase 83 — MarkdownBackend recall 基准测试
 
-**依据**：审计 A98。ChromaDB 有 `test_chromadb_recall` + `test_chromadb_accuracy_above_naive` 验证检索质量。MarkdownBackend 无对等测试——hybrid search 质量退化无测试捕获。
+**依据**：审计 A98。ChromaDB 有 recall + accuracy 测试，MarkdownBackend 无对等测试。
 
-**目标**：在 `tests/test_markdown_backend.py` 添加：
-1. `test_markdown_recall`：存 10 个实体，逐个搜索，验证 top-1 命中率 ≥ 80%
-2. `test_markdown_accuracy_above_naive`：模仿 `test_chromadb_accuracy_above_naive`，用真实世界实体验证搜索准确率
+在 `tests/test_markdown_backend.py` 添加：
+1. `test_markdown_recall`：存 10 实体，搜索验证 top-1 命中 ≥ 80%
+2. `test_markdown_accuracy_above_naive`：真实世界实体搜索准确率
 
-**验证标准**：
-- `python -m pytest tests/test_markdown_backend.py -q` 全部通过
+**验证**：`python -m pytest tests/test_markdown_backend.py -q` 全部通过
 
 ### Phase 78 — 推理题型全覆盖测试 ✅
 

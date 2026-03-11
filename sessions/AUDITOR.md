@@ -153,11 +153,11 @@ sessions/AUDITOR.md（你，/loop 30m）— 调度中枢：审计、设计、方
 
 ## 当前任务
 
-### 审计 A99 — 下一轮
+### 审计 A100 — 下一轮
 
-- Phase 79-83 执行进度（积压 5 个 Phase，executor 是否活跃？）
-- 批次 16 进度（1/3 完成）
-- 如果 executor 仍无活动：合并 Phase 优先级，精简队列（维度 A）
+- Phase 79+80 / 81+82 / 83 执行进度
+- 批次 16 完成度（目前 1/3）
+- 新 eval 数据分析：Qwen3.5 s0=41% vs s1=4% 方差分析（维度 E）
 
 ## 待跟进
 
@@ -171,6 +171,28 @@ sessions/AUDITOR.md（你，/loop 30m）— 调度中枢：审计、设计、方
 ## 审计日志
 
 （每次审计的结论摘要，最新在最上面。保持简洁，详细分析写 devlog/。）
+
+### 审计 A99（2026-03-11）— 队列清理 + eval 数据初步分析（维度 A+E）
+
+**Phase 进度**：Phase 79-83 全部未启动（executor 自 Phase 78 后无 commit）。
+
+**队列清理**：5 个 Phase 合并为 3 个任务单元：
+- Phase 79+80 合并（数据质量：stream_agent dead code + bench.py timing）
+- Phase 81+82 合并（训练基础设施：SFT 转义 + adapters env leak）
+- Phase 83 不变（MarkdownBackend recall test）
+
+EXECUTOR.md 已重写：去重、按优先级排序、精简描述。
+
+**批次 16 数据**（v0.8.0）：
+- Qwen3.5 company_s0: composite=**41.2%**（b=57% m=25% r=50% e=27%）
+- Qwen3.5 company_s1: composite=**4.2%**（b=0% m=0% r=14% e=3%）
+
+**s0 vs s1 方差极大**：s1 存了 35 个实体（>s0 的 33）但 retrieval=0%、update=0%。存储量正常但检索完全失败。可能原因：
+1. 模型存储格式在 s1 世界中与搜索不匹配
+2. 种子特异性——s1 的实体名/属性组合导致检索失败
+3. 需要更多数据点（hospital_s0, sport_s0）确认是系统性还是偶发
+
+**不派发新 Phase**——积压未消化，本轮只做队列管理。
 
 ### 审计 A98（2026-03-11）— memory/ 后端审计（维度 B）
 
