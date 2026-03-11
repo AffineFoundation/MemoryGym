@@ -93,7 +93,7 @@ def create_memory_tools(
                 )
             # Fallback for ChromaDB
             results = backend.search(old_text, top_k=1)
-            if results:
+            if results and old_text in results[0]["content"]:
                 backend.forget(results[0]["id"])
                 content = results[0]["content"].replace(old_text, new_text, 1)
                 backend.store(content)

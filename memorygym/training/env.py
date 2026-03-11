@@ -54,7 +54,7 @@ def generate_sft_trajectory(
         raise ValueError(f"Unknown template: {template_name}")
 
     tmpl = TEMPLATES[template_name]()
-    world = tmpl.generate_world(seed=seed, n_entities=n_entities)
+    world = tmpl.generate_world(seed=seed, n_entities=n_entities, eval_salt=1)
     rng = Random(seed)
 
     # Determine store ratio from strategy name

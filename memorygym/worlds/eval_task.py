@@ -169,7 +169,7 @@ def build_worldbench_stream(
     and questions — the agent never knows what comes next.
     """
     tmpl = _TEMPLATES[template_name]()
-    world = tmpl.generate_world(seed, n_entities)
+    world = tmpl.generate_world(seed, n_entities, eval_salt=1)
 
     # Generate corrections (mutates world state)
     rng_correct = Random(seed + 3333)
@@ -236,9 +236,6 @@ def worldbench_solver(
         total_entities = sum(
             len(e.get("entity_names", []))
             for e in stream if e["type"] == "ingest"
-        )
-        n_corrections_total = sum(
-            1 for e in stream if e["type"] == "correction"
         )
         entities_seen = 0
 
