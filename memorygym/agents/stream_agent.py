@@ -511,11 +511,11 @@ def run_stream_agent(
             stored_new = False
             for t in stats.turns:
                 calls = t.get("tool_calls", [])
-                results = t.get("tool_results", [])
+                tool_results = t.get("tool_results", [])
                 for i, c in enumerate(calls):
                     cname = c.get("name", "")
                     cargs = c.get("arguments", {})
-                    result = results[i] if i < len(results) else ""
+                    result = tool_results[i] if i < len(tool_results) else ""
                     if cname == "memory_search":
                         did_search = True
                     elif cname in ("Write", "memory_store"):

@@ -338,6 +338,7 @@ memorygym/training/
 - IPS-GRPO 实现（Phase 103）：`--ips` flag，逆频率缩放防 mode collapse
 - SFT v3 完成：loss 0.1975→0.076，Write/Edit/Read 格式正确，但 0/10 correct（详见 `devlog/sft-v3.md`）
 - SFT v3 数据生成：`data/sft_v4.jsonl`（160 perfect）+ `data/sft_v4_strategic.jsonl`（160 strategic）
+- SFT v5 数据生成（Phase 104 correction fix 后）：`data/sft_v5.jsonl`（160 perfect, 3.0 edits/traj）+ `data/sft_v5_strategic.jsonl`（160 strategic, 3.0 edits/traj）— 51% correction edit rate, up from ~1.7 pre-fix
 - MemoryEnv 完整实现（reset/step 接口，ChromaDB embedding search，binary + shaped reward）
 - SFT 轨迹生成（perfect/strategic 策略，OpenAI messages 格式）
 - verl 适配器（AgentLoopBase 集成，@register memorygym_agent）

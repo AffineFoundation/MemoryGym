@@ -396,7 +396,8 @@ def main():
     parser.add_argument(
         "--templates", nargs="+",
         default=["company", "research", "city",
-                 "hospital", "sport", "movie"],
+                 "hospital", "sport", "movie",
+                 "university", "codebase"],
         help="Templates to sample from")
     parser.add_argument(
         "--max-turns", type=int, default=100,
