@@ -57,99 +57,31 @@
 
 ## 当前任务
 
-> **Phase 79-86 全部完成。** 以下是新任务。
+> **Phase 79-86 全部完成。** 以下是新任务，按优先级排序（A118 审计重整）。
+>
+> **执行顺序**：P1 → P2 → P3（各 priority 内部可合并提交）。
 
-### Phase 93 — CLI UX 修复：README tier 默认值 + help 补全 + strategy 校验
+---
 
-**问题**：
-1. README.md L68 说 "lite (default)"，代码实际默认 standard（60/20/5/30）
-2. `--tier` help 遗漏 "multi"（代码支持 4 种 tier）
-3. `--strategy foobar` 静默回退到全部策略，无警告
+## P1 — 训练信号质量（阻塞 RL 训练闭环）
 
-**修复**：
-1. README.md L68：改为 "standard (default)" 或改代码默认为 lite（**选前者**——standard 是 eval 标准配置）
-2. bench.py L96：help 改为 `"evaluation tier (lite/standard/hard/multi)"`
-3. bench.py L152-153：添加校验，无效 strategy 名打印警告或 raise
+### Phase 89+90 合并 — SFT 轨迹 budget 超支 + json.dumps ⚡
 
-**验证**：
-1. `python -m memorygym.bench --help` 输出正确
-2. `python -m pytest tests/test_bench.py -q` 全部通过
-3. 可选：添加测试 `test_invalid_strategy_warns`
+**问题 A**：`generate_sft_trajectory()` 中 `store_ratio` 只控制选哪些实体，不限制总写入数。perfect=61 writes / budget=30（超 2x），strategic=43（超 43%）。**模型从 SFT 学到"无视预算"**。
 
-### Phase 92 — RL reward 对齐 4 轴评分 + Edit shaped reward 验证
+**问题 B**：L252 memory_search 用裸 `"{search_entity}"`，其他 5 处都用 `json.dumps()`。
 
-**问题 1**：`MemoryEnv.get_verifiable_reward()` 用 `correct_count / total_questions`（flat 均值），不映射真实 eval 的 4 轴加权（0.30 breadth + 0.25 maintenance + 0.25 reasoning + 0.20 efficiency）。效率计算也不同（RL: unique_stored/writes_used vs eval: correct_total/write_budget）。
-
-**修复 1**：在 `get_verifiable_reward()` 中调用 `compute_axis_scores()`：
-- 收集 `self._by_competency`（已有 `_correct_count` 和 `_total_questions`，需按 competency 拆分）
-- 在 `step()` 处理 submit_answer 时，记录 `{competency: [True/False]}` 到 `self._by_competency`
-- `get_verifiable_reward()` 调用 `compute_axis_scores(self._by_competency, self._n_entities, len(self._stored_entity_names), self._writes_used, self.write_budget)` 返回 composite
-- 导入 `from ..protocol import compute_axis_scores`
-
-**问题 2**：Edit shaped reward +0.5（env.py L586-587）不验证 new_text 是否为当前 correction 的正确新值。Agent 可以 Edit 任意文本获得 +0.5。
-
-**修复 2**：在 correction event 上下文中，仅当 `new_text` 包含 `event['new_val']` 时才给 +0.5：
-```python
-if shaped and event_type == "correction":
-    expected_new = str(current_event.get("new_val", ""))
-    if expected_new and expected_new.lower() in new_text.lower():
-        reward = 0.5
-    else:
-        reward = 0.1  # Attempted but wrong value
-```
-
-**验证**：
-1. `python -m pytest tests/test_training.py -q` 全部通过
-2. 添加测试：`test_env_verifiable_reward_uses_4axis` — 验证返回值与 compute_axis_scores 一致
-3. 添加测试：`test_env_edit_reward_requires_correct_value`
-4. 确认 MemoryEnv shaped reward 的 Edit +0.5 仅对正确 correction 触发
-
-### Phase 89 — SFT 轨迹 budget 超支修复 ⚡ 最高优先
-
-**问题**：`generate_sft_trajectory()` 中 `store_ratio` 只控制选哪些实体存储，不限制总写入数。结果：
-- perfect 策略：61 次 Write，budget=30（超 2x）
-- strategic 策略：43 次 Write，budget=30（超 43%）
-- **模型从 SFT 学到"无视预算"**，这是训练信号质量的根本缺陷
-
-**修复**：在 `generate_sft_trajectory()` 中：
-1. 用 `write_budget` 直接 cap `stored_indices` 数量：`stored_indices = stored_indices[:write_budget]`（保留高优先实体）
-2. 对 perfect 策略：用 `entity_importance()` 排序后取 top-budget 个（不是随机截断）
-3. 对 strategic 策略：`n_store = min(int(len(all_docs) * store_ratio), write_budget)`
+**修复 A**：
+1. `stored_indices` 数量 cap 在 `write_budget`
+2. perfect 策略：用 `entity_importance()` 排序取 top-budget（不是随机截断）
+3. strategic：`n_store = min(int(len(all_docs) * store_ratio), write_budget)`
 4. Edit（corrections）不消耗 Write budget（与真实 eval 一致）
 
+**修复 B**：L252 改为 `{json.dumps(search_entity)}`
+
 **验证**：
-1. 添加测试 `test_sft_respects_budget`：Write 调用数 ≤ write_budget
+1. 添加 `test_sft_respects_budget`：Write 调用数 ≤ write_budget
 2. `python -m pytest tests/test_training.py -q` 全部通过
-3. 验证 perfect 策略优先存高重要性实体
-
-### Phase 90 — SFT memory_search json.dumps 修复
-
-**问题**：`training/env.py` L252 用裸字符串插值 `"{search_entity}"`，但 L139/L178/L180-181 已正确使用 `json.dumps()`。不一致且对特殊字符不安全。
-
-**修复**：L252 改为 `{json.dumps(search_entity)}`
-
-**验证**：`python -m pytest tests/test_training.py -q`
-
-### Phase 91 — 问题措辞泄漏修复（temporal_trend + comparison）
-
-**问题**：两处措辞泄漏题型信息：
-1. `temporal_trend`（questions.py L570-576）：所有 phrasing 包含完整答案分类 "strongly rising, slightly rising, flat, slightly falling, or strongly falling"——agent 看到就知道是 5 选 1
-2. `comparison`（questions.py L392）："By how much?" 仅出现在 comparison 题
-
-**修复 1**（temporal_trend）：改为开放式提问，不列出答案选项。例如：
-- "Describe the overall trend of {entity}'s {attr} over time."
-- "How has {entity}'s {attr} changed across the recorded periods?"
-- "What pattern does {entity}'s {attr} show over time?"
-答案验证不变（仍匹配 5 级分类），但问题不泄漏分类体系。
-
-**修复 2**（comparison）：合并为通用比较措辞，不用 "By how much?"。例如：
-- "Compare {e_a} and {e_b}'s {attr}. Which is higher and what is the difference?"
-- "Between {e_a} and {e_b}, who has greater {attr} and by what margin?"
-
-**验证**：
-1. `python -m pytest tests/ -q` 全部通过（特别是 simulation validation）
-2. 确认 smart_guesser < 5% 不变量仍满足
-3. 确认答案格式不变（temporal_trend 仍返回 5 级分类，comparison 仍返回 "Entity (diff)"）
 
 ### Phase 87 — SFT 轨迹连续 user 消息合并
 
@@ -163,6 +95,49 @@ if shaped and event_type == "correction":
 3. 生成 JSONL 验证消息数减少但内容完整
 
 **注意**：只改 SFT 轨迹生成，不改 MemoryEnv step 接口（RL 不需要严格交替）。
+
+---
+
+## P2 — RL 训练质量（RL 闭环验证前必须完成）
+
+### Phase 92 — RL reward 对齐 4 轴评分 + Edit shaped reward 验证
+
+**问题 1**：`MemoryEnv.get_verifiable_reward()` 用 `correct_count / total_questions`（flat），不映射真实 eval 的 4 轴加权（0.30 breadth + 0.25 maintenance + 0.25 reasoning + 0.20 efficiency）。
+
+**修复 1**：
+- 在 `step()` 处理 submit_answer 时，按 competency 记录 `{competency: [True/False]}` 到 `self._by_competency`
+- `get_verifiable_reward()` 调用 `compute_axis_scores()` 返回 composite
+- 导入 `from ..protocol import compute_axis_scores`
+
+**问题 2**：Edit shaped reward +0.5（L586-587）不验证 new_text 正确性。
+
+**修复 2**：仅当 `new_text` 包含 correction event 的 `new_val` 时给 +0.5，否则 +0.1。
+
+**验证**：
+1. 添加 `test_env_verifiable_reward_uses_4axis` + `test_env_edit_reward_requires_correct_value`
+2. `python -m pytest tests/test_training.py -q` 全部通过
+
+---
+
+## P3 — 评测质量 + 文档（不阻塞训练，可延后）
+
+### Phase 91 — 问题措辞泄漏修复（temporal_trend + comparison）
+
+**问题**：
+1. `temporal_trend`（questions.py L570-576）：phrasing 包含完整 5 级答案分类
+2. `comparison`（questions.py L392）："By how much?" 仅出现在此题型
+
+**修复 1**（temporal_trend）：改为开放式 "Describe the overall trend of {entity}'s {attr} over time." 等。答案验证不变。
+
+**修复 2**（comparison）：改为 "Compare X and Y's {attr}. Which is higher and what is the difference?"
+
+**验证**：`python -m pytest tests/ -q` + simulation smart_guesser < 5%
+
+### Phase 93 — CLI UX 修复：README tier 默认值 + help 补全 + strategy 校验
+
+**问题**：README L68 说 "lite (default)"，实际默认 standard。--tier help 遗漏 "multi"。--strategy 无效名静默忽略。
+
+**修复**：README 改 "standard (default)"，help 加 "multi"，strategy 加校验。
 
 ### Phase 88 — docs/ROADMAP.md 同步更新
 
