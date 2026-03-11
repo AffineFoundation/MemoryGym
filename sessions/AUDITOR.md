@@ -153,24 +153,46 @@ sessions/AUDITOR.md（你，/loop 30m）— 调度中枢：审计、设计、方
 
 ## 当前任务
 
-### 审计 A73 — 下一轮
+### 审计 A74 — 下一轮
 
-- Phase 67/68 执行进度
-- 前沿搜索 V7 结果处理
+- Phase 67/68/69 执行进度
 - 批次 15 进展
+- 代码审计：MarkdownBackend 搜索质量 vs OpenClaw 规范
 
 ## 待跟进
 
 （审计中发现的、需要持续关注但不紧急的事项）
 
-- **Reward hacking 风险**（A42+A44）：env.py shaped reward 用 `n.lower() in content.lower()` 匹配实体名，Edit +0.5 不验证 new_text。**暂不修复**——等训练跑出数据再优化
-- **Retrieval 瓶颈**（A62+A69 数据）：11% 正确率，MarkdownBackend 对比完成（batch 14）——**无显著差异**（30% vs 31.7%）。瓶颈在模型侧（entities_per_write=1.0，不做 packing）
-- **7 个推理类型 0%**（A62 数据）：outlier/comparison/cross_category 等系统性失败。非 bug，是模型能力天花板
-- **前沿方向**：AgeMem step-wise GRPO（F4）、A-MAC 5因子准入（F5）、GSPO（F1）、MemoryRewardBench、AMA-Bench、NemoClaw、PlugMem。均等训练跑通后再考虑
+- **Reward hacking 风险**（A42+A44）：env.py shaped reward 用 `n.lower() in content.lower()` 匹配实体名，Edit +0.5 不验证 new_text。暂不修复——等训练跑出数据再优化
+- **Retrieval 瓶颈**（A62+A69 数据）：11% 正确率，瓶颈在模型侧（entities_per_write=1.0，不做 packing）
+- **7 个推理类型 0%**（A62 数据）：系统性模型能力天花板，非 bug
+- **前沿方向**：GSPO（ART 实现 + P-GSPO 变体）、AgeMem step-wise GRPO（F4）、mem0 OpenClaw 插件（Auto-Recall/Capture 模式）、OpenClaw temporal decay 搜索
 
 ## 审计日志
 
 （每次审计的结论摘要，最新在最上面。保持简洁，详细分析写 devlog/。）
+
+### 审计 A73（2026-03-11）— 前沿搜索 V7 + 任务管线扩展（维度 C+A）
+
+**前沿搜索 V7 — 3 项发现**：
+
+1. **mem0 OpenClaw 插件**：mem0 已成为 OpenClaw 官方插件（`openclaw plugins install @mem0/openclaw-mem0`）。提供 Auto-Recall（消息前注入相关记忆）+ Auto-Capture（响应后提取事实）模式。这与我们的 Write/Edit/Read 显式工具模式不同——mem0 是隐式的。
+   - **对 MemoryGym 的意义**：mem0 以插件形式回归 OpenClaw 生态，但其隐式模式不适合评测预算管理能力（agent 无法控制存储决策）。我们的显式工具模式仍然是正确选择。
+   - 参考：https://docs.mem0.ai/integrations/openclaw
+
+2. **OpenClaw 记忆架构验证**：OpenClaw 官方文档（docs.openclaw.ai/concepts/memory）使用 MEMORY.md 文件 + 混合搜索 + **temporal decay**（指数衰减）。这验证了我们 MarkdownBackend 方向，但我们缺少 temporal decay。
+   - **新发现**：temporal decay 可以区分"知道但过时" vs "知道且当前"——与我们的 maintenance 轴直接相关
+   - 参考：https://docs.openclaw.ai/concepts/memory
+
+3. **GSPO 生态扩展**：
+   - **P-GSPO**（Parameterized GSPO）：OpenReview 新论文，为 length-sensitive reasoning 优化。
+   - **ART (OpenPipe)**：实验性 GSPO 实现可用（art.openpipe.ai/experimental/gspo）。
+   - GSPO 已训练 Qwen3 全系列（Instruct/Coder/Thinking），MoE 模型稳定性显著优于 GRPO。
+   - 参考：https://arxiv.org/abs/2507.18071, https://qwenlm.github.io/blog/gspo/
+
+**线程活动**：Phase 67/68 未启动（执行者不活跃），批次 15 未启动（评测者不活跃）。
+
+**派发 Phase 69（MarkdownBackend temporal decay）→ EXECUTOR.md**。连同 Phase 67/68 形成 3 任务管线。
 
 ### 审计 A72（2026-03-11）— 代码深度审计 + 文档恢复 + 任务派发（维度 A+B）
 

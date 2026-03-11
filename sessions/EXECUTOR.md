@@ -118,6 +118,25 @@
 - `python -m memorygym.bench --seeds 3 --validate` ALL PASS
 - grep 确认所有 4 个文件使用 `seed + 3333` / `seed + 5555` 模式
 
+### Phase 69 — MarkdownBackend temporal decay 搜索
+
+**依据**：审计 A73 前沿搜索发现 OpenClaw 官方记忆系统使用 temporal decay（指数衰减）对搜索结果排序——最近写入的记忆分数更高，旧记忆逐渐衰减。这直接影响 maintenance 轴评分：模型更新了记忆后，新版本应优先于旧版本被检索到。
+
+**参考**：https://docs.openclaw.ai/concepts/memory — "Temporal decay applies an exponential multiplier to scores based on the age of each result"
+
+**现状**：`memorygym/memory/backends/markdown_backend.py` 的 `search()` 使用 BM25 + vector 混合搜索，但没有时间因素。每次 `write()` 或 `edit()` 时没有记录时间戳。
+
+**修复方案**：
+1. 在 MarkdownBackend 中，为每个写入条目添加单调递增的序号（不需要真实时间戳，用写入计数器即可）
+2. search() 结果排序时，对 RRF 分数乘以 decay factor：`score * decay^(max_seq - entry_seq)`，decay ≈ 0.95
+3. 这样最新写入的记忆在搜索中排名更高，correction 后的新值优先于旧值
+
+**验证标准**：
+- `python -m pytest tests/ -q` 全部通过
+- `python -m memorygym.bench --seeds 3 --validate` ALL PASS
+- 新测试：写入 entity A（值=100），再 edit A（值=200），search "A" 返回的第一条结果包含 200
+- MarkdownBackend eval 分数不降低（maintenance 可能提升）
+
 ---
 
 ### Phase 57 — 系统提示词中立化 ✅
