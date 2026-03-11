@@ -72,6 +72,7 @@
 
 ## 已完成
 
+### Phase 106 — relationship_hop/chain validator dispatch + GT 格式化解析 ✅
 ### Phase 104 — SFT 轨迹 correction 时序修复 + Edit 覆盖提升 ✅
 ### Phase 102 — Correction 追踪误报修复 ✅
 ### Phase 101 — university + codebase 加入 OFFICIAL_TEMPLATES ✅

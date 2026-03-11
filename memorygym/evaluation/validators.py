@@ -45,7 +45,8 @@ class AnswerValidator:
             return True
 
         if question_type in ("retrieval", "update", "aggregation",
-                              "cross_category", "ratio", "delta"):
+                              "cross_category", "ratio", "delta",
+                              "relationship_hop", "relationship_chain"):
             if self._numeric_match(answer, ground_truth):
                 return True
 
@@ -77,7 +78,12 @@ class AnswerValidator:
             gt_num = float(gt) if not isinstance(gt, (int, float)) else gt
             is_int_gt = isinstance(gt, int) or (isinstance(gt, str) and '.' not in gt)
         except (ValueError, TypeError):
-            return False
+            # GT may be formatted (e.g. "$34,620.4M") — extract number
+            try:
+                gt_num = self._extract_number(str(gt), apply_suffix=False)
+                is_int_gt = '.' not in str(gt)
+            except ValueError:
+                return False
 
         for apply_suffix in (True, False):
             try:

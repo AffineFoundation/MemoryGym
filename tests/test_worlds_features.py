@@ -307,6 +307,29 @@ def test_validator_handles_formatted_values():
         + "\n".join(failures[:5]))
 
 
+def test_relationship_hop_chain_numeric_match():
+    """relationship_hop and relationship_chain must use numeric matching.
+
+    GT from _format_value (e.g. "$34,620.4M", "17,976") must match
+    stripped numeric answers ("34620.4", "17976").
+    """
+    from memorygym.evaluation.validators import AnswerValidator
+    v = AnswerValidator()
+
+    cases = [
+        ("relationship_hop", "$34,620.4M", "34620.4", True),
+        ("relationship_hop", "17,976", "17976", True),
+        ("relationship_chain", "$1.5M", "1.5", True),
+        ("relationship_chain", "42.7%", "42.7", True),
+        ("relationship_hop", "$34,620.4M", "99999", False),
+    ]
+    for qtype, gt, answer, expected in cases:
+        result = v.validate(answer, gt, qtype)
+        assert result == expected, (
+            f"{qtype}: validate({answer!r}, {gt!r}) = {result}, expected {expected}"
+        )
+
+
 def test_km_suffix_guesser_still_zero():
     """K/M-suffix-aware validator must not help smart_guesser break 5%.
 
