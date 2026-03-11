@@ -411,22 +411,21 @@ class MemoryEnv:
             docs = event.get("documents", [])
             docs_text = "\n\n".join(
                 f"[Document {i+1}]\n{d}" for i, d in enumerate(docs))
-            n_ents = len(event.get("entity_names", []))
             remaining = self.write_budget - self._writes_used
-            suggested = max(0, min(n_ents, remaining - self._n_corrections))
             return (
                 f"=== Event {idx}/{total} [DOCUMENTS] ===\n\n"
                 f"⚠️ Budget: {remaining}/{self.write_budget} writes "
-                f"remaining. Corrections coming: {self._n_corrections}.\n"
-                f"   Suggestion: store ≤{suggested} from this batch.\n\n"
+                f"remaining. Be selective — store what matters most.\n\n"
                 f"**Documents:**\n{docs_text}\n\n"
                 "No question. Store important entity data."
             )
         elif etype == "correction":
+            remaining = self.write_budget - self._writes_used
             return (
                 f"=== Event {idx}/{total} [CORRECTION] ===\n\n"
                 f"**Correction Notice:**\n{event.get('notice', '')}\n\n"
-                "Update your stored memories with the corrected value."
+                f"A correction has been issued. Decide how to handle it.\n"
+                f"Budget: {remaining} writes remaining."
             )
         elif etype == "question":
             return (

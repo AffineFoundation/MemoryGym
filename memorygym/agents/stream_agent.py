@@ -467,14 +467,10 @@ def run_stream_agent(
             docs_text = _format_documents(event["documents"])
             # Dynamic budget context
             remaining = budget.remaining()
-            suggested = min(n_ents, remaining - n_corrections_total)
-            suggested = max(0, suggested)
             budget_ctx = (
                 f"⚠️ Budget: {remaining}/{write_budget} writes remaining. "
                 f"Entities seen so far: {entities_seen} (more may follow). "
-                f"Corrections coming: {n_corrections_total}.\n"
-                f"   Suggestion: store ≤{suggested} from this batch "
-                f"to reserve budget for corrections."
+                f"Be selective — store what matters most."
             )
             content = (
                 f"=== Event {event_idx+1}/{total_events} [DOCUMENTS] ===\n\n"
@@ -535,9 +531,7 @@ def run_stream_agent(
             content = (
                 f"=== Event {event_idx+1}/{total_events} [CORRECTION] ===\n\n"
                 f"**Correction Notice:**\n{event['notice']}\n\n"
-                f"ACTION REQUIRED: You must update your stored memory.\n"
-                f"1. memory_search \"{entity_name}\"\n"
-                f"2. Edit the old value to the corrected value\n"
+                f"A correction has been issued. Decide how to handle it.\n"
                 f"Budget: {budget.remaining()} writes remaining."
             )
             messages.append({"role": "user", "content": content})

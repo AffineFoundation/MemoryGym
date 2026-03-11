@@ -220,8 +220,8 @@ class TestMemoryEnv:
         env = MemoryEnv("company", tier="lite", seed=0)
         obs = env.reset()
         assert "Budget:" in obs
-        assert "Corrections coming:" in obs
-        assert "Suggestion:" in obs
+        assert "Budget:" in obs
+        assert "selective" in obs
 
     def test_eval_salt_changes_values(self):
         """eval_salt must perturb entity values to prevent RL memorization."""

@@ -86,9 +86,7 @@ CORRECTION_TEMPLATE = """=== Event {event_num}/{total_events} [CORRECTION] ===
 **Correction Notice:**
 {notice}
 
-ACTION REQUIRED: You must update your stored memory.
-1. memory_search "{entity_name}"
-2. Edit the old value to the corrected value"""
+A correction has been issued. Decide how to handle it."""
 
 QUESTION_TEMPLATE = """=== Event {event_num}/{total_events} [QUESTION] ===
 
@@ -279,16 +277,12 @@ def worldbench_solver(
             if event_type == "ingest":
                 n_ents = len(event.get("entity_names", []))
                 remaining = mem_budget.remaining() if mem_budget else 0
-                suggested = max(0, min(
-                    n_ents, remaining - n_corrections_total))
                 budget_context = (
                     f"⚠️ Budget: {remaining}/"
                     f"{mem_budget.total_writes if mem_budget else 0} "
                     f"writes remaining. "
                     f"Entities seen so far: {entities_seen} (more may follow). "
-                    f"Corrections coming: {n_corrections_total}.\n"
-                    f"   Suggestion: store ≤{suggested} from this batch "
-                    f"to reserve budget for corrections."
+                    f"Be selective — store what matters most."
                 )
                 entities_seen += n_ents
                 docs_text = _format_documents(event["documents"])
@@ -311,8 +305,7 @@ def worldbench_solver(
                 state.messages.append(ChatMessageUser(
                     content=CORRECTION_TEMPLATE.format(
                         event_num=event_idx + 1, total_events=total_events,
-                        notice=event["notice"],
-                        entity_name=event["entity_name"])))
+                        notice=event["notice"])))
                 state = await generate(state, tool_calls="loop")
                 if not no_redaction:
                     del state.messages[initial_len:]
