@@ -136,7 +136,7 @@ def generate_sft_trajectory(
                 entity_mem_ids[ename] = mid
                 tool_calls.append(
                     f'<tool_call>{{"name": "Write", '
-                    f'"arguments": {{"content": "{content}"}}}}</tool_call>'
+                    f'"arguments": {{"content": {json.dumps(content)}}}}}</tool_call>'
                 )
 
             if tool_calls:
@@ -175,10 +175,10 @@ def generate_sft_trajectory(
 
                 assistant_content = (
                     f'<tool_call>{{"name": "memory_search", '
-                    f'"arguments": {{"query": "{ename}"}}}}</tool_call>\n'
+                    f'"arguments": {{"query": {json.dumps(ename)}}}}}</tool_call>\n'
                     f'<tool_call>{{"name": "Edit", '
-                    f'"arguments": {{"old_text": "{old_val}", '
-                    f'"new_text": "{new_val}"}}}}</tool_call>'
+                    f'"arguments": {{"old_text": {json.dumps(old_val)}, '
+                    f'"new_text": {json.dumps(new_val)}}}}}</tool_call>'
                 )
                 messages.append({"role": "assistant", "content": assistant_content})
                 messages.append({
@@ -261,7 +261,7 @@ def generate_sft_trajectory(
                 "role": "assistant",
                 "content": (
                     f'<tool_call>{{"name": "submit_answer", '
-                    f'"arguments": {{"answer": "{answer}"}}}}</tool_call>'
+                    f'"arguments": {{"answer": {json.dumps(answer)}}}}}</tool_call>'
                 ),
             })
             messages.append({

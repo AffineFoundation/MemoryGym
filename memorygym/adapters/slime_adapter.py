@@ -109,6 +109,7 @@ async def generate(
     if not hasattr(sample, "_memorygym_reward"):
         sample._memorygym_reward = env.get_verifiable_reward()
     sample._memorygym_stats = info.get("episode_stats", {}) if info else {}
+    env.close()
 
     # Set output on sample (slime convention)
     sample.output = full_output

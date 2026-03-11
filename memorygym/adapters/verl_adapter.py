@@ -219,6 +219,7 @@ if _VERL_AVAILABLE:
 
             reward = env.get_verifiable_reward()
             stats = info.get("episode_stats", {}) if info else {}
+            env.close()
 
             return AgentLoopOutput(
                 prompt_ids=prompt_ids,

@@ -170,6 +170,7 @@ def run_episode(
 
     response_tokens: list[int] = []
     loss_mask: list[int] = []
+    info: dict = {}
     done = False
     turn = 0
 
@@ -212,10 +213,13 @@ def run_episode(
 
         turn += 1
 
-    return {
-        "prompt_tokens": prompt_tokens,
-        "response_tokens": response_tokens,
-        "loss_mask": loss_mask,
-        "reward": env.get_verifiable_reward(),
-        "stats": info.get("episode_stats", {}) if info else {},
-    }
+    try:
+        return {
+            "prompt_tokens": prompt_tokens,
+            "response_tokens": response_tokens,
+            "loss_mask": loss_mask,
+            "reward": env.get_verifiable_reward(),
+            "stats": info.get("episode_stats", {}) if info else {},
+        }
+    finally:
+        env.close()
