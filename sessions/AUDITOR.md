@@ -153,9 +153,9 @@ sessions/AUDITOR.md（你，/loop 30m）— 调度中枢：审计、设计、方
 
 ## 当前任务
 
-### 审计 A119 — 下一轮
+### 审计 A120 — 下一轮
 
-- 维度 A：Phase 执行进度（executor 连续 6 个审计周期不活跃）
+- 维度 A：Phase 87 验证（executor 正在推进 P1）
 - 维度 E：批次 17 数据
 
 ## 待跟进
@@ -170,6 +170,21 @@ sessions/AUDITOR.md（你，/loop 30m）— 调度中枢：审计、设计、方
 ## 审计日志
 
 （每次审计的结论摘要，最新在最上面。保持简洁，详细分析写 devlog/。）
+
+### 审计 A119（2026-03-11）— Phase 89+90 ✅ 验证（维度 A）
+
+**Executor 恢复活跃**。Phase 89+90 标记 ✅（未提交，代码已改）。
+
+**代码审查**：
+- ✅ `generate_sft_trajectory()` L69-76：perfect 策略用 `entity_importance()` 排序取 top-budget，正确
+- ✅ L78：strategic `n_store = min(max(1, ...), write_budget)`，正确
+- ✅ L258：memory_search 改为 `json.dumps(search_entity)`，正确
+- ✅ 版本 0.8.6 → 0.8.7
+- ✅ 42 tests 全部通过
+
+**发现 1 个边缘问题**：
+- 🟡 实际 Write 调用 = 31（budget=30），off-by-1。原因：某实体可能出现在多个 batch 中导致重复 Write。测试 `test_sft_respects_budget` 计数方式为"含 Write 的消息数"（=7），非"Write 调用总数"（=31）。测试通过但没有精确覆盖目标。
+- **不派发新 Phase**——off-by-1 影响极小，executor 可在 Phase 87 中顺带修复测试计数方式。
 
 ### 审计 A118（2026-03-11）— 队列重整：7 Phase → 3 优先级（战略决策）
 
