@@ -81,7 +81,7 @@ python -m memorygym.bench --model moonshotai/Kimi-K2.5-TEE --official -o results
 
 ## World templates
 
-6 domain templates generate diverse evaluation scenarios:
+8 domain templates generate diverse evaluation scenarios:
 
 - **company**: Tech companies with revenue, employees, R&D spending
 - **research**: Research labs with publications, citations, funding
@@ -89,6 +89,8 @@ python -m memorygym.bench --model moonshotai/Kimi-K2.5-TEE --official -o results
 - **hospital**: Hospitals with beds, staff, patient outcomes
 - **sport**: Sports teams with wins, scores, player stats
 - **movie**: Films with box office, ratings, cast
+- **university**: Higher education institutions with enrollment, acceptance rates, research output
+- **codebase**: Software modules/services with LOC, contributors, deployment frequency
 
 ## Leaderboard
 
@@ -108,7 +110,7 @@ Top models (averaged across templates and seeds):
 
 ```
 memorygym/
-├── worlds/          # 6 domain templates + scorer + Inspect AI integration
+├── worlds/          # 8 domain templates + scorer + Inspect AI integration
 ├── evaluation/      # Answer validation + LLM judge
 ├── memory/          # Budget management + backends (ChromaDB, Markdown)
 ├── agents/          # Real LLM agent runner

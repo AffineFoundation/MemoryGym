@@ -65,13 +65,14 @@
 
 ### 低优先级 Backlog
 
-- **README + LEADERBOARD 文档同步**（A155）：README 写 6 模板实际 8 个，缺训练 CLI/multi tier/backend 文档。LEADERBOARD 数据 pre-Phase99 过时，列名 Retrieval/Update 应为 Breadth/Maintenance
+- ~~README + LEADERBOARD 文档同步（A155）~~ → **Phase 107 已派发**
 - **用户体验修正**：API key 错误信息改善（docs/Design.md 已删除 A65，LEADERBOARD.md 已填充 A58）
 - **Promise/Progress Reward**：等简单 shaped reward 在真实训练中验证后，再决定是否需要更复杂的 reward 模型
 - **legacy 工具名清理**：移除 _KNOWN_TOOLS 中的 memory_store/memory_forget/memory_get/memory_list（等 v3 评测基线稳定后）
 
 ## 已完成
 
+### Phase 107 — 文档同步：README/LEADERBOARD/pyproject.toml/EVALUATOR ✅
 ### Phase 106 — relationship_hop/chain validator dispatch + GT 格式化解析 ✅
 ### Phase 104 — SFT 轨迹 correction 时序修复 + Edit 覆盖提升 ✅
 ### Phase 102 — Correction 追踪误报修复 ✅

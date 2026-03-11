@@ -12,7 +12,7 @@
 
 ## Detailed Results
 
-| Model                                    | Template | Seed | Tier | Score | Retrieval | Update | Traj |
+| Model                                    | Template | Seed | Tier | Score | Breadth | Maintenance | Traj |
 | ---------------------------------------- | -------- | ---- | ---- | ----- | --------- | ------ | ---- |
 | moonshotai/Kimi-K2.5-TEE                 | research |    1 | standard |   55% | 33%       | 75%    | yes  |
 | Qwen/Qwen3.5-397B-A17B-TEE               | sport    |    0 | standard |   45% | 22%       | 100%   | yes  |
