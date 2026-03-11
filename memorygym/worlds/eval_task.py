@@ -179,11 +179,11 @@ def build_worldbench_stream(
     and questions — the agent never knows what comes next.
     """
     tmpl = _TEMPLATES[template_name]()
-    rng = Random(seed)
     world = tmpl.generate_world(seed, n_entities)
 
     # Generate corrections (mutates world state)
-    corrections = tmpl.generate_corrections(world, rng, n_corrections)
+    rng_correct = Random(seed + 3333)
+    corrections = tmpl.generate_corrections(world, rng_correct, n_corrections)
 
     # Implicit contradictions (~30% of correction count)
     n_contras = max(1, n_corrections // 3)
@@ -196,8 +196,9 @@ def build_worldbench_stream(
     # Generate interleaved stream
     # For Inspect AI: we pre-generate with empty stored_names
     # (real detection happens at scoring time)
+    rng_stream = Random(seed + 5555)
     stream = tmpl.generate_stream(
-        world, rng, corrections,
+        world, rng_stream, corrections,
         stored_names=set(),  # unknown at build time
         n_questions=n_questions,
         entities_per_batch=entities_per_batch,

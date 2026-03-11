@@ -190,11 +190,11 @@ def main(argv: list[str] | None = None) -> int:
                                             eval_salt=args.eval_salt)
                 print(f" {len(world.entities)} entities")
 
-                rng = Random(seed)
+                rng_correct = Random(seed + 3333)
                 print(f"  [{tmpl.name}] seed={seed} — Generating corrections ...",
                       end="", flush=True)
                 corrections = tmpl.generate_corrections(
-                    world, rng, n_corrections)
+                    world, rng_correct, n_corrections)
                 # Implicit contradictions: ~30% of correction count
                 n_contras = max(1, n_corrections // 3)
                 exclude_corrected = {c.entity_name for c in corrections}
@@ -207,8 +207,9 @@ def main(argv: list[str] | None = None) -> int:
 
                 print(f"  [{tmpl.name}] seed={seed} — Building stream ...",
                       end="", flush=True)
+                rng_stream = Random(seed + 5555)
                 stream = tmpl.generate_stream(
-                    world, rng, corrections,
+                    world, rng_stream, corrections,
                     stored_names=set(),
                     n_questions=n_questions,
                     entities_per_batch=10,

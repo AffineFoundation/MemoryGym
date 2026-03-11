@@ -461,17 +461,18 @@ class MemoryEnv:
         world = self._tmpl.generate_world(
             seed=seed, n_entities=self.n_entities,
             eval_salt=self._eval_salt)
-        rng = Random(seed)
+        rng_correct = Random(seed + 3333)
         corrections = self._tmpl.generate_corrections(
-            world, rng, self.n_corrections)
+            world, rng_correct, self.n_corrections)
         n_contras = max(1, self.n_corrections // 3)
         exclude_corrected = {c.entity_name for c in corrections}
         rng_contra = Random(seed + 7373)
         contradictions = self._tmpl.generate_contradictions(
             world, rng_contra, n_contras,
             exclude_entities=exclude_corrected)
+        rng_stream = Random(seed + 5555)
         self._stream = self._tmpl.generate_stream(
-            world, rng, corrections,
+            world, rng_stream, corrections,
             stored_names=set(),
             n_questions=self.n_questions,
             entities_per_batch=10,
