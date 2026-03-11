@@ -150,22 +150,46 @@ abstention_diagnostic 单独报告，不计入 composite。
 ### 3.1 评测数据 (v2 — Phase 16+ Enhanced Templates)
 
 > v1 数据（10 属性模板）已归档到 `eval/archive_v1/`。以下为 v2 数据（22-23 属性，6 dtype，20 reasoning types）。
+> 8 模板：company, research, city, hospital, sport, movie, university, codebase
 
-**66 次真实评测，5 个模型，5 个厂商。** 多模型汇总：
+**73+ 次真实评测，5 个模型，5 个厂商。**
+
+#### Phase 99 后最新基线（v0.10.4+，Qwen3.5-397B，seed 0）
+
+| 模板 | Composite | Breadth | Maint. | Reasoning | Abstention |
+|------|-----------|---------|--------|-----------|------------|
+| hospital | **45%** | 56% | 0% | 33% | 100% |
+| university | **40%** | 57% | 0% | 29% | 67% |
+| company | **40%** | 29% | 0% | 50% | 100% |
+| research | **35%** | 43% | 0% | 25% | 100% |
+| codebase | **35%** | 20% | 0% | 33% | 100% |
+| sport | **25%** | 17% | 0% | 25% | 100% |
+| **6 模板均值** | **37%** | **37%** | **0%** | **33%** | **94%** |
+
+Phase 99 修复 ingest 文档渲染时序 bug 后，4 模板均值 26→36%（+10%）。Reasoning 轴是最大受益者。Maintenance 归零是正确行为（存原始值 + 不 Edit = GT 不匹配）。
+
+#### 跨模型对比（post-Phase99, seed 0）
+
+| 模板 | Qwen3.5 | Kimi-K2.5 |
+|------|---------|-----------|
+| hospital | 45% | 40% |
+| company | 40% | 25% |
+
+#### 全历史多模型汇总
 
 | 模型 | N | Composite | Breadth | Maint. | Reasoning | Efficiency |
 |------|---|-----------|---------|--------|-----------|------------|
-| Qwen3.5-397B | 27 | **24%** | 27% | 37% | 17% | 14% |
+| Qwen3.5-397B | 35 | **27%** | 30% | 25% | 22% | 14% |
+| Kimi-K2.5 | 21 | **20%** | 15% | 30% | 12% | 11% |
 | Qwen3-235B | 7 | **19%** | 16% | 48% | 2% | 10% |
-| Kimi-K2.5 | 18 | **18%** | 12% | 38% | 12% | 11% |
 | GLM-5 | 5 | **17%** | 16% | 22% | 18% | 10% |
 | MiniMax-M2.5 | 9 | **13%** | 7% | 28% | 8% | 7% |
 
-**关键发现**（A62 数据分析 + A69 批次分析）：
-- Retrieval 11% 正确率是最大瓶颈（60% 弃权 = 存了但搜不到）
-- 7 个推理类型 0%（outlier/comparison/cross_category/text_match/enum_filter/aggregation/multi_hop）——系统性模型能力差距，非 bug
-- Maintenance 最强轴（27-49%），Efficiency 最弱（5-13%）
-- 五模型分为三档：Qwen3.5 领先（24%），Qwen3-235B/Kimi/GLM-5 中档（17-19%），MiniMax 末位（13%）
+**关键发现**：
+- **Phase 99 是历史最大影响修复**：Composite +10%，Reasoning 从 ~10% 提升到 33%
+- Maintenance 全线 0%（post-Phase99）：模型用完 30 writes 无法 Edit corrections → 训练目标
+- Corrections 0/5 across ALL models：预算耗尽是唯一阻塞因素
+- University Abstention 67%：partial name match confusion（Greystone College vs Greystone University）
 - entities_per_write = 1.0（所有模型）——多实体打包是未开发的优化方向
 - Backend 对比：MarkdownBackend 30% vs ChromaDB 31.7%——无显著差异，瓶颈在模型端
 
@@ -196,22 +220,20 @@ eval/              # v2 数据（Phase 16 后，22-23 属性模板）
 
 ### 当前优先级
 
-**1. RL 训练闭环** — 最高优先
-- SFT v2b 突破：3/10 correct, reward=0.46（首个能正确回答的模型）
-- SFT v3 进行中：新工具接口（Write/Edit/Read）数据已生成（480 trajectories）
+**1. RL 训练闭环** — 最高优先（阻塞于 GPU 访问）
+- SFT v4 数据就绪：320 mixed trajectories（perfect + strategic），8 templates × 20 seeds，post Phase 99+100 fix
 - GRPO v2 确认 policy collapse → v3 计划：KL 正则化 + step-wise GRPO（AgeMem 参考）
+- 前沿参考：Memex(RL)（budget 约束 write/read RL）、LongRLVR（dense rewards）、KARL（stable off-policy）
 - 成功标准：7B 模型 composite ≥ 45%, maintenance ≥ 30%
 
-**2. 代码质量强化** — 进行中
-- MemoryEnv ChromaDB 资源泄漏（训练循环累积 orphan collections）
-- MarkdownBackend 临时目录清理
-- 训练-评测 RNG 一致性审计
-- stale 元数据清理（mem0 __pycache__, egg-info）
+**2. 评测数据积累** — 进行中
+- Qwen3.5 post-Phase99：6/8 模板完成（movie + city Batch 21 进行中）
+- Kimi-K2.5 新模板：university + codebase Batch 21 进行中
+- GLM-5 仅 5 evals, MiniMax 仅 9 evals — 弱模型覆盖仍不足
 
-**3. 弱模型覆盖扩展** — 进行中
-- GLM-5 仅 5 evals, MiniMax 仅 9 evals
-- 需要更多数据点确认弱模型得分是否稳定
-- Batch 15 已派发
+**3. 代码质量** — 低优先级
+- MemoryEnv ChromaDB 资源泄漏（训练循环累积 orphan collections）
+- 执行线程待办为空
 
 ### 已完成优先级
 

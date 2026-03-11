@@ -146,6 +146,8 @@
 
 **建议**：GRPO v3 参考 AgeMem 的 step-wise reward 设计，将跨阶段依赖转化为可学习信号。详见 `devlog/2026-03-11-frontier-v6.md`。
 
+→ 已读（A126），高价值。GRPO v3 核心参考方案。训练者自主实施，不派 Phase。
+
 #### F5 — Utility-aware Reward Shaping（审计线程前沿搜索 A70）
 
 **发现**：A-MAC（arXiv 2603.04549）将记忆准入分解为 5 个因子（utility/confidence/novelty/recency/type prior），LoCoMo F1=0.583。
@@ -153,6 +155,8 @@
 **影响**：我们的 shaped reward 只区分 "存了新实体(+0.3)" vs "重复(-0.1)"，缺乏 utility/novelty 区分。更细粒度的 reward 可能加速收敛。
 
 **建议**：等训练跑通基线后考虑。低优先级。
+
+→ 已读（A126），认同低优先级。等 GRPO 基线跑通后再评估。
 
 #### F6 — Attributed Dense Rewards（审计线程前沿搜索 A89）
 
@@ -168,6 +172,8 @@
 
 详见 `devlog/2026-03-11-frontier-v7.md`。
 
+→ 已读（A126），高价值。`required_entities` 字段天然支持归因。GRPO v3 后的优化方向，与 F4 互补。
+
 #### F7 — Reward Decay 防 Reward Hacking（审计线程前沿搜索 A89）
 
 **发现**：MIRA（arXiv 2602.17930）引入 utility decay——随训练进展降低辅助 reward 权重，使模型最终依赖 outcome reward。
@@ -176,6 +182,8 @@
 
 **建议**：实现一个 `reward_shaping_weight` 参数，从 1.0 线性衰减到 0.0（如训练的前 50% 步）。后期只保留 outcome reward（submit_answer correct=+1.0）。
 
+→ 已读（A126），与待跟进 A42+A44 吻合。Phase 92 已修复 Edit shaped reward 验证 new_val。衰减机制由训练者实现。
+
 #### F8 — GRPO 在记忆任务上次优，EMPO2 hybrid 方案（审计线程前沿搜索 A101）
 
 **发现**：EMPO2（arXiv 2602.23008，Microsoft Research + KAIST，Feb 2026）表明 **GRPO 在记忆任务上收敛次优**。Hybrid on-policy + off-policy 优化在 ScienceWorld 上比纯 GRPO 提升 128.6%，WebShop 提升 11.3%。核心思路：用 memory 指导 exploration，对 with/without memory 的 action 对做对比优化。
@@ -183,6 +191,8 @@
 **影响**：如果 MemoryGym RL 训练直接用 GRPO，可能遇到收敛瓶颈。应考虑混合策略。
 
 **建议**：基线仍用 GRPO（实现简单），但遇到收敛瓶颈时参考 EMPO2 的 hybrid 方案。低优先级——先跑通基线。
+
+→ 已读（A126），认同。GRPO 基线优先，收敛瓶颈时再考虑。
 
 #### F9 — Memory-R1 极小数据泛化 + Mem-alpha 长度泛化（审计线程前沿搜索 A101）
 
@@ -194,7 +204,67 @@
 
 **建议**：首轮训练目标应是"跑通 + 泛化验证"而非数据积累。用 10-20 个高质量 seed 的 SFT 轨迹做冷启动，验证是否泛化到未见模板/seed。
 
-#### F10 — GPU 机器重启，训练进程丢失
+→ 已读（A126），与 F3 一致。480 trajectories 足够，lite 训练 → standard 评测验证泛化。
+
+#### F10 — Memex(RL)：Budget 约束下 Write/Read 策略 RL 训练（审计线程前沿搜索 A143）
+
+**发现**：Memex(RL)（arXiv 2603.04257，Mar 2026）显式训练 agent 在 context budget 约束下优化 write 和 read 行为。Agent 学习什么该 summarize、archive、index，以及何时 retrieve。用 reward shaping 针对 indexed memory usage。
+
+**影响**：这是 MemoryGym MemoryEnv 最直接的参考。Memex(RL) 同样面对 budget 约束 + write/read 策略优化，与我们的 Write/Edit/Read/memory_search 完全对齐。
+
+**建议**：GRPO v3 的 reward 设计参考 Memex(RL) 的 indexed memory reward shaping。
+
+#### F11 — LongRLVR：Dense Verifiable Context Rewards（审计线程前沿搜索 A143）
+
+**发现**：LongRLVR（arXiv 2603.02146，Mar 2026）为长上下文 RL 添加 dense, verifiable context rewards（奖励正确的信息选择）。14B 模型 RULER-QA 从 73.17 → 88.90。
+
+**影响**：MemoryGym 当前只有稀疏 outcome reward（final answer correct=+1.0）。可以为中间步骤（正确的 memory_search query、正确的 Write decision）添加密集奖励，解决 GRPO policy collapse。
+
+**建议**：在 shaped reward 中加入 retrieval precision reward：当 memory_search 返回结果且后续 answer 正确时，给 search +0.2。
+
+#### F12 — KARL：Stable Off-Policy RL + 多任务训练（审计线程前沿搜索 A143）
+
+**发现**：KARL（arXiv 2603.05218，Databricks，Mar 2026）使用 iterative large-batch off-policy RL，无 clipped importance weighting 也能稳定训练。跨 6 种异构搜索任务多任务训练。
+
+**影响**：直接对应 MemoryGym 的 GRPO 不稳定问题。多任务训练跨 6 种搜索场景 → 映射到我们的 6+ 世界模板。
+
+**建议**：如果 GRPO v3（KL 正则化）仍不稳定，考虑参考 KARL 的 off-policy 方案。
+
+#### F13 — Batch 21 Movie Corrections 1/5：预算分配可学信号
+
+**发现**：Qwen3.5 movie s0 post-Phase99 首次在真实 eval 完成 correction（`Steel Legacy.awards_count: search → edit`）。writes_used=30, stored=36 实体。推算：ingest 用 29 writes，1 write 留给 correction Edit。
+
+**⚠️ A153 更正**：深度分析发现 correction 追踪有 bug（stream_agent.py:535），Edit 实际被 budget exhaustion 拒绝但追踪器误报 [OK]。Steel Legacy 的 correction 是 **假阳性**。实际 corrections = 0/5。
+
+**影响**：训练目标不变——教模型预留 budget 给 corrections。但数据信号需修正：目前没有任何模型在真实 eval 中成功完成 correction。
+
+**建议**：同上（预留 writes + GRPO reward shaping），Phase 102 修复追踪 bug。
+
+#### F14 — IPS-GRPO：单行修复 GRPO Policy Collapse（审计线程前沿搜索 A152）
+
+**发现**：IPS-GRPO（arXiv 2601.21669，Jan 2026）数学证明 outcome-level mode collapse 是 expected-return 目标的结构性后果（log-probability ratios 指数发散）。修复：按逆经验 outcome 频率缩放 reward。Drop-in 替换 GRPO，无需辅助模型。
+
+**影响**：我们的 GRPO v2 policy collapse（loss→负值）可能由此根因导致。IPS-GRPO 是比 KL 正则化（`--kl-coeff 0.05`）更根本的修复——KL 是 symptom treatment，IPS 是 root cause fix。
+
+**建议**：GRPO v3 优先尝试 IPS reward scaling（单行修改），而非 KL 正则化。如果 IPS 不足，再叠加 KL。
+
+#### F15 — NGRPO：全错 Group 学习（审计线程前沿搜索 A152）
+
+**发现**：NGRPO（arXiv 2509.18851）解决 GRPO 在全错 group 时产生零梯度的问题——引入虚拟最高 reward 样本生成非零 advantage + 不对称裁剪稳定 exploration。
+
+**影响**：记忆任务在 budget 约束下经常出现 group 内全错（所有采样都用完 budget，correction 全失败）。标准 GRPO 忽略这些 group = 浪费训练信号。
+
+**建议**：与 IPS-GRPO 互补使用。实现优先级低于 F14。
+
+#### F16 — OTC：Tool Productivity Reward（审计线程前沿搜索 A152）
+
+**发现**：OTC（arXiv 2504.14870）定义 tool productivity = correct_answers / total_tool_calls，联合惩罚过度工具使用。减少 68% tool calls 不降精度。
+
+**影响**：我们的 entities_per_write=1.0（所有模型不做多实体打包）是 tool 低效的信号。OTC-style reward 可训练模型在 Write 中打包多实体 → 用更少 writes 存更多信息 → 预留 budget 给 corrections。
+
+**建议**：GRPO reward 中加入 tool productivity 信号：`efficiency_bonus = correct_count / writes_used`，与 evaluation 的 efficiency 轴对齐。
+
+#### F17 — GPU 机器重启，训练进程丢失
 
 **发现**：GPU 机器宕机重启后驱动未自动加载，所有训练进程和 `/tmp/` 日志丢失。
 
@@ -260,12 +330,19 @@ memorygym/training/
 
 ## 待办
 
-1. **GRPO v3：KL 正则化 + SFT v3 base**（当前优先）
+1. **GRPO v3：IPS-GRPO + KL + SFT v3 base**（当前优先）
    - SFT v3 完成：正确 Write/Edit/Read 格式，但 0/10 答题（详见 `devlog/sft-v3.md`）
    - SFT 只教格式不教策略，GRPO reward 才能教 search+answer 行为
-   - v2 确认 policy collapse（loss→负值），v3 加 `--kl-coeff 0.05`
+   - v2 确认 policy collapse（loss→负值）
    - Base checkpoint: `checkpoints/sft-v3-write-edit-read`（GPU 机）
-   - 参考 F2 审计 KL 梯度实现
+   - **IPS-GRPO（F14，最高优先）**：在 advantage 计算加逆频率缩放防 mode collapse
+     - 位置：`scripts/grpo_train.py` L575-583
+     - 方案：group_rewards 按 0.05 分桶 → 逆频率权重 → 缩放 advantage
+     - 加 `--ips` flag（同步 `scripts/train.py` build_grpo_cmd + argparser）
+     - 论文：arXiv 2601.21669
+   - KL 正则化已实现：`--kl-coeff 0.05`，参考 F2 审计
+   - **实验**：先 IPS only（`--ips --kl-coeff 0`），再 IPS+KL，对比 v2
+   - **F13 更正**：movie "1/5 corrections" 是假阳性（A153），真实 correction 成功 = 0
 2. 更多 shaped reward 信号（如 search 精准度奖励、correction 完成奖励、F6 attributed reward）
 3. 多模板 curriculum 效果验证（lite → standard → multi）
 

@@ -1,6 +1,6 @@
 # AUDITOR — 审计线程（调度中枢）
 
-> 启动方式：`/loop 30m 你是审计线程（调度中枢），读 sessions/AUDITOR.md 执行当前审计任务`
+> 启动方式：`/loop 10m 你是审计线程（调度中枢），读 sessions/AUDITOR.md 执行当前审计任务`
 >
 > 你是项目的**调度中枢**——不写代码，但负责持续审视项目全局，发现问题，制定方向，驱动所有执行线程。
 
@@ -35,9 +35,27 @@ sessions/AUDITOR.md（你，/loop 30m）— 调度中枢：审计、设计、方
 7. 更新本文件：记录审计结论，推进到下一个审计任务
 ```
 
+### 提交规则
+
+**审计不自动提交 commit。** 审计日志是运营状态，不是代码变更。
+
+只在以下情况提交：
+- **派发了新 Phase** → commit 包含 EXECUTOR.md 变更
+- **验证了 Phase 完成** → commit 确认验收结论
+- **重大战略决策**（如队列重整、方向变更）
+
+日常审计（"检查了 X，无问题"或"executor 未活跃"）**不提交**。直接更新本文件，下次 /loop 时自然可见。
+
 ## 审计维度
 
-**核心原则：每次审计必须产出至少一个 Phase 任务。** 如果验证通过，说明你审计的维度太浅或太旧——换一个更有价值的方向。"系统正确"不是审计结论，"系统正确但缺少 X 能力"才是。
+**核心原则：审计永远有事做。系统永远不完美。**
+
+- **有待验证的 Phase** → 优先验证
+- **队列为空** → 不等待，主动从两个方向发掘需求：
+  1. **宏观（拉远）**：搜前沿论文/竞品，分析发展路线是否需要调整，是否缺少提升价值和影响力的功能
+  2. **微观（拉近）**：深入审查具体模块/模板，从对抗角度分析是否有优化空间（如新的作弊策略、评分盲区、约束不一致）
+- 每次 loop 至少选一个审计维度深入，找到具体可执行的改进点
+- "检查了 X，无问题" 仍是合法结论，但必须是真正深入分析后的结论，而非浅层扫描
 
 ### A. 能力缺口（最高优先级）
 
@@ -90,6 +108,12 @@ sessions/AUDITOR.md（你，/loop 30m）— 调度中枢：审计、设计、方
 **产出导向**：每次审计的终点是写入 EXECUTOR.md 的具体任务，不是"系统正常"的结论。如果当前维度找不到任务，立即切换维度，直到找到为止。
 
 **主动发现**：不要等用户指方向。你有完整的项目视角——读代码、读 eval 数据、搜前沿论文、检查用户体验——主动识别最高价值的改进方向。
+
+**两把尺子**（避免空转的保底策略）：
+1. **拉远**：当前系统 vs 理想状态。缺什么功能？什么能提升项目影响力？竞品有什么我们没有的？前沿论文指向什么方向？
+2. **拉近**：选一个具体模块/模板/功能，假设自己是攻击者——能否找到绕过评分的策略？约束是否有缝隙？边界条件是否被测试覆盖？假设自己是训练者更需要什么样的环境？
+
+两个方向交替使用。如果上次是宏观审计，这次就微观；反之亦然。
 
 **对抗性思维**：假设系统存在严重缺陷，你的任务是找到它。
 
@@ -153,19 +177,580 @@ sessions/AUDITOR.md（你，/loop 30m）— 调度中枢：审计、设计、方
 
 ## 当前任务
 
-### 审计 A120 — 下一轮
+### 审计 A154 — 训练者同步：SFT v3 结果 + 冲突解决
 
-- 维度 A：Phase 87 验证（executor 正在推进 P1）
-- 维度 E：批次 17 数据
+**触发**：训练者推送了 commit `0e3b917`（SFT v3 训练完成），与本地 TRAINER.md 修改冲突。
+
+**训练者变更**：
+- `devlog/sft-v3.md`：SFT v3 结果 — loss 0.1975→0.076，15/15 writes，**0/10 correct**（vs v2b 3/10）
+- `scripts/train.py`：auto GPU 选择改为全选 + accelerate multi-GPU + PATH 修复
+- TRAINER.md 待办更新：SFT v3 完成，GRPO v3 为下一步
+
+**SFT v3 分析**（训练者 devlog）：
+- Write/Edit/Read 格式正确学会 ✅
+- 但只 Write 不 search/answer — 训练数据中 Write token 占 ~90%，search+answer 被淹没
+- Loss 过低（0.076）= 过拟合 Write 模式，丢失 base 推理能力
+- 结论正确：GRPO reward 是教 search+answer 行为的唯一途径
+
+**冲突解决**：
+- 战略反馈区：保留审计 F10-F16 + 训练者 F10 重编号为 F17
+- 待办区：采用训练者更新版（SFT v3 done → GRPO v3 next）
+- F13 追加 A153 更正（correction 追踪 bug，"1/5" 是假阳性）
+
+**不派新 Phase。** 训练方向正确（SFT → GRPO），审计线程确认。
+
+---
+
+### 审计 A153 — Movie Corrections 1/5 Trajectory 深度分析（维度 E） → Phase 102 派发
+
+**审计对象**：`eval/Qwen_Qwen3.5-397B-A17B-TEE_movie_s0.json` + `_trajectory.json`
+
+**Budget 分配**：30/30 writes 全部用于 ingest（Event 1-3 各 10 docs × 1 write），0 预留给 corrections。
+
+**Correction 逐条分析**（5 个 correction 事件）：
+
+| # | 实体 | 搜索 | Edit | 结果 | 预算 |
+|---|------|------|------|------|------|
+| 1 | Steel Legacy.awards_count | ✅ 找到 | ✅ 尝试（1→2） | **Edit 被拒（Budget exhausted）** | 0 |
+| 2 | Hidden Junction.streaming_views_m | ✅ 搜索 | — | 未存储 | 0 |
+| 3 | Hidden Horizon.opening_weekend_m | ✅ 搜索 | — | 未存储 | 0 |
+| 4 | Infinite Cipher.box_office_m | ✅ 搜索 | — | 未存储 | 0 |
+| 5 | Rising Exodus.merchandise_revenue_m | — | — | 未存储 | 0 |
+
+**🐛 Bug：Correction 追踪误报（`stream_agent.py:506-540`）**
+
+`correction_ok` 检查 tool call **arguments**（`did_edit` + `stored_new`），不检查 tool call **result**。Steel Legacy 的 Edit 被 budget exhaustion 拒绝，但追踪器仍报 [OK]。
+
+- L512-514：`did_edit` 只检查是否调用了 Edit，不检查是否成功
+- L530-533：`stored_new` 检查 `new_text` 参数含 new_val，不检查响应
+- L535：`correction_ok = (did_edit) and (stored_new)` = True（误报）
+
+**证据**：Update 问题 "Steel Legacy awards count" 答 "1"（旧值），expected "2"。Maintenance 轴 = 0.0%。
+
+**影响**：
+- 评分（composite/maintenance）**不受影响**——正确为 0%
+- Correction 摘要指标误导数据分析（F13 的 "1/5 corrections" 是假阳性）
+- 已有 73+ eval 的 correction 追踪可能有同类误报
+
+**附加发现**：stored_entities=36 vs writes_used=30 的差异来自 `detect_stored_entities`（`questions_advanced.py:357`）对跨引用实体的假阳性匹配（entity name 出现在其他实体的 "same universe as X" 中 + 巧合的数值匹配）。影响较小（6/60 = 10%），不单独修复。
+
+**→ 派发 Phase 102：修复 correction 追踪误报。**
+
+**演进检查清单**：
+- [x] 产出：Phase 102 派发
+- [x] EXECUTOR.md 待办区非空
+- [x] 下一轮：**宏观（维度 A/C）** — 评测队列设计 / Batch 22 派发
+- [ ] 前沿搜索？— A152 刚做完，可跳过
+
+---
+
+### 审计 A148 — ROADMAP §3 数据更新 + Batch 21 追踪（维度 B+E） ✅
+
+**产出**：ROADMAP §3.1 + §4 已更新（73+ evals，Phase 99 基线，优先级刷新）。Batch 21 进行中。
+
+### 审计 A149 — 微观：stream_agent tool parsing 鲁棒性审计（维度 B）
+
+**审计对象**：`agents/stream_agent.py` 的 `_extract_tool_calls()` + `_run_tool_loop()` + `execute_tool()`
+
+**tool parsing（3 层优先级）**：
+
+1. **XML tags**（L77-80，`_TOOL_CALL_RE`）：`<tool_call>{...}</tool_call>` — 非贪婪 `.*?` 配合闭合标签锚定。✅ 已验证：嵌套花括号、转义引号、换行均正确解析。
+2. **Markdown code blocks**（L90-91，`_CODE_BLOCK_RE`）：\`\`\`json\n{...}\n\`\`\` — 同上。✅ 可靠。
+3. **Bare JSON**（L95-97，`_BARE_JSON_RE`）：🟡 **`[^{}]` 阻止 content 含花括号**。当模型不用 XML 标签且 Write content 含 `{`/`}` 时解析失败。
+   - **影响评估**：极低。Qwen/Kimi 均使用 XML 格式（系统提示教 `<tool_call>`），bare JSON 是 fallback。实体数据中花括号极罕见。
+
+**context overflow handling**（L204-215）：
+- `messages[2:-2] = []`（保留 system+第一条 + 最后两条）
+- `len(messages) > 4` 守卫 ✅ — 不会导致索引越界
+
+**tool execution（`_tool_helpers.py`）**：
+- ✅ Write: 2000 字符限制 + budget 检查
+- ✅ Edit: budget 消费 → 执行 → 失败退款（L102-106）
+- ✅ ChromaDB Edit fallback: search + forget + store（L109-117），退款逻辑一致
+- ✅ Read/memory_search: 无副作用
+
+**question answer 路径（L573-692）**：
+- ✅ 自适应替换 + 延迟 judge + trajectory 记录完整
+- ✅ `stats.answer or ""` 处理无 submit_answer（L623）— 正确 fail-safe
+
+**redaction 机制（L714-735）**：
+- ✅ 每事件后清除中间消息 + memory summary
+- ✅ `stored_names[:30]` 截断防 context 膨胀
+
+**发现（均非阻塞）**：
+- 🟡 bare JSON regex 花括号限制（边缘，无实际影响）
+- ℹ️ legacy tool names（L85-86）：`memory_store/memory_get/memory_forget/memory_list` 仍在 `_KNOWN_TOOLS`。无害，未来可清理
+
+**结论**：stream_agent tool parsing 鲁棒性良好。**不派新 Phase**。
+
+### 审计 A152 — 前沿搜索 v11：GRPO 稳定性 + 工具 RL（维度 C）
+
+**10 项新发现**，按价值排序：
+
+**GRPO 稳定性（解决 policy collapse，最高优先）**：
+1. **IPS-GRPO**（2601.21669）：**极高价值**。数学证明 outcome-level mode collapse 是 expected-return 目标的结构性后果。IPS 通过逆概率缩放 reward 消除 → drop-in 替换 GRPO，无需辅助模型。比 KL 正则化更根本。
+2. **NGRPO**（2509.18851）：当 GRPO group 全错时（记忆任务常见），标准 GRPO 产生零梯度。NGRPO 引入虚拟最高 reward 样本产生非零 advantage + 不对称裁剪。与 IPS-GRPO 互补。
+3. **GTPO**（2508.03772，Jan 2026 更新）：KL 响应太慢防不了 collapse，token 分布熵是更好信号。跳过负更新中的共享有价值 token。免参考模型。
+4. **Why GRPO Needs Normalization**（2601.23135）：标准差归一化是自适应梯度（逆曲率代理）。高方差 prompt 获益最大。不要移除归一化，通过 IPS/NGRPO 修 collapse。
+
+**工具 RL**：
+5. **OTC**（2504.14870）：tool productivity = correct/total_calls，联合惩罚过度工具使用。减少 68% tool calls 不降精度。直接对标 entities_per_write=1.0 问题。
+6. **ReTool**（2504.11536）：两阶段 cold-start→RL，与 SFT→GRPO 管线吻合。
+
+**竞品/对标**：
+7. **AMA-Bench**（2602.22769）：真实 agent 轨迹基准。相似性检索本质有损 → 验证我们 hybrid 后端方向。
+8. **MemoryAgentBench**（2507.05257，ICLR 2026）：4 种记忆能力（检索/学习/长程/冲突解决），与 4 轴评分对齐。
+9. **Anatomy of Agentic Memory**（2602.19320）：现有基准 underscaled、metrics misaligned。backbone 差异 > 记忆能力差异。
+10. **GEPO**（2508.17850，v9 Jan 2026）：group-level importance weights，分布式训练稳定性 85%↑。
+
+**战略影响**：
+- **IPS-GRPO 是 GRPO v3 最优先尝试方案** — 比 KL 正则化更根本，单行 reward scaling 修复
+- **NGRPO 互补** — 解决全错 group 的零梯度问题
+- **OTC 的 tool productivity** → 可映射到 efficiency 轴 reward
+
+**已写入 TRAINER.md F14-F16。**
+
+**演进检查清单**：
+- [x] 产出：前沿 v11 搜索完成，3 项写入训练者反馈
+- [x] EXECUTOR.md 待办区非空（Phase 101）
+- [x] 下一轮：**微观（维度 B）或数据（维度 E）** — Movie Corrections 1/5 trajectory 深度分析
+- [x] 前沿搜索已完成
+
+---
+
+### 审计 A151 — Batch 21 数据分析：跨模板/跨模型模式（维度 E）
+
+**数据**：Batch 21（3/4 完成）+ Batch 19-20 合并，11 个 post-Phase99 eval 结果。
+
+**Qwen3.5 全 7 模板 post-Phase99 排名**（movie 待完成）：
+
+| 排名 | 模板 | Composite | Stored | 特点 |
+|------|------|-----------|--------|------|
+| 1 | hospital | 45% | 36 | Breadth 56%（最高） |
+| 2 | university | 40% | 36 | Abstention 67%（唯一非 100%） |
+| 3 | company | 40% | 32 | Reasoning 50%（最高） |
+| 4 | research | 35% | 33 | 稳定表现 |
+| 5 | codebase | 35% | 36 | relationship_lookup 100% |
+| 6 | sport | 25% | 35 | Breadth 17%（低） |
+| 7 | city | 20% | 36 | **Reasoning 0%**（唯一） |
+
+**Kimi-K2.5 全 4 模板 post-Phase99**：
+
+| 模板 | Composite | Stored | vs Qwen3.5 |
+|------|-----------|--------|------------|
+| hospital | 40% | 30 | -5% |
+| company | 25% | 35 | -15% |
+| university | 25% | 17 | -15% |
+| codebase | 25% | 33 | -10% |
+
+**模式分析**：
+
+1. **City Reasoning 0% 异常**：7 模板中唯一 Reasoning=0%。存了 36 实体但 8 道推理题全错。可能原因：city 属性值（人口、面积、GDP）的数量级和格式与其他模板不同，模型 search 命中但计算失败。**需跟踪**。
+
+2. **Kimi university 存储量异常低（17）**：budget=30 但只用了 17 writes。其他 Kimi evals 存 30-35。可能是 university 的文档格式导致 Kimi 过度过滤。**不是系统 bug**——存储策略是被测能力。
+
+3. **Qwen3.5 vs Kimi 系统性差距**：4 模板均 Qwen3.5 > Kimi，平均差距 11.25%。主因是 Reasoning（Qwen3.5 avg 28% vs Kimi avg ~6%）。
+
+4. **Breadth 与 Composite 强正相关**：hospital(56%→45%), university(57%→40%), research(43%→35%) vs city(12%→20%), sport(17%→25%)。存储+检索质量是 Composite 最大驱动因素。
+
+5. **Maintenance 全线 0%**：11/11 evals，一致确认。预算耗尽阻塞 Edit 是唯一原因。**训练目标**，非系统缺陷。
+
+**不派新 Phase**。数据模式清晰，系统行为正确。
+
+**演进检查清单**：
+- [x] 产出：11 eval 数据模式分析
+- [x] EXECUTOR.md 待办区非空（Phase 101）
+- [x] 下一轮：**前沿搜索（维度 C）** — 距 A143 已 3+ 轮，必须做
+- [x] 前沿搜索？— 是，下轮执行
+
+---
+
+### 审计 A150 — OFFICIAL_TEMPLATES 扩展决策 + 工作区代码审查（维度 B）
+
+**触发**：训练线程修复了 3 个训练脚本的模板列表（添加 university + codebase），但 `protocol.py:OFFICIAL_TEMPLATES` 仍只有 6 个。
+
+**验证**：
+- ✅ university simulation ALL PASS（3 seeds）
+- ✅ codebase simulation ALL PASS（3 seeds）
+- ✅ A130 北极星审查 + A144 pre-flight 审查通过
+- ✅ Batch 20 真实 eval 数据确认（university 40%, codebase 35%）
+- ✅ 训练线程代码变更正确（3 文件，45/45 tests PASS）
+
+**决策**：**派发 Phase 101** — 将 university + codebase 加入 `OFFICIAL_TEMPLATES` + 同步测试。
+
+**演进检查清单**：
+- [x] 产出：Phase 101 派发
+- [x] EXECUTOR.md 待办区非空
+- [x] 下一轮：**数据驱动（维度 E）** — Batch 21 结果分析
+- [ ] 前沿搜索？— 距 A143 三轮，下轮做
+
+---
+
+### 审计 A134 — Batch 18 Trajectory 深度分析 + Corrections 决策（维度 E）
+
+**Batch 18 Hospital 结果**：Corrections **仍然 0/5**，但 Maintenance 从 0% → 20%（1/5 update 成功）
+
+**Trajectory 根因分解**（5 个 correction 事件逐条分析）：
+
+| # | 实体 | 搜索 | 结果 | writes余额 |
+|---|------|------|------|-----------|
+| 1 | Prairie Clinic.budget_m | ✅ 找到 | 值已正确（$2,940.9M） | 0 |
+| 2 | Community Health Network | ❌ 未存储 | — | 0 |
+| 3 | Community Health System | ❌ 未存储（搜4次） | — | 0 |
+| 4 | Harbor Healthcare | ⚠️ 找到 Harbor Medical Center | 名称不匹配 | 0 |
+| 5 | Grace Sanatorium | ❌ 未存储 | — | 0 |
+
+**关键发现**：
+1. **5/5 writes = 0**：预算耗尽是唯一阻塞因素，即使模型想 Edit 也做不到
+2. **3/5 实体未存储**：30/60 存储率下概率合理，不是策略问题
+3. **Phase 98 引导有效**：模型现在主动搜索修正实体（vs B17 的混乱行为）
+4. **Maintenance 提升 0→20%**：update 问题中有 1 个成功，可能因存储值恰好匹配修正后值
+5. **模型明确说明**"I have 0 writes remaining, so no Edit operation can be performed" — 模型理解了但被预算锁死
+
+**结论**：~~A133 的"Bug 视角"被证实~~ → **进一步分析发现根因是代码 bug，非预算策略问题**
+
+**⚠️ A134 结论已被 A135 推翻**：correction 1（Prairie Clinic）存储值已是修正后值，不是因为预算锁死，而是因为 **ingest 文档使用了修正后值渲染**。见 A135。
+
+### 审计 A140 — Batch 19 数据验证：Phase 99 效果确认（维度 E）
+
+**数据**：hospital 25→45%（+20），company 30→40%（+10）。历史最高分。
+
+**结论**：
+- Phase 99 是项目最高影响修复。Breadth + Reasoning 轴现在产生真实信号
+- Reasoning 是最大受益轴（hospital 0→33%, company 17→50%）——存储正确数值后计算类推理命中率自然提升
+- Maintenance 归零是正确行为（存原始值 + 不 Edit = GT 不匹配）
+- Prairie Clinic 首次 `search → edit`——模型开始尝试 Edit
+- 预算策略（预留 writes 给 corrections）是训练目标，非评测 bug
+
+**不派新 Phase**。当前 Phase 100（SFT bug）待执行。评测数据健康。
+
+### 审计 A141 — Phase 100 验证通过 + Batch 19 扩展评测重派（维度 B+E）
+
+**Phase 100 验证**（commit `59ea31f`，v0.10.5）：
+- ✅ 代码修复正确：`original_attrs = copy.deepcopy(e.attrs)` 在 corrections 前保存，compact 渲染时临时恢复
+- ✅ `test_training.py` 45 passed
+- ✅ 全量 398 passed, 1 skipped
+- ✅ Simulation ALL PASS（8 templates × 3 seeds）
+- ✅ 修复范围精确：只影响 SFT 轨迹 `_compact_document` 路径，不影响真实 eval
+
+**Phase 100 验收通过。** SFT v4 数据可以安全生成。
+
+**Batch 19 扩展评测完成**：
+- Research: 35%（=B17），Breadth 43%，Reasoning 25%（+13%）
+- Sport: 25%（+10%），Breadth 17%（+17%），Reasoning 25%（+13%）
+- **4 模板均值 26→36%（+10%）**，Phase 99 全面验证通过
+
+### 审计 A142 — 微观：Correction 预算可行性 + Validator 边界审计（维度 B）
+
+**Correction 预算可行性分析**：
+
+corrections 结构上可行但受预算压力约束：
+- Standard tier: 60 entities, 30 writes, 5 corrections
+- Edit 消耗 1 write（失败则退款），模型需预留 ≥5 writes
+- 当前模型行为：ingest 阶段用完所有 30 writes → correction 时 remaining=0
+- 系统提示词已包含："CORRECTIONS: Updated data. You MUST update stored memories."
+- 每个 ingest 事件动态显示 remaining budget
+- Correction 事件显示 `Budget: {remaining} writes remaining.`
+
+**结论**：评测设计正确，corrections 0/5 是模型能力问题（不预留 budget），非系统缺陷。这是训练目标。
+
+**Validator 边界审计**：
+
+发现 `_entity_match` 67% 阈值的 float 边界：2/3 = 0.6666... < 0.67，导致 3 词 GT 需全匹配。但有 LLM judge fallback，不影响真实 eval。无需修复。
+
+**Batch 19 hospital 逐题分析**：
+- Retrieval: 5/9 ✅（56%）— 部分实体未存储导致 abstain
+- Update: 0/5 ❌ — 4 个 abstain（未 Edit，不知修正值） + 1 个返回原始值（Prairie Clinic $2,461.7M vs GT $2,940.9M）
+- Counterfactual: 1/1 ✅ — Phase 99 后计算命中
+- Delta: 0/1 ❌ — abstain
+- Multi_constraint: 0/1 ❌ — GT="0"（无匹配实体），模型 abstain
+- Abstention: 3/3 ✅
+
+**确认**：数据行为完全一致于 Phase 99 预期。Prairie Clinic 返回 $2,461.7M（原始值，存储正确）但 GT 是 $2,940.9M（修正值）→ 不匹配。
+
+**不派新 Phase**。执行线程待办为空，无紧急改进项。
+
+### 审计 A143 — 前沿搜索 v10：RL 训练 + 记忆基准（维度 C）
+
+**15 项发现**，按价值排序：
+
+**训练相关（解决 GRPO policy collapse）**：
+1. **Memex(RL)**（2603.04257）：**极高相关**。显式训练 write/read 策略在 budget 约束下——与 MemoryGym MemoryEnv 完全对齐
+2. **EMPO2**（2602.23008）：Hybrid on/off-policy，+128.6% over GRPO。已在 F8 跟踪
+3. **LongRLVR**（2603.02146）：Dense verifiable context rewards 解决稀疏 reward。可为 memory_search/Write 中间步骤添加密集奖励
+4. **KARL**（2603.05218，Databricks）：Stable off-policy RL，无 clipped importance weighting。多任务训练跨 6 种搜索场景 → 映射 MemoryGym 6 模板
+
+**设计验证/挑战**：
+5. **Diagnosing Bottlenecks**（2603.02473）：**重要发现** — retrieval 瓶颈(20pt) >> write strategy(3-8pt)。但该研究无 budget/correction 场景，MemoryGym 的差异化仍成立
+6. **AMemGym**（2603.01966，ICLR 2026）：竞品交互式基准。专注对话记忆，与 MemoryGym 互补（信息过载+预算+更新追踪）
+
+**记忆架构**：
+7. **AriadneMem**（2603.03290）：State transitions as temporal edges → 与 correction tracking 对齐。497 token 内 multi-hop F1 +15.2%
+8. **MemPO**（2603.00680，清华+阿里）：Credit assignment based on memory effectiveness，+25.98% F1
+
+**其他**：SimpleMem（30x 压缩）、HyMem（双粒度检索）、PEARL（两阶段 tool-use GRPO）、Grad2Reward（梯度归因密集奖励）、Dr. MAS（per-agent advantage 归一化）、MemSifter（proxy 检索）、MemOS v2（OpenClaw 插件）
+
+**战略影响**：
+- Memex(RL) 是 MemoryGym 训练最直接的参考——同样在 budget 约束下训练 write/read policy
+- LongRLVR 的 dense context rewards 可能解决 GRPO 稀疏 reward → 转为训练者反馈 F10
+- AMemGym 作为 ICLR 2026 竞品，MemoryGym 差异化在于：budget pressure + correction tracking + RL training env
+
+**下一步**：已写入 TRAINER.md F10-F12。
+
+### 审计 A144 — 微观：University + Codebase 模板首评前审查（维度 B）
+
+**方法**：Batch 20 将首次用真实模型评测 university 和 codebase 模板。在结果到达前做 pre-flight 审查。
+
+**University（585 行）**：23 属性，4 约束，全部 sound。question_weights: retrieval 35% / comprehension 30% / update 20% / abstention 15%。Simulation 17/18 PASS（1 个 stochastic variance，非 bug）。
+
+**Codebase（623 行）**：23 属性，7 约束（含 deprecated cascade C7），全部 sound。question_weights: retrieval 30% / comprehension 35% / update 20% / abstention 15%。Simulation 18/18 PASS。
+
+**关键检查**：
+- ✅ 所有 19 种 comprehension 题型均支持
+- ✅ render_correction() 格式正确，codebase 有上下文感知变体
+- ✅ entity_importance() 正确实现
+- ✅ deprecated cascade 边界 case 处理完备（空列表、缺失属性）
+- ✅ 文件大小均 <1000 行
+
+**结论**：两个模板 production ready，无阻塞项。等待 Batch 20 首评数据。
+
+### 审计 A145 — Batch 20 首评数据分析 + Abstention 异常调查（维度 E）
+
+**Batch 20 Qwen3.5 新模板结果**：
+- University: 40%（Breadth 57%, Reasoning 29%, **Abstention 67%**）
+- Codebase: 35%（Breadth 20%, Reasoning 33%, Abstention 100%）
+
+**University Abstention 67% 调查**：
+- 3 个 abstention 问题中 1 个失败："Greystone University's national ranking?"
+- 世界中存在 "Greystone College" 和 "Greystone Lyceum"，但无 "Greystone University"
+- 模型通过 memory_search 找到 "Greystone College" 并返回其数据（#599/#468）
+- **根因**：partial name match confusion — 模型未严格区分实体名，将相似名称视为同一实体
+- **评测行为正确**：abstention 检测发现答案含数字 → 判定为非 abstention → 标记错误 ✓
+- **不是系统 bug**：这是真实的模型能力测试（实体名歧义辨别）
+
+**Batch 20 全模板 Qwen3.5 汇总**（6 模板 post-Phase99）：
+
+| 模板 | Composite | Breadth | Reasoning | Abstention |
+|------|-----------|---------|-----------|------------|
+| hospital | 45% | 56% | 33% | 100% |
+| university | 40% | 57% | 29% | 67% |
+| company | 40% | 29% | 50% | 100% |
+| research | 35% | 43% | 25% | 100% |
+| codebase | 35% | 20% | 33% | 100% |
+| sport | 25% | 17% | 25% | 100% |
+| **均值** | **37%** | **37%** | **33%** | **94%** |
+
+**Kimi-K2.5 hospital**：40%（Breadth 56%, Reasoning 0%）。B1(v1)=17% → +23%。Company 待完成。
+
+**不派新 Phase**。系统行为正确，无改进项。
+
+### 审计 A146 — SFT v4 数据实证验证（维度 A）
+
+**方法**：验证 SFT v4 数据（Phase 100 修复后生成）是否正确反映 Write=原始值、Edit=原始→修正值。
+
+**实证验证**（company seed=0，Argon Labs.inventory_turnover）：
+- Correction: 35.88 → 42.87
+- ✅ Write 内容包含 35.88（原始值），不含 42.87（修正值）
+- ✅ Edit: old_text="35.88" → new_text="42.87"（正确更新方向）
+
+**数据统计**（160 perfect trajectories）：
+- Avg 30.5 Write/traj（≈budget 30，含少量 rounding）
+- Avg 1.5 Edit/traj（corrections 被正确应用）
+- 工具名：Write/Edit/memory_search/submit_answer（新接口 ✓）
+
+**结论**：SFT v4 数据质量验证通过。Phase 100 修复在实际数据中正确生效。训练线程可安全使用。
+
+**不派新 Phase**。执行线程待办为空。
+
+### 审计 A147 — 运维：僵尸 eval 进程 + 资源审计（维度 B）
+
+**发现**：16 个 `memorygym.bench` 进程同时运行。其中 8 个是 Batch 16 遗留（PIDs 8229-8411，启动于 11:28，已运行 4+ 小时），正常 eval 仅需 15-20 分钟。
+
+**僵尸进程详情**：
+- `--template city --official -o eval/..._city_s0_v3.json`
+- `--template hospital --official -o eval/..._hospital_s0_v3.json`
+- `--template sport --official -o eval/..._sport_s0_v3.json`
+- `--template movie --official -o eval/..._movie_s0_v3.json`
+
+**影响**：
+- 写入 `_v3.json` 文件，不覆盖当前数据 → 无数据风险
+- 持续消耗 API 配额（Chutes 平台）
+- 占用系统资源（8 个 Python 进程，~8GB RAM）
+
+**建议**：用户手动 `kill 8229 8249 8275 8295 8326 8356 8391 8411` 清理。审计线程不主动 kill 进程。
+
+### 审计 A138 — SFT 轨迹 _compact_document 残留 bug（Phase 99 不完整修复）
+
+**方法**：验证 Phase 99 修复是否覆盖所有受影响路径
+
+**发现**：`training/env.py:138` 的 `_compact_document(entity)` 仍读取修正后 entity → Write 调用存储修正后值
+- Argon Digital：文档显示 ESG=30.91，但 Write 存储 ESG=19.42（修正值）
+- SFT 训练教模型"看到 X 存 Y"——学到错误映射
+
+**影响**：不影响真实 eval（bench.py 路径已被 Phase 99 修复），只影响 SFT 数据生成
+
+**决策**：派发 Phase 100 到 EXECUTOR.md。优先级中等（不阻塞 eval，但阻塞 SFT v4 数据生成）。
+
+### 审计 A137 — Phase 99 验证通过 ✅（P0 阻塞解除）
+
+**Phase 99 已由执行线程完成提交**（commit `2304a97`，v0.10.4）。
+
+**验证**：
+- ✅ 代码修复正确：`_original_attrs` 映射 + 临时恢复原始值渲染 ingest 文档
+- ✅ `test_ingest_uses_original_values` 通过
+- ✅ 全量 375 passed, 1 skipped
+- ✅ Simulation ALL PASS（8 templates × 3 seeds）
+- ✅ 实证：Prairie Clinic 文档从 `$2,539.8M`（修正值）→ `$2,125.9M`（原始值）
+
+**P0 阻塞解除。下一步**：
+1. 评测线程执行 Batch 19（验证 Corrections 真实行为）
+2. 训练 SFT 数据需重新生成
+
+### 审计 A136 — Phase 99 规格验证 + 边界 case（微观，维度 B）
+
+Phase 99 规格完整，5 项边界条件检查全部通过。发现 pre-correction retrieval GT 边界 case（命中率 ~0.4%），记入待跟进。
+
+### 审计 A135 — P0 派发：Phase 99 generate_stream 文档渲染时序 bug
+
+**触发**：A134 中 Prairie Clinic 在 ingest 阶段已存储修正后值 → 追溯到代码根因
+
+**根因验证**（代码级）：
+- `bench.py:196`: `generate_corrections()` 原地修改 `world.entities`（events.py:107）
+- `bench.py:211`: `generate_stream()` 从同一修改后 world 渲染文档
+- `events.py:279`: `render_document(e, ...)` 读取已修改的 `e.attrs` → 渲染出修正后值
+- `simulation.py:254-256`: simulation 在 corrections 前渲染 → 行为不一致
+
+**实证验证**：对 hospital seed=0，Prairie Clinic 的 ingest 文档显示 `$2,539.8M`（修正后值），不含原始值 `$2,125.95M`
+
+**影响范围**：
+- ALL 真实 eval 的 ingest 文档使用修正后值 → Corrections 成为 no-op
+- ALL SFT 训练数据的 correction 部分失效（stream 内部重新渲染）
+- MemoryEnv RL 环境的 correction reward 信号失效
+- 历史 50+ eval 的 Corrections/Maintenance 轴数据不可信
+
+**决策**：**派发 Phase 99（P0 最高优先级）** → EXECUTOR.md
+
+**后续**：
+1. Phase 99 修复后重跑 Batch 18 验证 Corrections 行为
+2. 历史 eval 数据需标记为"pre-fix"
+3. SFT v3 训练数据需重新生成
+
+### 审计 A133 — 宏观：预算 vs Corrections 结构性分析（维度 E） ✅
+
+（已被 A134 数据更新取代）
+
+### 审计 A132 — 微观对抗：smart_guesser 攻击面分析（维度 B）
+
+**方法**：假设自己是攻击者，寻找不存储数据也能得分的策略
+**结果**：smart_guesser = **0.00% across 8 templates × 10 seeds（80 runs）**
+
+理论分析识别了 3 个潜在攻击面（属性标签泄漏、float 2% 容忍度、efficiency 不惩罚零存储），但实际验证全部无效：
+- 整数精确匹配阻止了中位数猜测
+- 2% float 容忍度在真实属性范围下过窄
+- 0 correct = 0 efficiency（无论 budget 多少）
+
+**结论**：评分系统对非存储策略的防御是完备的。无需派发 Phase。
+
+### 审计 A131 — Corrections 0/5 根因分析（数据驱动，维度 E+B）
+
+**触发**：Batch 17 数据 + 全部历史 eval 数据：Corrections = 0/5 across ALL models × ALL templates
+
+**根因**（4 层）：
+1. correction 消息被动："Decide how to handle it" — 对比 ingest 的 "Store important entity data"
+2. Edit 工具描述过简：不说明 Edit 用于更新、不说明 old_text/new_text
+3. 预算耗尽：模型用完 30 writes 后无法 Edit
+4. SFT 训练分布不对齐：只示范已存储实体的 correction
+
+**派发 Phase 98**（P1 优先级）：correction 引导消息 + Edit 工具描述增强
+- 不违反"提示词中立"原则：工具用途说明 ≠ 策略暗示
+- 验证需 Batch 18 重跑 eval
+
+**预期影响**：如果修复有效，maintenance 轴从 0% 提升到 >20%，composite 整体提升 5-10%
+
+### 审计 A130 — Phase 96+97 北极星审查（university + codebase） ✅
+
+**验证结果**：
+- Simulation: ALL PASS（8 templates × 5 seeds，含 perfect=100%, guesser=0%, smart_guesser<5%, determinism）
+- Tests: 396 passed, 1 skipped ✅
+
+**Phase 96 验证**（university constraint fix）：
+- ✅ 条件修正为 `retention < graduation` → 提升 retention
+- ✅ 逻辑正确：留校率 ≥ 毕业率
+
+**Phase 97 验证**（codebase template）—— 逐条审查 A129 清单：
+
+1. **7 个约束全部正确实现** ✅
+   - C1(test/LOC): ratio 0.005-0.15 合理
+   - C2(coverage/bugs): 高覆盖→少 bug，低覆盖→多 bug，LOC-scaled
+   - C3(三方联动): 只约束极端组合（>100K+<5人, <10K+>20人），中间不触发，不过度约束 ✅
+   - C4(CPU/latency): 正相关，阈值合理
+   - C5(memory/LOC): 范围 [LOC/100, LOC/10]，极小模块(LOC=50)范围窄但合理
+   - C6(uptime/error): uptime>99.9% → error<0.5%
+   - C7(deprecated级联): 6 个属性联动，weekly_deploys 末尾趋零
+
+2. **deprecated 级联不破坏 simulation** ✅ — ALL PASS 已证明
+3. **三方联动不过度约束** ✅ — 只约束两个极端 case
+
+**发现（非阻塞）**：
+- university.py `entity_word_plural` 覆写冗余（base class y→ies 已覆盖）
+- codebase deprecated 模块的 `error_rate_trend` 未实现"缓慢上升"模式（spec 提到但未实现），不影响正确性
+- render_correction 4 种语境已实现 ✅
+
+**北极星对齐**：5/5 核心约束全满足（不可作弊、所见即所得、场景真实、可训练、确定性）
+
+### 审计 A129 — Codebase 模板复杂度增强 ✅
+
+- Phase 97 增强规格已被执行者正确实现
+4. university + codebase 两个新模板同时通过 simulation --seeds 5 --validate
+
+### 审计 A128 — Codebase 模板派发 ✅
+
+- 初始方案派发，后被 A129 增强
+
+### 审计 A127 — Phase 95 University 模板审查 ✅
+
+- 9/10 审计项通过，发现 Constraint 4 逻辑 bug
+- **Phase 96** 已派发修复
+
+### 审计 A126 — Phase 94 验证 + 训练者反馈 F4-F9 处理 ✅
+
+**Phase 94 验证**：
+- 代码变更已在工作区（4 文件），396 tests pass ✅
+- 待执行线程提交
+
+**训练者反馈 F4-F9 已读并标注**：
+- F4（AgeMem step-wise GRPO）：高价值，GRPO v3 核心参考
+- F5（A-MAC utility-aware）：低优先级，等基线
+- F6（Attributed Dense Rewards）：高价值，`required_entities` 天然支持归因
+- F7（Reward Decay）：与 A42+A44 吻合，Phase 92 已修 Edit shaped reward
+- F8（EMPO2 hybrid）：低优先级，GRPO 先行
+- F9（小数据泛化）：与 F3 一致，480 trajectories 足够
+
+**待跟进更新**：Phase 92 已修复 Edit shaped reward 验证（A42+A44 部分解决）
+
+**下一步**：队列只剩 Phase 94 待提交。评测线程阻塞（无 API key）。训练线程有 SFT v3 + GRPO v3 待办。无新 Phase 需要派发。
+
+### 审计 A125 — 死代码清理派发 ✅
+
+- 派发 Phase 94，执行线程已完成代码变更
+
+### 审计 A124 — 队列清零 ✅
+
+- Phase 87-93 全部完成并验证。396 tests pass。
 
 ## 待跟进
 
 （审计中发现的、需要持续关注但不紧急的事项）
 
-- **Reward hacking 风险**（A42+A44）：env.py shaped reward 用 `n.lower() in content.lower()` 匹配实体名，Edit +0.5 不验证 new_text。暂不修复——等训练跑出数据再优化
+- **Pre-correction GT 边界 case**（A136）：Phase 99 修复后，pre-correction retrieval 问题 GT 来自 mutated world（corrected value），但 ingest 文档用原始值。命中概率 ~0.4%，不紧急。
+- **Reward hacking 风险**（A42+A44）：env.py shaped reward 用 `n.lower() in content.lower()` 匹配实体名。Edit shaped reward **Phase 92 已修复**（验证 new_val）。Write +0.3 风险较低（存储本身有预算约束）
 - **Retrieval 瓶颈**（A62+A69 数据）：11% 正确率，瓶颈在模型侧（entities_per_write=1.0，不做 packing）
 - **7 个推理类型 0%**（A62 数据）：系统性模型能力天花板，非 bug
-- **前沿方向**（v8, A101）：EMPO2（GRPO 次优，hybrid on/off-policy +128%）、Memory-R1 v5（152 QA 泛化 3 benchmarks）、Mem-alpha（30k→400k 长度泛化）、AMA-Bench（real agentic trajectories, GPT5.2 仅 72%）、MemoryAgentBench（ICLR 2026, 4 competencies）、memsearch/Zilliz（markdown+BM25+RRF 验证我们 MarkdownBackend）、Mem-T（dense reward for long-horizon）、ICLR 2026 MemAgents Workshop
+- **前沿方向**（v10, A143 更新）：
+  - v8（A101）：EMPO2、Memory-R1 v5、Mem-alpha、AMA-Bench、MemoryAgentBench、memsearch/Zilliz、Mem-T
+  - v9（A139）：UMEM、UMA/Learning to Remember、MemoryArena、Choosing How to Remember
+  - v10（A143 新增）：**Memex(RL)**（budget 约束下 write/read RL，最直接参考）、**LongRLVR**（dense context rewards）、**KARL**（stable off-policy RL，Databricks）、AMemGym（ICLR 2026 竞品）、AriadneMem（state transitions 时序边）、Diagnosing Bottlenecks（retrieval >> write strategy，但无 budget 场景）。已写入 TRAINER.md F10-F12
+  - v11（A152 新增）：**IPS-GRPO**（逆概率缩放修 collapse，最优先）、**NGRPO**（全错 group 非零梯度）、**OTC**（tool productivity reward）、GTPO（熵控制替代 KL）、Why GRPO Needs Normalization（保留 std 归一化）、ReTool（两阶段 tool RL）、GEPO（分布式稳定）。已写入 TRAINER.md F14-F16
 
 ## 审计日志
 

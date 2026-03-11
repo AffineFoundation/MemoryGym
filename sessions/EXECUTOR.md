@@ -57,7 +57,37 @@
 
 ## 当前任务
 
-> 待办为空。
+### Phase 102 — Correction 追踪误报修复
+
+**依据**：审计 A153 发现 `agents/stream_agent.py:506-540` 的 correction 追踪检查 tool call arguments（intent）而非 results（outcome）。当 Edit 因 budget exhaustion 被拒时仍报 [OK]。证据：movie eval Steel Legacy correction = false positive。
+
+#### Step 1 — 修改 correction 结果判定
+
+`agents/stream_agent.py:506-540`，在判定 `correction_ok` 前，增加对 tool 执行结果的验证：
+
+当前逻辑（有 bug）：
+```python
+did_edit = any(c.get("name") == "Edit" for t in stats.turns for c in t.get("tool_calls", []))
+# ...
+correction_ok = (did_store or did_edit) and stored_new
+```
+
+需要额外检查：Edit tool 的 response 不包含 "Budget exhausted" 或 "Text not found"。
+
+方案选择（二选一，执行者自行判断最简方案）：
+- **A**：检查 `stats.turns` 中 Edit tool call 对应的 response message 是否包含 "Edited."
+- **B**：在 tool loop 前后记录 `budget.writes_used`，如果 Edit 后 budget 未变化则 `did_edit = False`
+
+#### Step 2 — 添加测试
+
+`tests/test_stream_agent.py` 或 `tests/test_bench.py`（看哪里更合适），测试：
+- 当 budget=0 时 correction tracker 应报 `success=False`（不是 True）
+- 当 Edit 成功时 correction tracker 应报 `success=True`
+
+#### 验证标准
+- `python -m pytest tests/ -q` 全量通过
+- 新测试覆盖 budget-exhausted correction 场景
+- `python -m memorygym.bench --seeds 3 --validate` 通过
 
 ---
 
