@@ -411,6 +411,8 @@ def build_grpo_cmd(args: argparse.Namespace) -> str:
         parts.append(f"--adapter {shlex.quote(args.adapter)}")
     if args.templates:
         parts.append(f"--templates {' '.join(args.templates)}")
+    if args.ips:
+        parts.append("--ips")
     return "python3 scripts/grpo_train.py " + " ".join(parts)
 
 
@@ -801,6 +803,8 @@ Examples:
                             help="Learning rate")
     grpo_train.add_argument("--kl-coeff", type=float, default=0.05,
                             help="KL penalty coefficient (0 to disable)")
+    grpo_train.add_argument("--ips", action="store_true",
+                            help="Enable IPS-GRPO: inverse probability scaling")
 
     args = parser.parse_args()
 

@@ -31,6 +31,7 @@ import os
 import re
 import sys
 import time
+from collections import Counter
 from pathlib import Path
 from random import Random
 
@@ -422,6 +423,9 @@ def main():
         "--kl-coeff", type=float, default=0.05,
         help="KL penalty coefficient (0 to disable)")
     parser.add_argument(
+        "--ips", action="store_true",
+        help="Enable IPS-GRPO: inverse probability scaling to prevent mode collapse")
+    parser.add_argument(
         "--log-file", default=None,
         help="JSON log file path")
     args = parser.parse_args()
@@ -573,8 +577,23 @@ def main():
                      / len(group_rewards)) ** 0.5
             eps = 1e-6
 
-            for messages, reward in zip(group_messages, group_rewards):
-                advantage = (reward - mean_r) / (std_r + eps)
+            if args.ips and len(group_rewards) > 1:
+                # IPS-GRPO: inverse probability scaling (arXiv 2601.21669)
+                # Discretize rewards to 0.05 buckets, weight by inverse freq
+                bucket_size = 0.05
+                buckets = [round(r / bucket_size) for r in group_rewards]
+                bucket_counts = Counter(buckets)
+                n = len(buckets)
+                ips_weights = [n / bucket_counts[b] for b in buckets]
+                # Normalize weights to mean=1
+                w_mean = sum(ips_weights) / len(ips_weights)
+                ips_weights = [w / w_mean for w in ips_weights]
+            else:
+                ips_weights = [1.0] * len(group_rewards)
+
+            for messages, reward, w in zip(group_messages, group_rewards,
+                                           ips_weights):
+                advantage = (reward - mean_r) / (std_r + eps) * w
                 all_trajectories.append((messages, advantage))
 
         # Phase 2: Training (with grad)

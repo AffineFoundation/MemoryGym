@@ -335,11 +335,9 @@ memorygym/training/
    - SFT 只教格式不教策略，GRPO reward 才能教 search+answer 行为
    - v2 确认 policy collapse（loss→负值）
    - Base checkpoint: `checkpoints/sft-v3-write-edit-read`（GPU 机）
-   - **IPS-GRPO（F14，最高优先）**：在 advantage 计算加逆频率缩放防 mode collapse
-     - 位置：`scripts/grpo_train.py` L575-583
-     - 方案：group_rewards 按 0.05 分桶 → 逆频率权重 → 缩放 advantage
-     - 加 `--ips` flag（同步 `scripts/train.py` build_grpo_cmd + argparser）
-     - 论文：arXiv 2601.21669
+   - ~~**IPS-GRPO（F14）**~~ ✅ 已实现：`--ips` flag 加入 grpo_train.py + train.py
+     - 0.05 分桶 → Counter 逆频率 → normalize to mean=1 → 缩放 advantage
+     - 测试验证：稀有成功轨迹 advantage 2.5x 放大，常见失败轨迹被抑制
    - KL 正则化已实现：`--kl-coeff 0.05`，参考 F2 审计
    - **实验**：先 IPS only（`--ips --kl-coeff 0`），再 IPS+KL，对比 v2
    - **F13 更正**：movie "1/5 corrections" 是假阳性（A153），真实 correction 成功 = 0
