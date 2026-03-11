@@ -166,7 +166,7 @@ sessions/AUDITOR.md（你，/loop 30m）— 调度中枢：审计、设计、方
 - **Reward hacking 风险**（A42+A44）：env.py shaped reward 用 `n.lower() in content.lower()` 匹配实体名，Edit +0.5 不验证 new_text。暂不修复——等训练跑出数据再优化
 - **Retrieval 瓶颈**（A62+A69 数据）：11% 正确率，瓶颈在模型侧（entities_per_write=1.0，不做 packing）
 - **7 个推理类型 0%**（A62 数据）：系统性模型能力天花板，非 bug
-- **前沿方向**：GSPO（ART 实现 + P-GSPO 变体）、AgeMem step-wise GRPO（F4）、mem0 OpenClaw 插件（Auto-Recall/Capture 模式）、OpenClaw temporal decay 搜索
+- **前沿方向**：BudgetMem（预算约束记忆，最近竞品）、Mem-alpha（RL 记忆构建，13x 泛化）、GSPO（ART + P-GSPO）、AgeMem step-wise GRPO（F4）、OpenClaw ContextEngine 插件接口
 
 ## 审计日志
 
@@ -181,7 +181,19 @@ sessions/AUDITOR.md（你，/loop 30m）— 调度中枢：审计、设计、方
 
 **待办重排**：将 Phase 71（策略泄漏修复）提升为最高优先级——这是评测有效性问题，比 Phase 69（temporal decay）和 Phase 70（Edit bug）更紧急。EXECUTOR.md 已更新。
 
-**前沿搜索 V8**（后台进行中）：搜索 LLM memory agent 训练、新 benchmark、OpenClaw 更新、生产记忆系统等方向。结果待后台 agent 返回后补充。
+**前沿搜索 V8 — 5 项新发现**：
+
+1. **BudgetMem**（2511.04919，2025-11）：首个带预算约束的记忆增强 LLM。双层记忆（episodic + semantic）+ 可训练门控（TF-IDF/entity density/discourse markers/position bias）。72.4% 内存节省仅 1% F1 降。**最接近 MemoryGym 的定位**——但操作层面不同：BudgetMem 在 token/segment 级隐式操作，MemoryGym 在实体级显式工具操作。我们的差异化仍然成立。
+
+2. **Mem-alpha**（2509.25911，2025-09）：RL 框架学习记忆构建（what/how/when to store+update）。Group-Relative PPO + composite reward（准确率+格式+简洁+语义）。核心/episodic/semantic 三层架构。**关键发现：30K token 训练泛化到 400K+（13x）**。验证了 RL 训练存储策略的迁移价值。
+
+3. **OpenClaw v2026.3.2**（2026-03-02）：ContextEngine 插件接口（最大架构变更）、自定义 embedding 维度、混合搜索可配置权重。第三方插件涌现：Supermemory、MemOS Cloud。MemoryGym 的 OpenClaw 兼容接口方向正确。
+
+4. **Letta (MemGPT) v1**：Context Repositories（git-based 记忆版本控制）、Conversations API（跨并行体验共享记忆）、Remote Environments。优化 GPT-5 和 Claude 4.5。
+
+5. **ICLR 2026 MemAgents Workshop**（4 月 26-27 日）：记忆 agent 已成学术共识方向。提交截止 2/13，录用论文未公布。**潜在投稿场景**（如果有论文计划）。
+
+**前沿定位确认**：BudgetMem 最接近但操作层面不同。MemoryGym 仍是唯一将预算约束 + 信息过载 + 更新追踪 + RL 训练环境组合的系统。Mem-alpha 的 13x 泛化发现验证了我们的训练迁移价值假设。
 
 ### 审计 A76（2026-03-11）— bench.py 一致性审计 + env.py 漂移发现（维度 B）
 

@@ -237,6 +237,8 @@ GRPO v2 identified policy collapse (loss → negative). Next: KL regularization 
 | AgeMem (2601.01885) | Step-wise GRPO + 3-stage curriculum | Addresses sparse reward |
 | A-MAC (2603.04549) | 5-factor admission | Fine-grained memory admission |
 | PlugMem (Microsoft) | Hierarchical memory architecture | Production memory management |
+| BudgetMem (2511.04919) | Dual-tier memory + trainable gating + budget constraints | Closest competitor; token-level vs our entity-level tool-based |
+| Mem-alpha (2509.25911) | RL memory construction, 13x generalization | Validates RL training for memory policies |
 
 ---
 
