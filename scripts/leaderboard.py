@@ -44,12 +44,15 @@ def load_results(eval_dir: str = "eval") -> list[dict]:
         if error:
             continue  # Skip failed evals
 
+        per_axis = extra.get("per_axis", {})
         results.append({
             "model": extra.get("model", "?"),
             "template": extra.get("template", "?"),
             "seed": extra.get("seed", "?"),
             "tier": _infer_tier(extra),
             "score": data.get("score", 0),
+            "composite": per_axis.get("composite", data.get("score", 0)),
+            "per_axis": per_axis,
             "n_entities": extra.get("n_entities", 0),
             "n_questions": extra.get("n_questions", 0),
             "write_budget": extra.get("write_budget", 0),
@@ -85,6 +88,9 @@ def aggregate_by_model(results: list[dict]) -> list[dict]:
         scores = [r["score"] for r in runs]
         avg = sum(scores) / len(scores) if scores else 0
 
+        composites = [r["composite"] for r in runs]
+        avg_composite = sum(composites) / len(composites) if composites else 0
+
         # Aggregate competency scores
         comp_scores: dict[str, list[float]] = defaultdict(list)
         for r in runs:
@@ -100,6 +106,7 @@ def aggregate_by_model(results: list[dict]) -> list[dict]:
         aggregated.append({
             "model": model,
             "avg_score": avg,
+            "avg_composite": avg_composite,
             "n_evals": seeds,
             "templates": templates,
             "retrieval": comp_avg.get("retrieval", 0),
@@ -111,7 +118,7 @@ def aggregate_by_model(results: list[dict]) -> list[dict]:
             },
         })
 
-    aggregated.sort(key=lambda x: -x["avg_score"])
+    aggregated.sort(key=lambda x: -x["avg_composite"])
     return aggregated
 
 
@@ -122,12 +129,13 @@ def format_markdown(results: list[dict], aggregated: list[dict]) -> str:
     # Aggregated leaderboard
     lines.append("## Overall Rankings")
     lines.append("")
-    lines.append("| Rank | Model                                    | Avg Score | Evals | Templates              |")
-    lines.append("| ---- | ---------------------------------------- | --------- | ----- | ---------------------- |")
+    lines.append("| Rank | Model                                    | Composite | Avg Score | Evals | Templates              |")
+    lines.append("| ---- | ---------------------------------------- | --------- | --------- | ----- | ---------------------- |")
     for i, a in enumerate(aggregated):
         tmpls = ", ".join(a["templates"])
         lines.append(
-            f"| {i+1}    | {a['model']:40} | {a['avg_score']*100:6.1f}%   "
+            f"| {i+1}    | {a['model']:40} | {a['avg_composite']*100:6.1f}%   "
+            f"| {a['avg_score']*100:6.1f}%   "
             f"| {a['n_evals']:5} | {tmpls:22} |"
         )
 
@@ -135,18 +143,19 @@ def format_markdown(results: list[dict], aggregated: list[dict]) -> str:
     lines.append("")
     lines.append("## Detailed Results")
     lines.append("")
-    lines.append("| Model                                    | Template | Seed | Tier | Score | Retrieval | Update | Traj |")
-    lines.append("| ---------------------------------------- | -------- | ---- | ---- | ----- | --------- | ------ | ---- |")
+    lines.append("| Model                                    | Template | Seed | Tier | Composite | Score | Retrieval | Update | Traj |")
+    lines.append("| ---------------------------------------- | -------- | ---- | ---- | --------- | ----- | --------- | ------ | ---- |")
 
-    sorted_results = sorted(results, key=lambda r: (-r["score"], r["model"]))
+    sorted_results = sorted(results, key=lambda r: (-r["composite"], r["model"]))
     for r in sorted_results:
         bc = r["by_competency"]
         ret = f"{bc.get('retrieval', 0)*100:.0f}%"
         upd = f"{bc.get('update', 0)*100:.0f}%"
         traj = "yes" if r["has_trajectory"] else ""
+        comp = f"{r['composite']*100:4.0f}%"
         lines.append(
             f"| {r['model']:40} | {r['template']:8} | {r['seed']:4} "
-            f"| {r['tier']:4} | {r['score']*100:4.0f}% | {ret:9} | {upd:6} | {traj:4} |"
+            f"| {r['tier']:4} | {comp:9} | {r['score']*100:4.0f}% | {ret:9} | {upd:6} | {traj:4} |"
         )
 
     lines.append("")

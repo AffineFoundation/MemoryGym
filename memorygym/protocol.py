@@ -9,6 +9,8 @@ import math
 from datetime import datetime, timezone
 from typing import Any
 
+from memorygym import __version__
+
 TIERS: dict[str, dict[str, int]] = {
     "lite": {
         "entities": 30,
@@ -193,7 +195,7 @@ def format_leaderboard_entry(
     results = aggregate_results(per_seed_results)
 
     entry: dict[str, Any] = {
-        "memorygym_version": "0.4.0",
+        "memorygym_version": __version__,
         "schema_version": SCHEMA_VERSION,
         "model": model,
         "tier": tier,
