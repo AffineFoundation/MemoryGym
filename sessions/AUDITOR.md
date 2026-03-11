@@ -153,11 +153,11 @@ sessions/AUDITOR.md（你，/loop 30m）— 调度中枢：审计、设计、方
 
 ## 当前任务
 
-### 审计 A83 — 下一轮
+### 审计 A84 — 下一轮
 
-- Phase 72+73 执行进度
+- Phase 73 执行进度
 - 批次 15 进展
-- 代码审计：training/env.py reward 函数一致性（shaped reward 在 Phase 71 后是否仍正确）
+- 代码审计：eval_task.py Inspect AI 集成路径完整性（能否端到端跑通？）
 
 ## 待跟进
 
@@ -171,6 +171,29 @@ sessions/AUDITOR.md（你，/loop 30m）— 调度中枢：审计、设计、方
 ## 审计日志
 
 （每次审计的结论摘要，最新在最上面。保持简洁，详细分析写 devlog/。）
+
+### 审计 A83（2026-03-11）— Phase 72 验证 + training/env.py reward 审计（维度 B）
+
+**Phase 进度**：Phase 72 ✅ commit `9b0055e`（simulation 轴分数不变量验证：perfect>90%, guesser=0%, strategic>naive, abstainer<15%）。Phase 73 未启动。批次 15 进度 0/6。
+
+**Phase 72 代码质量**：✅ 通过。`avg_composite()` 正确调用 `compute_axis_scores`，bench.py 传入正确的 `n_entities`/`write_budget`。4 条新不变量检查覆盖核心场景。
+
+**training/env.py shaped reward 审计**（L520-660）：
+
+1. **Phase 71 兼容性**：✅ Shaped reward 完全基于 `event_type`（stream 数据结构），不依赖 event format 文本。Phase 71 文本变更不影响 reward 逻辑。
+
+2. **Reward 结构完整性**：
+   - Write+entity_match during ingest: +0.3 ✅
+   - Write+duplicate: -0.1 ✅（duplicate 检查通过 `_stored_entity_names`）
+   - Edit success during correction: +0.5 ✅
+   - Edit fail: refund + 0.0 ✅
+   - memory_search during correction (first): +0.1 ✅（`_correction_searched` flag 防 farming）
+   - Budget exhausted: -0.05 ✅
+   - `next` resets correction flags: ✅
+
+3. **已知风险**（A42+A44 待跟进，不升级）：Edit +0.5 不验证 new_text 内容。等训练数据验证。
+
+4. **无新 bug 发现**。Reward 函数在 Phase 71 后保持正确。
 
 ### 审计 A82（2026-03-11）— 前沿搜索 V9 + Phase 执行确认（维度 C）
 
