@@ -17,7 +17,12 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import time
+
+# Suppress HuggingFace progress bars and tokenizer warnings
+os.environ.setdefault("HF_HUB_DISABLE_PROGRESS_BARS", "1")
+os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
 from collections import defaultdict
 from pathlib import Path
 from random import Random
@@ -58,7 +63,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     g.add_argument("--seeds", type=int, default=10, metavar="N",
                    help="number of seeds to evaluate (default: 10)")
     p.add_argument("--template", "-t", choices=list(TEMPLATES),
-                   default=None, metavar="T",
+                   default=None,
                    help="template to evaluate (default: all)")
     p.add_argument("--strategy", nargs="+",
                    choices=[s["name"] for s in STRATEGIES],
@@ -92,7 +97,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
                    default="chromadb",
                    help="memory backend (chromadb or markdown)")
     p.add_argument("--tier", choices=list(TIERS),
-                   default=None, metavar="TIER",
+                   default=None,
                    help="evaluation tier (lite/standard/hard/multi)")
     p.add_argument("--official", action="store_true",
                    help="official mode: seeds 0-9, all templates, "
@@ -147,6 +152,9 @@ def main(argv: list[str] | None = None) -> int:
 
     is_model_eval = args.model is not None
     if is_model_eval:
+        # Pre-check API key before loading heavy dependencies
+        from memorygym.config import get_api_config
+        get_api_config(api_url=args.api_base)
         strategy_names = [args.model]
     else:
         strategies = ([s for s in STRATEGIES if s["name"] in args.strategy]
@@ -404,10 +412,10 @@ def main(argv: list[str] | None = None) -> int:
     # Per-template results
     for tmpl_name in template_names:
         print(f"--- {tmpl_name} ---")
-        print(f"  {'Strategy':<12s} {'Accuracy':>9s} {'Stored':>7s} "
+        print(f"  {'Strategy':<20s} {'Accuracy':>9s} {'Stored':>7s} "
               f"{'Breadth':>8s} {'Maint.':>7s} "
               f"{'Reasoning':>10s} {'Abstention':>11s}")
-        print("  " + "-" * 68)
+        print("  " + "-" * 76)
         for s_name in strategy_names:
             vals = [v for v in agg[s_name] if v["template"] == tmpl_name]
             acc = avg(vals)
@@ -423,7 +431,7 @@ def main(argv: list[str] | None = None) -> int:
                 return f"{c_tot/t_tot:.0%}" if t_tot else "n/a"
 
             from memorygym.protocol import REASONING_COMPETENCIES
-            print(f"  {s_name:<12s} {acc:>8.0%} {stored:>6.0f} "
+            print(f"  {s_name:<20s} {acc:>8.0%} {stored:>6.0f} "
                   f"{comp_pct('retrieval'):>8s} "
                   f"{comp_pct('update'):>7s} "
                   f"{comp_pct(*REASONING_COMPETENCIES):>10s} "

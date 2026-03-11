@@ -72,6 +72,7 @@
 
 ## 已完成
 
+### Phase 108 — CLI UX 打磨（表格对齐/API 前置检查/choices 显示/HF 噪音） ✅
 ### Phase 107 — 文档同步：README/LEADERBOARD/pyproject.toml/EVALUATOR ✅
 ### Phase 106 — relationship_hop/chain validator dispatch + GT 格式化解析 ✅
 ### Phase 104 — SFT 轨迹 correction 时序修复 + Edit 覆盖提升 ✅
