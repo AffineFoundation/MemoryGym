@@ -57,15 +57,38 @@
 
 ## 当前任务
 
-### Phase 70 — ChromaDB Edit fallback 静默失败修复 ⚡ 最高优先级
-
-（详见下方 Phase 70 描述）
-
 ### Phase 72 — Simulation 轴分数不变量验证
 
 （详见下方 Phase 72 描述）
 
+### Phase 73 — Version bug + Leaderboard composite 排名修复
+
+**依据**：审计 A81 发现两个数据质量 bug。
+
+**Bug 1 — hardcoded version**（`memorygym/protocol.py` L196）：
+```python
+# 当前（错误）：
+"memorygym_version": "0.4.0",
+# 修复：
+from memorygym import __version__
+"memorygym_version": __version__,
+```
+`format_leaderboard_entry()` 输出的 JSON 版本永远是 "0.4.0"，应跟随 `__version__`（当前 0.7.3）。
+
+**Bug 2 — leaderboard 忽略 4-axis composite**（`scripts/leaderboard.py`）：
+- `load_results()`（L47）不提取 `extra.per_axis`。添加 `"per_axis": extra.get("per_axis", {})`
+- `aggregate_by_model()`（L77）用 `score`（raw accuracy）排名。改为用 `per_axis.composite`（有时 fallback 到 `score`）
+- `format_markdown()`（L118）表头增加 Composite 列
+- 确保旧 eval JSON（无 per_axis 字段）兼容
+
+**验证标准**：
+- `python -m pytest tests/ -q` 全部通过
+- `python scripts/leaderboard.py` 输出表格包含 Composite 列且排名按 composite
+- 旧格式 eval JSON（无 per_axis）不 crash
+
 ---
+
+### Phase 70 — ChromaDB Edit fallback 静默失败修复 ✅ commit `6a87b72`
 
 ### Phase 71 — 事件格式策略提示移除 ✅ commit `2849257`
 

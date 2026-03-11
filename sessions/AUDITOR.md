@@ -153,11 +153,11 @@ sessions/AUDITOR.md（你，/loop 30m）— 调度中枢：审计、设计、方
 
 ## 当前任务
 
-### 审计 A81 — 下一轮
+### 审计 A82 — 下一轮
 
-- Phase 70+72 执行进度
+- Phase 72+73 执行进度
 - 批次 15 进展
-- 代码审计：bench.py 显示逻辑 + eval JSON schema 一致性
+- 前沿搜索 V9（距 A77 已 >4 轮）
 
 ## 待跟进
 
@@ -171,6 +171,22 @@ sessions/AUDITOR.md（你，/loop 30m）— 调度中枢：审计、设计、方
 ## 审计日志
 
 （每次审计的结论摘要，最新在最上面。保持简洁，详细分析写 devlog/。）
+
+### 审计 A81（2026-03-11）— bench.py/leaderboard schema 审计 + Phase 73 派发（维度 B+D）
+
+**Phase 进度**：Phase 70 ✅ commit `6a87b72`（ChromaDB Edit fallback 修复，`old_text in content` 检查 + budget refund）。Phase 72 未启动。
+
+**代码审计发现**：
+
+1. **hardcoded version bug**（protocol.py L196）：`format_leaderboard_entry` 写死 `"memorygym_version": "0.4.0"`，当前版本 `0.7.3`。应用 `__version__`。
+
+2. **leaderboard 排名用 raw accuracy 而非 composite**（scripts/leaderboard.py）：`load_results` 不提取 `extra.per_axis`，`aggregate_by_model` 按 `score`（raw accuracy）排名。eval JSON 有 `per_axis.composite` 但完全未使用。这意味着官方排行榜忽略了 4-axis 评分系统。
+
+3. **bench.py simulation 显示**（L404-430）：表头 "Maint." 显示 raw `update` competency 准确率，不含 maintenance gate。仅影响 simulation 内部显示，不影响 eval 数据。低优先级。
+
+4. **eval JSON schema 一致性**：bench.py vs env.py 的 `extra` 字段完全一致。bench.py answer_details 多 api_calls/elapsed/retries 字段（来自真实 agent runner），可接受差异。
+
+**派发 Phase 73 → EXECUTOR.md**：version bug + leaderboard composite 排名修复。
 
 ### 审计 A80（2026-03-11）— Phase 执行验证 + compute_axis_scores 审计 + Phase 72 派发（维度 B）
 
