@@ -57,53 +57,52 @@
 
 ## 当前任务
 
-### Phase 68 — env.py 漂移修复（RNG + eval_salt + backend + version）
+### Phase 71 — 事件格式策略提示移除（Phase 57 遗漏修复）⚡ 最高优先级
 
-**依据**：审计 A72 RNG 不一致 + 审计 A76 发现 `memorygym/env.py`（affinetes 入口）与 bench.py 有 4 处不一致。
+**依据**：审计 A75 发现 Phase 57 只中立化了 system prompt，但 INGEST 事件格式中仍嵌入策略提示。这违反 CLAUDE.md "存储策略本身是被测能力的一部分"。
 
-**注意**：bench.py、training/env.py、eval_task.py 的 RNG 已对齐（`seed+3333`/`seed+5555`），**只剩 `memorygym/env.py` 未修复**。
+**问题**：3 处 INGEST 事件格式中包含：
+```
+Corrections coming: {n_corrections_total}.
+   Suggestion: store ≤{suggested} from this batch to reserve budget for corrections.
+```
+- `memorygym/agents/stream_agent.py` L474-477
+- `memorygym/training/env.py` L419-421
+- `memorygym/worlds/eval_task.py` L288-290
 
-**`memorygym/env.py` 需修复 4 处**：
+**影响**：
+1. 泄漏 correction 总数 → agent 无需在不确定性下规划预算
+2. 显式建议存储数量 → 直接规定存储策略
+3. 训练出的模型依赖此提示 → 真实场景无此信息，迁移失效
 
-1. **L228 RNG 未对齐**：
-   ```python
-   # Before: rng = Random(seed)
-   # After:
-   rng_correct = Random(seed + 3333)
-   corrections = tmpl.generate_corrections(world, rng_correct, n_corrections)
-   # ...
-   rng_stream = Random(seed + 5555)
-   stream = tmpl.generate_stream(world, rng_stream, corrections, ...)
-   ```
+**修复方案**：
 
-2. **L226 缺 eval_salt**：
-   ```python
-   # Before: world = tmpl.generate_world(seed=seed, n_entities=n_entities)
-   # After:
-   world = tmpl.generate_world(seed=seed, n_entities=n_entities, eval_salt=tier_cfg.get("eval_salt", 1))
-   ```
+保留 budget 信息（合理），移除 correction 泄漏和策略建议：
 
-3. **L245 后端硬编码**：
-   ```python
-   # Before: backend_obj = ChromaDBBackend()
-   # After:
-   if backend_type == "markdown":
-       from memorygym.memory.backends.markdown_backend import MarkdownBackend
-       backend_obj = MarkdownBackend()
-   else:
-       backend_obj = ChromaDBBackend()
-   ```
+```python
+# Before:
+f"⚠️ Budget: {remaining}/{write_budget} writes remaining. "
+f"Entities seen so far: {entities_seen} (more may follow). "
+f"Corrections coming: {n_corrections_total}.\n"
+f"   Suggestion: store ≤{suggested} from this batch to reserve budget for corrections."
 
-4. **L305 缺 version**：
-   ```python
-   # 在 extra dict 中添加：
-   "version": __version__,  # 需要顶部 from memorygym import __version__
-   ```
+# After:
+f"⚠️ Budget: {remaining}/{write_budget} writes remaining. "
+f"Entities seen so far: {entities_seen} (more may follow). "
+f"Be selective — store what matters most."
+```
+
+3 个文件的 budget_ctx 都做相同修改。同时删除 `suggested` 计算逻辑（不再需要）。
 
 **验证标准**：
-- `python -m pytest tests/ -q` 全部通过
-- grep 确认 `memorygym/env.py` 使用 `seed + 3333` / `seed + 5555`
-- grep 确认 `memorygym/env.py` 有 `eval_salt`、`__version__`、`MarkdownBackend` 引用
+- `python -m pytest tests/ -q` 全部通过（更新 test_training.py L223 的 "Corrections coming:" 断言）
+- `python -m memorygym.bench --seeds 3 --validate` ALL PASS
+- grep 确认 3 个文件中无 "Corrections coming" 和 "Suggestion: store"
+- **注意**：此变更会影响 v3 eval 分数（模型失去策略提示可能表现更差），这是预期行为——v4 基线需重新建立
+
+### Phase 70 — ChromaDB Edit fallback 静默失败修复
+
+（内容不变，见下方）
 
 ### Phase 69 — MarkdownBackend temporal decay 搜索
 
@@ -153,50 +152,11 @@ if results:
 - 新测试：ChromaDB backend，store "Company A | Revenue: 500"，Edit(old_text="Revenue: 999", new_text="Revenue: 600")，验证：budget 退款、返回 "Text not found"、原条目不变
 - env.py 测试：MemoryEnv(backend_type="chromadb")，write entity → edit with wrong old_text → verify writes_used unchanged
 
-### Phase 71 — 事件格式策略提示移除（Phase 57 遗漏修复）
-
-**依据**：审计 A75 发现 Phase 57 只中立化了 system prompt，但 INGEST 事件格式中仍嵌入策略提示。这违反 CLAUDE.md "存储策略本身是被测能力的一部分"。
-
-**问题**：3 处 INGEST 事件格式中包含：
-```
-Corrections coming: {n_corrections_total}.
-   Suggestion: store ≤{suggested} from this batch to reserve budget for corrections.
-```
-- `memorygym/agents/stream_agent.py` L474-477
-- `memorygym/training/env.py` L419-421
-- `memorygym/worlds/eval_task.py` L288-290
-
-**影响**：
-1. 泄漏 correction 总数 → agent 无需在不确定性下规划预算
-2. 显式建议存储数量 → 直接规定存储策略
-3. 训练出的模型依赖此提示 → 真实场景无此信息，迁移失效
-
-**修复方案**：
-
-保留 budget 信息（合理），移除 correction 泄漏和策略建议：
-
-```python
-# Before:
-f"⚠️ Budget: {remaining}/{write_budget} writes remaining. "
-f"Entities seen so far: {entities_seen} (more may follow). "
-f"Corrections coming: {n_corrections_total}.\n"
-f"   Suggestion: store ≤{suggested} from this batch to reserve budget for corrections."
-
-# After:
-f"⚠️ Budget: {remaining}/{write_budget} writes remaining. "
-f"Entities seen so far: {entities_seen} (more may follow). "
-f"Be selective — store what matters most."
-```
-
-3 个文件的 budget_ctx 都做相同修改。同时删除 `suggested` 计算逻辑（不再需要）。
-
-**验证标准**：
-- `python -m pytest tests/ -q` 全部通过（更新 test_training.py L223 的 "Corrections coming:" 断言）
-- `python -m memorygym.bench --seeds 3 --validate` ALL PASS
-- grep 确认 3 个文件中无 "Corrections coming" 和 "Suggestion: store"
-- **注意**：此变更会影响 v3 eval 分数（模型失去策略提示可能表现更差），这是预期行为——v4 基线需重新建立
-
 ---
+
+### Phase 68 — RNG 对齐 + env.py 漂移修复 ✅
+
+bench.py/training/env.py/eval_task.py/env.py 全部用 seed+3333/seed+5555 分离 RNG。env.py 同步修复 eval_salt、backend 选择、version 字段。343 passed。
 
 ### Phase 67 — MemoryEnv 资源泄漏修复 ✅
 
