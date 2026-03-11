@@ -177,6 +177,220 @@ sessions/AUDITOR.md（你，/loop 30m）— 调度中枢：审计、设计、方
 
 ## 当前任务
 
+### 审计 A159 — 微观：budget.py 深度审计（维度 B）
+
+**范围**：`memorygym/memory/budget.py` + 所有消费路径（`_tool_helpers.py`、`inspect_task/tools.py`、`training/env.py`）
+
+#### 结论：budget.py 本身无缺陷，3 条路径一致性良好
+
+**budget.py（32 行）审计通过**：
+- `MemoryBudget` 是纯 dataclass，无隐藏状态、无类变量、无全局变量 → 无跨 run 泄漏风险
+- `consume_write()` 先检查 `can_write()` 再递增 → 不可能超额
+- `remaining()` 用 `max(0, ...)` 防负数 → 安全
+- 确定性：无随机性，same seed → same budget 行为（budget 本身不依赖 seed，只是计数器）
+
+**3 条消费路径一致性**：
+
+| 路径 | Write 消费 | Edit 消费 | Edit 失败退款 | 位置 |
+|------|-----------|-----------|-------------|------|
+| `_tool_helpers.py:execute_tool()` | L88 consume_write | L102 consume_write | L106,L116 writes_used-=1 | stream_agent 用 |
+| `inspect_task/tools.py` | L55 consume_write | L84 consume_write | L88,L104 writes_used-=1 | Inspect AI 用 |
+| `training/env.py:step()` | L574 writes_used+=1 | L604 writes_used+=1 | L608,L635 writes_used-=1 | RL 环境用 |
+
+三条路径逻辑完全一致：Write 消费 1，Edit 消费 1，Edit 失败退款。
+
+**MemoryEnv 不使用 MemoryBudget 类**（发现 D1）：
+- `env.py` 自己维护 `self._writes_used` 计数器（L390,L563,L574,L604），不导入也不使用 `MemoryBudget`
+- 这是**重复实现**而非 bug — 逻辑一致，但违反 DRY 原则
+- **风险**：未来修改 budget 逻辑时可能忘记同步 env.py
+- **建议**：低优先级重构 — 让 MemoryEnv 内部使用 MemoryBudget 实例
+
+**Edit 退款的直接字段写入**（发现 D2）：
+- 三条路径均用 `budget.writes_used -= 1`（或 `mem_budget.writes_used -= 1`）直接修改字段
+- 绕过了 `consume_write()` 的封装，但因为 dataclass 字段是 public 的，这不算 bug
+- **建议**：可加 `refund_write()` 方法保持封装，但优先级极低
+
+**correction 事件与 budget 交互**（审计点 6）：
+- correction 触发 Edit → 消费 1 write → 符合设计（修正也需要 budget）
+- 如果 budget 耗尽时收到 correction，agent 无法更新 → 这是**预期行为**（预算管理能力的一部分）
+- SFT 轨迹生成（env.py L191-209）中 correction 的 Edit 不受 budget 追踪 → 因为 SFT 只是生成消息格式，不执行真实工具
+
+**无竞态风险**：所有路径都是同步单线程执行（stream_agent 串行处理 tool calls，env.step() 单步执行）
+
+#### 派发
+
+无需派发 Phase。发现 D1（MemoryEnv 不复用 MemoryBudget）是低优先级重构，记录备查。
+
+---
+
+### 审计 A158 — 宏观：前沿搜索（维度 C）
+
+**背景**：距上次前沿搜索（A152）已超 3 轮，本轮必做。搜索 2025-2026 年 LLM 记忆评测、GRPO 改进、工具调用 RL 训练最新进展。
+
+#### 发现（按可操作性排序）
+
+**F15 — VerlTool: 异步工具执行 RL 框架** (2509.01055)
+- verl 官方扩展，标准化多模态工具管理 API，异步 rollout 近 2x 加速
+- 与 MemoryGym 的 verl adapter 直接相关：可替代自研 adapter，获得异步工具执行
+- **可操作性：高** — 检查 verl 最新文档是否已集成 VerlTool，若是则 adapter 可大幅简化
+
+**F16 — RiskPO: 风险度量替代均值目标** (2510.00911)
+- 用 Mixed Value-at-Risk 替代 GRPO 均值目标，解决 entropy collapse + 稀有推理路径被忽略
+- bundle scheme 聚合多问题稳定梯度，Pass@k 显著优于 GRPO
+- **可操作性：中高** — 与 IPS-GRPO (F14/Phase103) 正交，可叠加。需修改 loss 计算
+
+**F17 — Training-Free GRPO: 上下文空间优化** (2510.08191)
+- 冻结 LLM + 可变经验上下文，优化从参数空间转到上下文空间
+- 100 样本 + $8 成本 > 全量微调 32B，在 web search 任务上验证
+- **可操作性：中** — 理念与 MemoryGym 的 memory-as-context 高度契合，但需全新训练范式
+
+**F18 — Agent-R1 / AGENTRL: 端到端多轮 Agent RL** (2511.14460, 2510.04206)
+- 系统化多轮工具调用 RL：动态环境交互、轨迹级奖励、scaling laws
+- AGENTRL 提出 agent RL 的 scaling 规律（更多轮次 + 更多工具 = 更强泛化）
+- **可操作性：中** — 架构参考价值高，但 MemoryGym 已有 MemoryEnv 实现类似理念
+
+**F19 — Minerva: 可编程记忆测试** (OpenReview, ICML 2025 area)
+- 自动生成记忆测试：search/recall/edit/match/compare 5 种细粒度任务
+- 与 MemoryGym 20 推理题型部分重叠，但 edit/match 维度可借鉴
+- **可操作性：低** — 评测维度补充参考，不需代码变更
+
+**F20 — Evo-Memory / A-Mem: 自进化记忆** (2511.20857, 2502.12110)
+- 运行时 RL 驱动记忆自进化（MemRL）；Zettelkasten 式关联记忆图（A-Mem）
+- 记忆不只是存取，还包括自组织和关联发现
+- **可操作性：低** — 长期方向参考（MemoryGym Phase N+多 的记忆后端演进）
+
+#### 与已知前沿的关系
+
+| 已有 | 本次新发现 | 关系 |
+|------|-----------|------|
+| F14 IPS-GRPO (Phase103) | F16 RiskPO | 正交可叠加 |
+| F4 AgeMem (已知) | F20 Evo-Memory | 同方向新进展 |
+| verl adapter (已有) | F15 VerlTool | 上游官方方案 |
+| F1 GSPO (已知) | F17 TF-GRPO | 不同范式（参数 vs 上下文） |
+
+#### 结论
+
+1. **F15 VerlTool** 最值得跟进 — 若 verl 已原生支持 VerlTool，MemoryGym 的 adapter 可简化并获得异步加速。**建议派 Phase（调研+适配）**，但优先级 P2，待 Batch 22 结果后决定。
+2. **F16 RiskPO** 作为 GRPO loss 替代值得实验 — 但需要 GPU 验证，记入 TRAINER.md 作为实验方向。
+3. 其余发现记录备查，暂不派 Phase。
+
+**不派新 Phase**（F15 待 Batch 22 后评估，F16 转 TRAINER.md）。
+
+**演进检查清单**：
+- [x] 产出：6 个前沿发现，2 个可操作方向
+- [x] EXECUTOR.md 待办区空（符合预期，无紧急 Phase）
+- [x] 下一轮：**微观（维度 B）** — 审查 memory/budget.py 或 agents/stream_agent.py
+- [x] 前沿搜索？— 本轮已完成，下次 >3 轮后
+
+---
+
+### 审计 A156 — Phase 102 验收（维度 B） ✅
+
+**验证**：commit `a7439df` 修复 correction 追踪误报。
+
+**代码审查**：
+- ✅ `stream_agent.py:506-532`：现在检查 `results[i]` 而非只看 arguments
+  - Edit: 正面匹配 `"Edited." in result`（而非排除法）
+  - Write: `"Budget exhausted" not in result`
+- ✅ 4 个新测试：success / budget-exhausted / text-not-found / write-budget-exhausted
+- ✅ `did_search` 仍被追踪（用于 chain 记录），不影响 `correction_ok`
+
+**边界检查**：
+- L518 `results[i] if i < len(results) else ""`：当 results 少于 calls 时 fallback 到空字符串 → 安全（Edit/Write 匹配失败 → correction_ok=False）
+
+**不派新 Phase。** Phase 102 ✅ 完成。EXECUTOR.md 待办已清空。
+
+---
+
+### 审计 A157 — 微观：validators.py 答案验证层审计（维度 B）
+
+**审计对象**：`evaluation/validators.py`（255 行），4 层匹配 + judge fallback。
+
+**架构正确性** ✅：
+- L44: exact string → L47: numeric → L52: synthesis → L57: abstention → L60: fail
+- `validate_with_fallback` (L192)：rule-first, judge-fallback。abstention 永远走 rules（不浪费 judge API）
+- async 版本 (L229) 逻辑一致
+
+**整数精确匹配（V14）** ✅：
+- L85-87: `int(round(ans_num)) == int(round(gt_num))` — 年份/计数/人数精确匹配，完全阻断猜测攻击
+- L89-93: 浮点数 2% 相对容差 — 合理处理显示舍入
+
+**抗作弊审查** ✅：
+- entity_match L112: 长度守卫 `len(ans) < len(gt) * 0.5` → 单词欺骗被拒
+- abstention L164: 含数字即拒 → "Unknown but I guess 50" 不算 abstention
+- synthesis L126-137: 实体名 + 数值双重验证 → 不能只对一个
+
+**🟡 发现：8 种推理题型缺少 rule 路径（非阻塞）**
+
+当前 question_type → rule 路由：
+| 路径 | 类型 | 已覆盖 |
+|------|------|--------|
+| numeric_match | retrieval, update, aggregation, cross_category, ratio, delta | ✅ |
+| synthesis_match | synthesis, cross_domain, conditional, comparison, multi_hop, outlier | ✅ |
+| **无 rule** | relationship_filter, relationship_count, relationship_lookup, multi_constraint, temporal_trend, text_match, enum_filter, counterfactual | ⚠️ |
+
+这 8 种类型只有 exact string match（L44），不命中则直接跳到 judge fallback。
+
+**影响**：
+- 不影响正确性（judge 能处理）
+- 增加 judge API 调用（每次 eval 约 5-10 次额外 judge 调用）
+- 引入 judge 非确定性（rule 是确定性的，judge 不是）
+
+**推荐类型→路径映射**（供未来优化）：
+- `relationship_count, multi_constraint, counterfactual` → numeric_match
+- `relationship_filter` → synthesis_match
+- `relationship_lookup, text_match, enum_filter` → entity_match（需新分支）
+
+**结论**：validators.py 设计健壮，无评分漏洞。类型路由缺失是优化项（P3），不阻塞训练/评测。**不派新 Phase。**
+
+**演进检查清单**：
+- [x] 产出：A156 验收 + A157 validator 审计
+- [x] EXECUTOR.md 待办区空（Phase 102 ✅）
+- [x] 下一轮：**宏观（维度 C/E）** — Batch 22 数据分析或前沿搜索
+- [ ] 前沿搜索？— A152 三轮前，下轮做
+
+---
+
+### 审计 A155 — 宏观：能力缺口 + 文档漂移（维度 A+D）
+
+**审计范围**：外部用户视角——如果有人今天要用 MemoryGym，会遇到什么问题？
+
+**文档漂移（严重）**：
+
+| 文件 | 问题 | 实际状态 |
+|------|------|----------|
+| README.md L84 | "6 domain templates" | 代码有 8 个（+university, +codebase） |
+| README.md L111 | `worlds/ # 6 domain templates` | 同上 |
+| README.md | 无训练 CLI 文档 | `python -m memorygym.training {data,sft,grpo,smoke}` 可用 |
+| README.md | 无 multi tier 文档 | TIERS 有 multi（3 sessions） |
+| README.md | 无 backend 选择文档 | `--backend {chromadb,markdown}` 可用 |
+| LEADERBOARD.md | 数据过时（pre-Phase99） | post-Phase99 分数高 10-20%，缺 university/codebase |
+| LEADERBOARD.md | 列名过时（Retrieval/Update） | 应为 Breadth/Maintenance |
+
+**功能完整性（正常）**：
+- ✅ 8 模板 simulation ALL PASS
+- ✅ 4 tier 可用（lite/standard/hard/multi）
+- ✅ 2 后端可用（chromadb/markdown）
+- ✅ 训练管线端到端可跑（SFT v3 完成，GRPO 待 GPU）
+- ✅ Inspect AI 集成（eval_task.py）有测试覆盖
+
+**竞品对标**：
+- AMA-Bench（2602.22769）：真实 agent 轨迹，我们用 simulation + real eval 覆盖
+- MemoryAgentBench（ICLR 2026）：4 种能力，我们 4 轴 + 20 推理题型更全面
+- MemoryGym 独特优势：budget 约束 + correction 追踪 + RL 训练环境，竞品无此组合
+
+**结论**：系统功能完整，无阻塞性缺口。**文档漂移是唯一实质问题**——但 P3 优先级，不阻塞训练/评测。
+
+**→ 不派新 Phase**（Phase 102 已排队）。文档更新加入 EXECUTOR.md P3 backlog。
+
+**演进检查清单**：
+- [x] 产出：文档漂移清单 + 竞品对标
+- [x] EXECUTOR.md 待办区非空（Phase 102）
+- [x] 下一轮：**微观（维度 B）** — 交替使用，选具体模块深入
+- [ ] 前沿搜索？— A152 两轮前，可再跳过一轮
+
+---
+
 ### 审计 A154 — 训练者同步：SFT v3 结果 + 冲突解决
 
 **触发**：训练者推送了 commit `0e3b917`（SFT v3 训练完成），与本地 TRAINER.md 修改冲突。

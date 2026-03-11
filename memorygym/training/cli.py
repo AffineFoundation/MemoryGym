@@ -281,7 +281,8 @@ def cmd_grpo(args: argparse.Namespace) -> int:
         model.parameters(), lr=args.lr, weight_decay=0.01)
 
     templates = args.templates or [
-        "company", "research", "city", "hospital", "sport", "movie"]
+        "company", "research", "city", "hospital", "sport", "movie",
+        "university", "codebase"]
     from random import Random
     rng = Random(args.seed)
 

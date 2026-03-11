@@ -272,6 +272,14 @@
 
 **建议**：训练 checkpoint 保存到持久目录而非 `/tmp/`
 
+#### F18 — RiskPO：Risk-aware RL 替代 GRPO（审计线程前沿搜索 A158）
+
+**发现**：RiskPO（arXiv 2510.00911）将 risk-sensitive optimization 引入 LLM RL 训练。传统 GRPO/PPO 优化 expected return（均值），RiskPO 优化 CVaR（条件风险值）——关注 worst-case 性能而非平均性能。在高方差 reward 场景下显著优于标准 GRPO。
+
+**影响**：MemoryGym 的记忆任务 reward 方差极大（budget 用完后 correction 全失败 → reward=0，vs 偶尔成功 → reward 跳变）。GRPO v2 的 policy collapse 可能部分归因于高方差 reward 下的梯度不稳定。RiskPO 的 risk-aware 优化可能比 IPS（F14）更根本地解决此问题。
+
+**建议**：如果 IPS-GRPO（F14）仍出现不稳定，考虑 RiskPO 作为替代方案。优先级低于 F14（IPS 是 drop-in 修复，RiskPO 需要更大改动）。
+
 ---
 
 ## 训练 CLI

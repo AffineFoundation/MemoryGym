@@ -37,6 +37,7 @@ htmlcov/
 
 # Development log (local only, not committed)
 devlog/
+data/
 
 # Runtime artifacts
 logs/

@@ -162,7 +162,8 @@ def run_dry_smoke(tier: str = "lite") -> dict:
 
     # 5. Multi-template
     print("\n[5/5] Multi-template validation...")
-    for tmpl in ("company", "research", "city", "hospital", "sport", "movie"):
+    for tmpl in ("company", "research", "city", "hospital", "sport", "movie",
+                  "university", "codebase"):
         env = MemoryEnv(tmpl, tier="lite", seed=0)
         obs = env.reset(seed=0)
         assert "Event" in obs
