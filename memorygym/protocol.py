@@ -45,7 +45,7 @@ TIERS: dict[str, dict[str, int]] = {
 
 OFFICIAL_SEEDS = list(range(10))
 
-OFFICIAL_TEMPLATES = ["company", "research", "city", "hospital", "sport", "movie"]
+OFFICIAL_TEMPLATES = ["company", "research", "city", "hospital", "sport", "movie", "university", "codebase"]
 
 SCHEMA_VERSION = "1.0"
 

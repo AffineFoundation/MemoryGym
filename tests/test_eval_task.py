@@ -69,7 +69,8 @@ class TestWorldbenchTierParam:
 
 class TestWorldbenchAllTemplates:
     @pytest.mark.parametrize("template", [
-        "company", "research", "city", "hospital", "sport", "movie"])
+        "company", "research", "city", "hospital", "sport", "movie",
+        "university", "codebase"])
     def test_template_creates_task(self, template):
         from memorygym.worlds.eval_task import worldbench
         task = worldbench(seed=0, template=template, tier="lite")

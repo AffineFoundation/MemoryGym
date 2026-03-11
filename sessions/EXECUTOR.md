@@ -71,6 +71,7 @@
 
 ## 已完成
 
+### Phase 101 — university + codebase 加入 OFFICIAL_TEMPLATES ✅
 ### Phase 100 — SFT 轨迹 _compact_document 使用原始值修复 ✅
 ### Phase 99 — generate_stream ingest 文档渲染时序修复 ✅
 ### Phase 98 — Correction 引导消息增强 ✅
