@@ -46,13 +46,14 @@ class AnswerValidator:
 
         if question_type in ("retrieval", "update", "aggregation",
                               "cross_category", "ratio", "delta",
+                              "counterfactual",
                               "relationship_hop", "relationship_chain",
                               "temporal_extreme", "relationship_count",
                               "multi_constraint"):
             if self._numeric_match(answer, ground_truth):
                 return True
 
-        if question_type in ("synthesis", "cross_domain", "conditional",
+        if question_type in ("synthesis", "conditional",
                               "comparison", "multi_hop", "outlier"):
             if self._synthesis_match(answer, gt):
                 return True
