@@ -46,14 +46,15 @@ python -m memorygym.bench --model <MODEL> --seed <SEED> --template <TEMPLATE> [-
 ## 可用模型
 
 按评测价值排序（Chutes 平台，base_url 不需要指定，代码自动处理）：
-- `Qwen/Qwen3.5-397B-A17B-TEE` — 最强开源
+- `Qwen/Qwen3.5-397B-A17B-TEE` — 最强开源，397B MoE
+- `Qwen/Qwen3-235B-A22B-Instruct-2507-TEE` — 第二强
 - `moonshotai/Kimi-K2.5-TEE` — 数据最多的模型
 - `MiniMaxAI/MiniMax-M2.5-TEE`
 - `zai-org/GLM-5-TEE`
 
 ## 可用模板
 
-company, research, city, hospital, sport, movie, university, codebase（共 8 个，每个 22-23 属性）
+company, research, city, hospital, sport, movie, university, codebase（共 8 个，每个 21-23 属性）
 
 ---
 
@@ -94,6 +95,37 @@ python -m memorygym.bench --model Qwen/Qwen3.5-397B-A17B-TEE --seed 1 --template
 ```
 
 **完成标准**：至少 8 个新 eval（优先级 1），理想 10 个（含优先级 2）。全部 success:true。
+
+**Priority 1 结果（8/8 完成 ✅，全部 v0.10.17）**：
+
+| Model | Template | Comp | B | M | R | E | Stored |
+|-------|----------|------|---|---|---|---|--------|
+| Qwen3.5 | university s0 | **46%** | 57% | 33% | 57% | 30% | 36 |
+| Qwen3.5 | movie s0 | **43%** | 57% | 50% | 33% | 27% | — |
+| Kimi | codebase s0 | 19% | 20% | 33% | 11% | 10% | 34 |
+| Kimi | university s0 | 14% | 14% | 33% | 0% | 7% | 33 |
+| Qwen3.5 | codebase s0 | 12% | 0% | 33% | 11% | 7% | 35 |
+| Qwen3.5 | sport s0 | 9% | 17% | 0% | 12% | 7% | 35 |
+| Kimi | sport s0 | 9% | 17% | 0% | 12% | 7% | 15 |
+| Kimi | movie s0 | 0% | 0% | 0% | 0% | 0% | 33 |
+
+**P1 摘要**：M>0% = 5/8 (63%)。Qwen3.5 university/movie 突破 40%+。Kimi movie 全零（ChromaDB 检索全部失败）。
+
+**Priority 2 结果（2/2 完成 ✅，全部 v0.10.17）**：
+
+| Model | Template | Comp | B | M | R | E | Stored |
+|-------|----------|------|---|---|---|---|--------|
+| Qwen3.5 | research s1 | **24%** | 43% | 33% | 0% | 13% | 33 |
+| Kimi | city s1 | **16%** | 12% | 24% | 17% | 10% | 29 |
+
+**Batch 34 完成 ✅（10/10 evals, all v0.10.17）**
+
+**Phase 112 关键发现**：
+- **M>0%**: 7/10 (70%) — 远超 B33 的 44%
+- **新全时高分**: Qwen3.5 university 46%, Qwen3.5 movie 43%
+- **Movie M=50%**: 历史首次 maintenance 超过 33%
+- **Kimi movie 0%**: ChromaDB 搜索完全失败（movie 实体名高相似度问题持续）
+- **Sport M=0%**: 两模型均 0%（sport corrections 搜索困难）
 
 ---
 
