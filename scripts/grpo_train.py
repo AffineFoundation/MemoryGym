@@ -94,6 +94,7 @@ def run_episode(
     last_event_idx = -1
     turns_on_event = 0
     max_turns_per_event = 5
+    turn_rewards = []  # Per-turn shaped rewards for turn-level advantage
 
     while not done and turn < max_turns:
         # Context window management: keep system + last N turns
@@ -155,16 +156,20 @@ def run_episode(
         # Parse and execute
         tool_calls = parse_tool_calls(model_text)
 
+        turn_reward = 0.0
         if not tool_calls:
-            _, _, done, info = env.step({"tool": "next"})
+            _, step_r, done, info = env.step({"tool": "next"})
+            turn_reward += step_r
             if done:
+                turn_rewards.append(turn_reward)
                 break
             next_obs = env._format_event(env._stream[env._event_idx])
             context.append({"role": "user", "content": next_obs})
         else:
             feedback_parts = []
             for action in tool_calls:
-                obs_text, _, done, info = env.step(action)
+                obs_text, step_r, done, info = env.step(action)
+                turn_reward += step_r
                 feedback_parts.append(format_tool_result(action, info))
                 if done:
                     break
@@ -172,11 +177,13 @@ def run_episode(
             if not done:
                 feedback += "\n\n" + obs_text
             context.append({"role": "user", "content": feedback})
+        turn_rewards.append(turn_reward)
 
         turn += 1
 
     reward = env.get_verifiable_reward()
     stats = info.get("episode_stats", {}) if info else {}
+    stats["turn_rewards"] = turn_rewards
     if verbose:
         print(f"    Episode done: turns={turn} reward={reward:.3f} "
               f"correct={env._correct_count}/{env._total_questions} "
@@ -205,9 +212,6 @@ def compute_grpo_loss(
 
     ratio = exp(log_policy - log_ref) on assistant tokens.
     Loss = -min(ratio * A, clipped_ratio * A) + kl_coeff * KL
-
-    Uses peft's disable_adapter_layers() to get reference logits without
-    loading a separate model (reference = base + merged SFT, no GRPO LoRA).
 
     Args:
         model: The trainable peft model.
@@ -422,7 +426,8 @@ def main():
         "--templates", nargs="+",
         default=["company", "research", "city",
                  "hospital", "sport", "movie",
-                 "university", "codebase"],
+                 "university", "codebase",
+                 "project", "agentteam"],
         help="Templates to sample from")
     parser.add_argument(
         "--max-turns", type=int, default=100,
@@ -436,6 +441,9 @@ def main():
     parser.add_argument(
         "--rollout-max-tokens", type=int, default=16384,
         help="Max tokens visible during rollout (lower = more memory pressure)")
+    parser.add_argument(
+        "--turn-level", action="store_true",
+        help="Use per-turn shaped rewards for advantage (F42/MT-GRPO)")
     parser.add_argument(
         "--lr", type=float, default=1e-5,
         help="Learning rate")
@@ -633,9 +641,33 @@ def main():
             else:
                 ips_weights = [1.0] * len(group_rewards)
 
-            for messages, reward, w in zip(group_messages, group_rewards,
-                                           ips_weights):
-                advantage = (reward - mean_r) / (std_r + eps) * w
+            # Collect shaped reward totals for turn-level mixing
+            group_shaped = []
+            for si in step_stats[-len(group_rewards):]:
+                tr = si.get("turn_rewards", [])
+                group_shaped.append(sum(tr) if tr else 0.0)
+
+            if args.turn_level and any(s != 0 for s in group_shaped):
+                # Mix episode composite with shaped reward total
+                shaped_mean = sum(group_shaped) / len(group_shaped)
+                shaped_std = (sum((s - shaped_mean)**2
+                              for s in group_shaped)
+                              / len(group_shaped)) ** 0.5
+            else:
+                shaped_mean = shaped_std = 0.0
+
+            for messages, reward, w, shaped_total in zip(
+                    group_messages, group_rewards,
+                    ips_weights, group_shaped):
+                ep_adv = (reward - mean_r) / (std_r + eps)
+                if args.turn_level and shaped_std > eps:
+                    # 50/50 mix of episode and shaped advantages
+                    shaped_adv = (shaped_total - shaped_mean) / (
+                        shaped_std + eps)
+                    advantage = 0.5 * ep_adv + 0.5 * shaped_adv
+                else:
+                    advantage = ep_adv
+                advantage *= w
                 all_trajectories.append((messages, advantage))
 
         # Phase 2: Training (with grad)

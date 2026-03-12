@@ -414,6 +414,8 @@ def build_grpo_cmd(args: argparse.Namespace) -> str:
         parts.append(f"--templates {' '.join(args.templates)}")
     if args.ips:
         parts.append("--ips")
+    if getattr(args, "turn_level", False):
+        parts.append("--turn-level")
     return "python3 scripts/grpo_train.py " + " ".join(parts)
 
 
@@ -808,6 +810,8 @@ Examples:
                             help="Enable IPS-GRPO: inverse probability scaling")
     grpo_train.add_argument("--rollout-max-tokens", type=int, default=16384,
                             help="Max tokens during rollout (lower = more memory pressure)")
+    grpo_train.add_argument("--turn-level", action="store_true",
+                            help="Mix shaped per-turn rewards into advantage (F42/MT-GRPO)")
 
     args = parser.parse_args()
 

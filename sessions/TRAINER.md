@@ -827,21 +827,16 @@ memorygym/training/
 
 ## 待办
 
-1. **GRPO v4a 短实验**（当前优先，GPU 已可用）
+1. **GRPO v4a 短实验**（当前优先，🔴 GPU 全部被占用 ~11GB free）
    - ✅ `--rollout-max-tokens` 已实现，context pressure 有效（v4a test: writes=0→writes=7）
-   - ✅ GPU SSH 已恢复，GRPO v3 KL 实验已完成（reward 0→0.558, best 5/10）
-   - v3 问题：模型绕过记忆直接答题（writes=0），需 context pressure 迫使存储
-   - 实验命令：`--tier standard --rollout-max-tokens 6144 --ips --kl-coeff 0.05 --steps 3`
+   - ✅ `--turn-level` 已实现：shaped reward 参与 advantage 计算（50/50 混合 episode + shaped）
+   - ✅ 10 个模板已同步（新增 project/agentteam）
+   - ✅ per-turn shaped reward 收集（`turn_rewards` in stats）
+   - 实验命令：`--tier standard --rollout-max-tokens 6144 --ips --kl-coeff 0.05 --turn-level --steps 3`
    - 轻量配置：`--group-size 2 --groups-per-step 1`（每 step 仅 2 episodes，~15 min/step）
-   - 详见 F67（context 漏洞）、F68（shaped reward 冲突）、F69（episode 时长）
+   - **等 GPU 空闲后执行**
 
-2. **F42 (MAPO/MT-GRPO) turn-level advantage**（设计就绪，v4a 后实现）
-   - **F48（MT-GRPO 新发现）**：标准 GRPO 在 multi-turn 会导致 tool collapse，turn-level advantage 必需
-   - **F49（LOOP：turn-level PPO**）：Plan B。leave-one-out baseline 比 group mean 更稳定
-   - 实现要点：`_compute_grpo_loss` 中按 `<|im_start|>assistant` 分段，每段用 shaped reward 计算独立 advantage
-   - 依赖 F41/F43 shaped reward 提供 per-turn reward 信号（已实现）
-
-3. 多模板 curriculum 效果验证（lite → standard → multi）
+2. 多模板 curriculum 效果验证（lite → standard → multi）
 
 ## 训练数据洞察（2026-03-11 分析）
 
