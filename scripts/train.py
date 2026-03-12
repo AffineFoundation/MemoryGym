@@ -406,6 +406,7 @@ def build_grpo_cmd(args: argparse.Namespace) -> str:
         f"--tier {args.tier}",
         f"--lora-rank {args.lora_rank}",
         f"--kl-coeff {args.kl_coeff}",
+        f"--rollout-max-tokens {args.rollout_max_tokens}",
     ]
     if args.adapter:
         parts.append(f"--adapter {shlex.quote(args.adapter)}")
@@ -805,6 +806,8 @@ Examples:
                             help="KL penalty coefficient (0 to disable)")
     grpo_train.add_argument("--ips", action="store_true",
                             help="Enable IPS-GRPO: inverse probability scaling")
+    grpo_train.add_argument("--rollout-max-tokens", type=int, default=16384,
+                            help="Max tokens during rollout (lower = more memory pressure)")
 
     args = parser.parse_args()
 

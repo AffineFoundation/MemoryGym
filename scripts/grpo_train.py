@@ -67,6 +67,7 @@ def run_episode(
     max_new_tokens: int = 512,
     temperature: float = 0.7,
     chat_kwargs: dict | None = None,
+    rollout_max_tokens: int = 16384,
 ) -> tuple[list[dict], float, dict]:
     """Run a single episode, return (messages, reward, stats).
 
@@ -127,7 +128,7 @@ def run_episode(
             **chat_kwargs)
         inputs = tokenizer(
             input_text, return_tensors="pt",
-            truncation=True, max_length=16384).to(model.device)
+            truncation=True, max_length=rollout_max_tokens).to(model.device)
 
         with torch.no_grad():
             outputs = model.generate(
@@ -433,6 +434,9 @@ def main():
         "--max-length", type=int, default=8192,
         help="Max sequence length for training")
     parser.add_argument(
+        "--rollout-max-tokens", type=int, default=16384,
+        help="Max tokens visible during rollout (lower = more memory pressure)")
+    parser.add_argument(
         "--lr", type=float, default=1e-5,
         help="Learning rate")
     parser.add_argument(
@@ -585,6 +589,7 @@ def main():
                     max_new_tokens=args.max_new_tokens,
                     temperature=temp,
                     chat_kwargs=chat_kwargs,
+                    rollout_max_tokens=args.rollout_max_tokens,
                 )
                 group_rewards.append(reward)
                 group_messages.append(messages)
