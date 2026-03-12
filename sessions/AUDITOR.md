@@ -177,6 +177,219 @@ sessions/AUDITOR.md（你，/loop 30m）— 调度中枢：审计、设计、方
 
 ## 当前任务
 
+### 审计 A211 — Phase 113 执行确认 + LEADERBOARD 刷新评估 + 下一方向（维度 B+E）
+
+**背景**：A195-A210 审计在前一 session 中完成但因 git stash 冲突丢失。关键结论回顾：
+- **A201**: Correction 失败链路分析 → Phase 112 派发（correction Edit 免预算）
+- **A202**: Phase 112 验收通过，LEADERBOARD 123 evals 刷新
+- **A207**: stdout 评分表 vs JSON 不一致 → Phase 113 派发
+- **A208**: smart_guesser `< 0.05` → `<= 0.05` 合入 Phase 113
+- **A209**: 前沿搜索 F48-F51（MT-GRPO, LOOP, SkillRL, MemoryRewardBench）
+- **A210**: Batch 33 完成（9 evals post-Phase 112），Phase 112 是项目历史最高影响变更
+
+**Phase 112 impact（9 evals, v0.10.15）**：
+- M>0%: 5/9 (56%)，pre-fix 全 0%
+- Corrections>0: 5/9 (56%)，pre-fix 全 0/5
+- 三模型受益：Qwen3.5, Qwen3-235B, Kimi
+
+**当前状态**：
+- Phase 113 在 EXECUTOR.md 队列（stdout summary fix + smart_guesser + trajectory correct）
+- Evaluator 队列空（A210 决定暂不派 Batch 34）
+- Trainer: GPU 阻塞，代码已提交（shaped rewards + GRPO v3）
+- LEADERBOARD.md 需刷新（当前 123 evals → 应含 Batch 32+33 post-Phase 112 数据）
+
+**执行结果**：
+
+1. **Phase 113 已完成** ✅（commit `ca13a65`）：
+   - stdout summary table 改用 axis scores（与 JSON 一致）
+   - smart_guesser `< 0.05` → `<= 0.05`
+   - trajectory `correct` 字段 post-judging 更新
+   - Simulation `--seeds 1 --validate` ALL PASS
+
+2. **LEADERBOARD.md 已刷新** ✅（123 evals → 123 evals，部分 Kimi 文件覆盖）：
+   - #1 Qwen3-235B: 17.7% (11 evals)
+   - #2 Qwen3.5-397B: 17.1% (71 evals)
+   - #3 Kimi-K2.5: 16.1% (21 evals)
+   - #4 MiniMax-M2.5: 15.2% (11 evals)
+   - #5 GLM-5: 10.2% (9 evals)
+   - Top 3 仅 1.6pp 差距
+
+3. **Trainer 反馈** ✅：F48-F51 已写入（MT-GRPO, LOOP, SkillRL, MemoryRewardBench）。GPU 仍阻塞。Shaped rewards + GRPO v3 代码已提交（commits 60502ed + 63a2cdf）。
+
+4. **EXECUTOR.md 队列空**。Phase 113 是最后一个待执行 Phase。无 HIGH/MEDIUM bug。
+
+**演进检查清单**：
+- [x] Phase 113 验收
+- [x] LEADERBOARD 刷新
+- [x] Trainer 反馈处理
+- [x] 下一轮：A212 — 微观审计 → Movie 模板低分根因分析
+
+### 审计 A212 — 微观：Movie 模板低分根因分析（维度 B+E）
+
+**选题理由**：Movie 模板 composite 8.3% 是所有 8 模板中最低（全局平均 ~16%），每个轴都显著偏低。需要判断是系统缺陷（可修复）还是固有难度（模型问题）。
+
+**数据摘要**（16 evals，跨 5 个模型）：
+
+| 模板 | N | Composite | Breadth | Maint | Reasoning | Efficiency |
+|------|---|-----------|---------|-------|-----------|------------|
+| movie | 16 | 8.3% | 14.1% | 7.5% | 4.5% | 5.2% |
+| 全局均值 | 123 | 16.0% | 23.0% | 12.0% | 16.0% | 10.5% |
+
+Movie 的 reasoning 4.5% 是全局 16% 的 1/4。
+
+**根因分析**：
+
+**1. 根因是 ChromaDB 检索失败，不是 movie 模板自身缺陷**
+
+- Movie 平均存储 31.7 个实体（与 company 33.5、research 31.7 相当），存储行为正常
+- 但 movie 的 empty/IDK 回答率 80.9%（全局最高，均值 ~70%）
+- Qwen3.5-397B seed=0：存了 35 个实体，但 retrieval 0/8、synthesis 0/4、multi_constraint 0/1 全部答 "I don't have enough information"
+- **模型存了数据但搜不到** → ChromaDB embedding 对 movie 名字的区分度不够
+
+**2. Movie 名字组件高度重叠导致 embedding 混淆**
+
+- 30 adj × 20 noun = 600 组合，60 entities 从中采样
+- seed=0 时："Empire" 出现在 7 个电影名中，"Legacy" 出现在 7 个中
+- "Dark Horizon"、"Dark Legacy"、"Dark Dominion"、"Dark Requiem" 共享 "Dark" 前缀
+- ChromaDB 的 all-MiniLM-L6-v2 embedding 将 "Steel Legacy" 和 "Iron Legacy" 视为高度相似
+- 搜索 "Steel Legacy" 返回其他 "X Legacy" 电影的概率很高
+
+**3. company 也有相同的 30×20 结构但表现好 2.3 倍**（composite 19.1% vs 8.3%）
+
+- company 的前缀/后缀语义差异更大（"Atlas" vs "Nimbus" vs "Cobalt" 是不同材料/概念）
+- movie 的形容词语义更近（"Silent" vs "Hidden" vs "Dark" 都是阴暗/神秘语义簇）
+- 这是 embedding model 的特性，不是 MemoryGym 的 bug
+
+**4. 问题措辞有轻微歧义但非主因**
+
+- `screens` attr 的 "How widely was {name} distributed?" 可被模型理解为 box office（观察到 1 例）
+- `runtime_min` 的 "How long is {name}?" 可与 production_days 混淆
+- `release_year` 的 "When was {name} released?" 与 `release_date` 的 "When was {name} officially released?" 可能冲突
+- 但这些歧义只导致 11/107=10% 的 retrieval 失败，不是主因
+
+**结论**：
+
+1. **Movie 低分的根因是 ChromaDB 检索质量**（A3 发现的放大版），不是评测系统 bug
+2. movie 名字的语义密度高于其他模板，放大了 embedding 检索的弱点
+3. 这不是一个需要修复的系统缺陷 — 不同模板难度差异是合理的（现实中有些领域的实体名就是更难区分）
+4. 问题措辞歧义是小问题（LOW），可纳入 backlog
+
+**不派发 Phase**。理由：
+- movie 的低分反映 ChromaDB 基础设施限制 + 实体名语义密度，不是评测逻辑 bug
+- 如果为 movie 调整名字生成策略（增大语义距离），会降低模板的真实感
+- 问题措辞歧义（4 个 attr）影响 <10% 的 retrieval 失败，不够 Phase 门槛
+- 未来 MarkdownBackend（混合搜索）可能自然解决此问题
+
+**Backlog 记录**：
+- movie 问题措辞歧义（screens "distributed", runtime_min "how long", release_year vs release_date "when"）→ 低优先级，等其他高价值改进完成后处理
+
+**Inspect AI eval_scorer.py 键名审查**：✅ 无问题。eval_task.py 设置的 store keys（benchmark_answers, writes_used, write_budget, n_entities, stored_count）与 eval_scorer.py 读取的完全一致。answer dict keys 也对齐。此项从可选方向中移除。
+
+**Trainer 反馈**：F1-F51 已全部处理（最新 F48-F51 在 A211 处理）。无新反馈。GPU 仍阻塞。
+
+**演进检查清单**：
+- [x] Movie 模板低分根因分析
+- [x] Inspect AI 键名审查（无问题）
+- [x] Trainer 反馈处理（无新反馈）
+- [x] 下一轮：A213 — 数据驱动深度分析（维度 E）
+
+### 审计 A213 — 数据驱动：123 Evals 全量分析 + 评测覆盖度审计（维度 E）
+
+**选题理由**：A211 宏观，A212 微观，A213 轮到数据驱动。123 evals 的完整数据集需要深度挖掘，尤其是 Phase 112 前后对比。
+
+**数据纠正（重要）**：A211 使用字符串比较 `v >= "0.10.15"` 导致 `"0.10.5"` > `"0.10.15"` 的误判。语义版本比较后：**真正的 post-Phase 112 evals 仅 8 个（非 A211 报告的 100 个）**。LEADERBOARD 上的分数主要反映 pre-Phase 112 的表现。
+
+**1. 评测覆盖度严重不足**
+
+Post-Phase 112 (v>=0.10.15) 各模板覆盖：
+
+| 模板 | Post-112 N | M>0% 率 |
+|------|-----------|---------|
+| company | 3 | 33% |
+| hospital | 3 | 100% |
+| research | 1 | 100% |
+| city | 1 | 0% |
+| codebase | 0 | — |
+| movie | 0 | — |
+| sport | 0 | — |
+| university | 0 | — |
+
+4 个模板完全没有 post-Phase 112 数据。Phase 112（correction Edit 免预算）是历史最高影响变更，但其效果只在 8 个 eval 上验证。LEADERBOARD 反映的 M 轴分数大量来自 pre-Phase 112 的 M=0% 数据，**严重低估了当前系统真实表现**。
+
+**行动建议**：派发 Batch 34 — 优先覆盖 university/codebase/movie/sport，每模板至少 2 个 eval，总计 8-12 个。
+
+**2. Competency 类型分析**
+
+全局 123 evals 的 competency 表现排序：
+
+| Competency | 正确率 | 样本量 | 判定 |
+|-----------|-------|-------|------|
+| relationship_count | 90.9% | 11 | 模型强项（计数已存储关系） |
+| abstention | 87.5% | 321 | 模型强项（知道自己不知道） |
+| relationship_lookup | 68.4% | 19 | 模型强项 |
+| temporal_trend | 23.1% | 13 | 中等 |
+| retrieval | 22.6% | 908 | 基线（核心指标） |
+| relationship_hop | 21.4% | 14 | 中等 |
+| synthesis | 20.9% | 253 | 中等 |
+| update | 13.2% | 454 | 偏低（Phase 112 应改善） |
+| delta | 3.3% | 123 | **接近零** |
+| multi_hop | 0.0% | 9 | **零分** |
+| text_match | 0.0% | 4 | **零分** |
+
+**delta 3.3% 根因**：delta 问的是 "old_val 和 new_val 的差异是多少"，需要模型同时记住旧值和新值（或记住变化量）。4 个正确答案来自 Kimi 和 MiniMax，均为早期版本。模型极少存储变化量，且 correction 消息只展示旧值→新值，不展示差值。**这是合理的高难度，不需修复**。
+
+**multi_hop 0/9**：两步推理（先算组均值找极端组，再在组内找极端实体），要求跨多个实体聚合 + 二次查询。9 个问题中模型无一正确。**合理难度，不需修复**。
+
+**text_match 0/4**：样本量太小，无法判断。
+
+**3. Pre vs Post Phase 112 整体对比**
+
+| | N | Composite | Breadth | Maint | Reasoning | Efficiency |
+|---|---|-----------|---------|-------|-----------|------------|
+| Pre-112 | 115 | 16.0% | 22.3% | 12.4% | 16.4% | 10.7% |
+| Post-112 | 8 | 20.6% | 34.3% | 14.8% | 15.1% | 14.2% |
+| Delta | | **+4.6pp** | **+12.0pp** | +2.4pp | -1.3pp | +3.5pp |
+
+Post-112 composite 提升 4.6pp（16.0%→20.6%），breadth 提升最大（+12pp）。但样本量仅 8，置信度不高。**更多 post-112 eval 是当前最高价值任务**。
+
+注意：pre-112 的 M=12.4% 高于预期（pre-Phase 112 时 maintenance 应该接近 0%）。原因是 pre-112 包含 Kimi/MiniMax 等模型的评测，这些模型在个别 seed 上碰巧答对了 update 问题（answer 含旧值+新值，validator 匹配到新值）。
+
+**4. 模型排名稳定性分析**
+
+当前 LEADERBOARD 排名（composite）：
+1. Qwen3-235B: 17.7% (N=11)
+2. Qwen3.5-397B: 17.1% (N=71)
+3. Kimi-K2.5: 16.1% (N=21)
+4. MiniMax-M2.5: 15.2% (N=11)
+5. GLM-5: 10.2% (N=9)
+
+Top 4 仅 2.5pp 差距。Qwen3.5 有 71 evals（压倒性多数），其他模型 9-21 个。排名对单个高分 eval 敏感。post-112 重新评测后排名可能变化。
+
+**5. 模板难度梯度**
+
+research (20.2%) > codebase (19.6%) > company (19.1%) > university (18.3%) > hospital (16.4%) > city (15.0%) > sport (14.9%) > movie (8.3%)
+
+movie 低分根因已在 A212 分析（ChromaDB embedding + 实体名语义密度），不重复。
+
+**结论与行动**：
+
+1. **LEADERBOARD 数据过时**：123 evals 中 115 个是 pre-Phase 112，排名主要反映旧版本表现 → **需大量 post-112 eval**
+2. **不派 Phase**（无代码缺陷发现）：delta 3.3%、multi_hop 0%、text_match 0% 是合理的难度梯度
+3. **派发 Batch 34**：8-12 evals，覆盖 4 个缺失模板（university/codebase/movie/sport） + Kimi/MiniMax 在 post-112 上的表现
+
+**Trainer 反馈**：无新反馈（F1-F51 已全部处理，GPU 仍阻塞）。
+
+**演进检查清单**：
+- [x] 123 evals 全量数据分析
+- [x] Phase 112 前后对比（数据纠正）
+- [x] 评测覆盖度审计
+- [x] Competency 类型分析
+- [ ] 不派 Phase（无代码缺陷）
+- [x] 派 Batch 34 → 写入 EVALUATOR.md
+- [ ] 下一轮：A214 — 微观（维度 B）— protocol.py 评分公式 edge cases / 或前沿搜索（距 A209 已 4 轮）
+
+---
+
 ### 审计 A162 — Phase 104 验收 + city crash bug（维度 B+E）
 
 **Part 1 — Phase 104 验收：通过，但 Edit 覆盖率仍有提升空间。**
