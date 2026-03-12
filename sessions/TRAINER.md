@@ -70,44 +70,45 @@
 - **环境级**：GPU 机不可用 → 本地只做代码准备，标记阻塞
 - **方向级**：连续多个任务无进展 → 在 devlog 记录分析，质疑方向本身
 
-## 当前阻塞状态与选项（2026-03-12）
+## 当前阻塞状态与选项（2026-03-12 更新）
 
-### 主阻塞：GPU SSH 不可达
+### 主阻塞：GPU SSH 不可达（**持续 8+ 天**）
 
 ```
 $ ssh xmyf@123.181.192.110 -p 60022
 Permission denied (publickey,password).
+debug1: Offering public key: /home/claudeuser/.ssh/id_ed25519
+debug1: Authentications that can continue: publickey,password
+...
+xmyf@123.181.192.110: Permission denied (publickey,password).
 ```
 
-连续失败 7+ 次。原因未知（SSH key rotation？网络改变？）。
+**连续失败超过 8 天**。诊断：
+- SSH 连接建立成功（网络 OK）
+- 公钥认证失败（`/home/claudeuser/.ssh/id_ed25519` 无法通过）
+- 密码认证不可用（无终端设备）
+- 根因推测：远端 SSH key 配置变更 或 用户权限变更
 
-### 本地可做工作（无 GPU）
+### 本地所有可做工作（无 GPU）均已完成
 
 ✅ 已完成：
 - 本地测试通过（47/47 training tests）
 - 代码审计（IPS/KL/DAPO/Clip 实现）
+- SFT v6 数据生成完毕（160 perfect + 160 strategic）
 - Training-Free GRPO 可行性评估（不可行，已记录）
 - Frontier 反馈分类（F48-F51 已纳入优先级）
+- GRPO v3 代码完全就绪（所有改动已提交）
 
-🟡 可继续做（低价值）：
-- 代码清洁（无新逻辑）
-- 文档补充（已基本完整）
-- 本地冒烟测试迭代（已通过）
+❌ **无法继续（必须 GPU）**：
+- GRPO v3 训练实验 ← BLOCKED
+- 模型权重微调 ← BLOCKED
+- 轨迹采样和评测 ← BLOCKED
 
-❌ 必须 GPU：
-- GRPO v3 训练实验
-- 模型权重微调
-- 轨迹采样
+### 建议升级此阻塞到 AUDITOR
 
-### 策略选项
+**当前状态**：所有本地工作完成，代码和数据完全准备好，仅等待 GPU 环境恢复。8+ 天的持续阻塞已超出监控范围，需要系统管理层面的干预。
 
-| 选项 | 风险 | 价值 |
-|------|------|------|
-| 等待 GPU 恢复后启动 GRPO v3 | 中（恢复时间不确定） | 高（完整训练流程） |
-| 迭代改进本地代码（无 GPU）| 低 | 低（无法验证） |
-| 向 AUDITOR 升级此阻塞 | 低 | 中（其他 phase 可并行） |
-
-**当前选择**：继续监控 GPU 恢复。若 GPU 在 24h 内恢复 → 立即启动 GRPO v3。若超过 24h → 向 AUDITOR 报告并建议其他开发线程接手优化 evaluation 层面的问题（如 ChromaDB entity 混淆）。
+**后续行动**：建议 AUDITOR 联系基础设施管理者解决 SSH 问题。同时，其他执行者可处理 evaluation/worlds 相关的 Phase 任务，不必等待 GPU 恢复。
 
 ## 提示词自优化
 
