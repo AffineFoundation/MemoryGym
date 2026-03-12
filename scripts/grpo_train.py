@@ -288,8 +288,11 @@ def compute_grpo_loss(
                 ref_token_log_probs = ref_log_probs.gather(
                     2, shift_labels.clamp(min=0).unsqueeze(-1)).squeeze(-1)
 
-            # KL ≈ mean(log_policy - log_ref) on assistant tokens
-            kl_per_token = (token_log_probs - ref_token_log_probs) * mask
+            # KL via Schulman's k3 estimator: (r-1) - log(r)
+            # More stable gradient than naive log_policy - log_ref (F2 audit)
+            log_ratio = token_log_probs - ref_token_log_probs
+            ratio = log_ratio.exp()
+            kl_per_token = ((ratio - 1) - log_ratio) * mask
             kl = kl_per_token.sum() / n_tokens
             total_loss = total_loss + kl_coeff * kl
             total_kl += kl.item()

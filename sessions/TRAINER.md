@@ -31,24 +31,26 @@
 ## 每次 /train
 
 ```
-1. git pull --rebase origin main（同步执行者和其他开发者的变更）
-2. 读本文件，执行当前任务
-3. 代码变更 → 本地编辑 → SSH 到 GPU 机跑测试
+1. git pull --rebase origin main（同步变更，有冲突则理解双方意图后解决）
+2. 读本文件，执行当前待办
+3. 代码变更 → 本地编辑 → GPU 机跑测试
 4. 训练实验 → GPU 机执行，记录结果到 devlog/
-5. 任务完成 → git add + git commit + git push origin main（**禁止** Co-Authored-By、Generated-by 等元数据行）
-6. 移入「已完成」，提升下一待办
-7. 待办空 → 战略推导
+5. 训练完成 → 必须 smoke test 验证（loss 低 ≠ 效果好）
+6. 阶段性完成 → git commit + git push
+7. 移入「已完成」，提升下一待办
+8. 待办空 → 战略推导
 ```
-
-**协作规则**：执行者是另一个独立开发者，会推送代码到同一个远程仓库。每次开发前必须 `git pull --rebase`，提交后必须 `git push`。如果 pull 有冲突，**在理解双方变更意图的基础上解决**，不要盲目接受任何一方。
 
 ## 任务执行规范
 
-- **代码任务**：本地改代码 → SSH 到 GPU 机跑 `pytest tests/ -q` → 通过才算完成
-- **训练实验**：记录完整配置（模型、tier、seed、超参） + 结果（分数、曲线）到 `devlog/`
+- **代码任务**：本地改代码 → GPU 机跑 `pytest tests/ -q` → 通过才算完成
+- **训练实验**：记录完整配置 + 结果到 `devlog/`，smoke test 作为验收标准
 - **完成判定**：有明确产出（测试通过 / 训练结果 / 代码合入）才算完成
-- **提交粒度**：每个功能点独立提交，描述 why 不是 what
-- **禁止提交敏感信息**：IP 地址、SSH 地址、`/home/xmyf/` 等硬编码路径只能出现在 `.env` 中，代码和文档用 `$GPU_SSH`、`$MODEL_PATH` 等变量引用
+- **提交规范**：
+  - 英文 commit message，描述 why 不是 what
+  - 禁止 Co-Authored-By、Generated-by 等元数据行
+  - 禁止敏感信息（IP、SSH 地址、绝对路径）出现在代码和文档中，只放 `.env`
+- **GPU 阻塞时**：不空转等待，转向本地可做的工作（代码准备、数据生成、KL 审计等）
 
 ## 战略推导
 
@@ -67,7 +69,7 @@
 ## 卡住时逐级升级
 
 - **任务级**：当前方案不通 → 换方案或拆解为子任务
-- **环境级**：GPU 机不可用 → 本地只做代码准备，标记阻塞
+- **环境级**：GPU 机不可用 → 本地做代码准备（审计 KL 实现、优化数据管线、写测试），不空转 SSH 检查
 - **方向级**：连续多个任务无进展 → 在 devlog 记录分析，质疑方向本身
 
 ## 提示词自优化
@@ -323,54 +325,37 @@ memorygym/training/
 
 ## 待办
 
-1. **GRPO v3：IPS-GRPO + KL + SFT v3 base**（当前优先，阻塞于 GPU）
-   - ✅ IPS-GRPO 已实现（Phase 103）：`--ips` flag，0.05 分桶 → 逆频率缩放 advantage
-   - ✅ KL 正则化已实现：`--kl-coeff 0.05`
-   - v2 确认 policy collapse（loss→负值），IPS 是根因修复（F14）
-   - **实验计划**：先 `--ips --kl-coeff 0`（IPS only），再 `--ips --kl-coeff 0.05`（IPS+KL），对比 v2
-   - Base checkpoint: `checkpoints/sft-v3-write-edit-read`（GPU 机）
-   - **阻塞**：GPU 机 SSH 不可达（Permission denied），等待恢复
-2. 更多 shaped reward 信号（如 search 精准度奖励、correction 完成奖励、F6 attributed reward）
+1. **GRPO v4 设计**（当前优先）
+   - v3 完成：KL Schulman k3 有效（无 policy collapse），reward 0→0.558，best 5/10
+   - 问题：模型学会"不存储直接答题"（writes=0 也能得分）— 详见 `devlog/grpo-v3.md`
+   - 根因：max_length=4096 + lite tier，文档仍在上下文中
+   - v4 方向：增加记忆压力（更多实体 / standard tier / 更短 max_length）
+   - 可用工具：IPS-GRPO（`--ips` flag, Phase 103），KL 正则化（`--kl-coeff`）
+   - 参考：F4 step-wise GRPO, F14 IPS-GRPO, F6 attributed reward
+2. 更多 shaped reward 信号（F4 step-wise + F6 attributed reward + F16 tool productivity）
 3. 多模板 curriculum 效果验证（lite → standard → multi）
 
 ## 已完成
 
-- IPS-GRPO 实现（Phase 103）：`--ips` flag，逆频率缩放防 mode collapse
-- SFT v3 完成：loss 0.1975→0.076，Write/Edit/Read 格式正确，但 0/10 correct（详见 `devlog/sft-v3.md`）
-- SFT v3 数据生成：`data/sft_v4.jsonl`（160 perfect）+ `data/sft_v4_strategic.jsonl`（160 strategic）
-- SFT v5 数据生成（Phase 104 correction fix 后）：`data/sft_v5.jsonl`（160 perfect, 3.0 edits/traj）+ `data/sft_v5_strategic.jsonl`（160 strategic, 3.0 edits/traj）— 51% correction edit rate, up from ~1.7 pre-fix
-- MemoryEnv 完整实现（reset/step 接口，ChromaDB embedding search，binary + shaped reward）
-- SFT 轨迹生成（perfect/strategic 策略，OpenAI messages 格式）
-- verl 适配器（AgentLoopBase 集成，@register memorygym_agent）
-- verl reward 函数（exact match + numeric tolerance + pre-computed reward）
-- slime 适配器（custom generate/reward，multi-turn episode）
-- 共享工具解析（_common.py：4 种格式解析 + episode runner）
-- 训练数据生成脚本（单 tier / curriculum 混合 tier）
-- 训练配置（GRPO + curriculum YAML）
-- 完整测试覆盖（36 tests in test_training.py + 32 in test_adapters.py）
-- noise/session_break 事件支持
-- GPU 冒烟测试
-- 远程训练 CLI（scripts/train.py）— SSH 远程执行 + 实时日志 + GPU 自动检测
-- SFT 训练管线完成 — loss 0.22→0.06，正确产出 `<tool_call>` 标签
-- 多卡训练支持（DDP/FSDP via accelerate）
-- SFT 全流程验收 — 结果：12 stores, 0/10 correct, reward=0.07
-- 统一训练模块（`memorygym/training/` 包重构）
-  - 单入口 CLI：`python -m memorygym.training <command>`
-  - SFT 自动数据生成 + 训练
-  - GRPO 管线（episode rollout + advantage-weighted policy gradient）
-  - 共享工具层（模型加载、assistant mask、chat template）
-  - 结构化输出（config.json, training_log.jsonl, metrics.json, episodes/）
-- GRPO 管线端到端验证 — loss=0.504, mean_r=0.350, correct=1.5/10
-  - SFT checkpoint → merge → new LoRA → rollout → GRPO loss → update
-  - 详见 `devlog/sft-baseline.md`
-- GRPO 训练基础设施
-  - gradient checkpointing + CUDA cache clearing 解决 OOM
-  - stuck detection: 非 question 事件 5 turns 无进展自动 advance
-  - `scripts/train.py` 统一 CLI（status/logs/monitor/sft/grpo）+ .env 自动加载
-  - KL 正则化防止 policy collapse（disable_adapter_layers 零拷贝 ref）
-- SFT v2b 突破 — 8 epochs, loss 1.785→0.674, **首个能正确回答的模型**
-  - 9/15 writes, 3/10 correct, reward=0.46（vs v1: 0/10, v2: 0/10）
-  - 详见 `devlog/sft-v2b.md`
-- 工具接口适配（Write/Edit/Read）— _common.py 解析 + 格式化 + 新 SFT 数据
-- train.py 增强：远程日志 tee 保存 + 自动检测最新 log + 负值 loss regex 修复
+### Infrastructure
+- MemoryEnv (reset/step, ChromaDB, binary+shaped reward) + SFT trajectory generation
+- Adapters: verl + slime + shared _common.py (4 format parsers + episode runner)
+- `memorygym/training/` package (CLI: `python -m memorygym.training <cmd>`)
+- `scripts/train.py` — remote training CLI (rsync, GPU detect, nohup, multi-GPU accelerate)
+- IPS-GRPO (Phase 103): `--ips` flag, inverse frequency reward scaling
+- Test coverage: 36 (test_training) + 32 (test_adapters)
+
+### SFT Experiments
+- v1: loss 0.22→0.06, 12 stores, 0/10 correct — learned format, not strategy
+- v2b: loss 1.785→0.674, **3/10 correct** (first model to answer) — `devlog/sft-v2b.md`
+- v3: loss 0.1975→0.076, 15 writes, 0/10 correct — correct Write/Edit/Read format — `devlog/sft-v3.md`
+  - Lesson: low loss ≠ good answers. SFT teaches format, GRPO teaches strategy
+- SFT v4/v5 data: `data/sft_v4.jsonl` (160 perfect) + `data/sft_v5.jsonl` (160 perfect, 3.0 edits/traj, 51% correction rate)
+
+### GRPO Experiments
+- v1: loss=0.504, mean_r=0.350, correct=1.5/10 — pipeline validated
+- v2: policy collapse at step 5 (loss→negative) — confirmed need for KL — `devlog/grpo-v2.md`
+- KL: Schulman k3 estimator `(r-1)-log(r)`, `--kl-coeff 0.05`
+- v3: KL works (no collapse), reward 0→0.558, best 5/10 — `devlog/grpo-v3.md`
+  - Finding: model bypasses memory (writes=0, answers from context window)
 
