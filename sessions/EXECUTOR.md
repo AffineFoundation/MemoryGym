@@ -225,6 +225,7 @@ _ROLES = ["coordinator", "worker", "monitor", "router", "planner", "executor", "
 
 ## 已完成
 
+### Phase 125 — task_id 稳定映射（TEMPLATE_REGISTRY + _parse_task_id 重写） ✅
 ### Phase 124 — 并发 & Long-Run 资源泄漏修复（MarkdownBackend/ChromaDB/bench.py close） ✅
 ### Phase 123 — LEADERBOARD.md 刷新（150 evals, 10 模板，Qwen3-235B #1） ✅
 ### Phase 122 — counterfactual validator 路由修复 + cross_domain dead code 清理 ✅

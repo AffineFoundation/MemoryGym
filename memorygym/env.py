@@ -73,7 +73,7 @@ class Actor:
         current_key = api_key or self.api_key
 
         if task_id is not None:
-            seed, template = _parse_task_id(task_id)
+            template = _parse_task_id(task_id)
 
         if template not in ALL_TEMPLATES:
             raise ValueError(
@@ -199,12 +199,18 @@ class Actor:
         return {"stopped": True, "episode_id": episode_id}
 
 
-def _parse_task_id(task_id: int) -> tuple[int, str]:
-    """Extract seed and template from a numeric task ID."""
-    templates = list(ALL_TEMPLATES.keys())
-    template_idx = task_id % len(templates)
-    seed = task_id // len(templates)
-    return seed, templates[template_idx]
+def _parse_task_id(task_id: int) -> str:
+    """Map task_id to template name via stable registry.
+
+    task_id is an index into TEMPLATE_REGISTRY (0..N-1).
+    Seed is passed separately by the caller.
+    """
+    from memorygym.worlds import TEMPLATE_REGISTRY
+    if task_id < 0 or task_id >= len(TEMPLATE_REGISTRY):
+        raise ValueError(
+            f"task_id must be 0..{len(TEMPLATE_REGISTRY) - 1}, "
+            f"got {task_id}")
+    return TEMPLATE_REGISTRY[task_id]
 
 
 def _run_evaluation(

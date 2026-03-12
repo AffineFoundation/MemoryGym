@@ -15,24 +15,34 @@ def _run(coro):
 
 
 class TestParseTaskId:
-    def test_seed_and_template_from_id(self):
+    def test_all_ids_map_correctly(self):
         from memorygym.env import _parse_task_id
-        from memorygym.worlds import ALL_TEMPLATES
-        n = len(ALL_TEMPLATES)
-        # task_id=0 → seed=0, first template
-        seed, tmpl = _parse_task_id(0)
-        assert seed == 0
-        assert tmpl in ALL_TEMPLATES
+        from memorygym.worlds import TEMPLATE_REGISTRY
+        for i, expected in enumerate(TEMPLATE_REGISTRY):
+            assert _parse_task_id(i) == expected
 
-    def test_roundtrip(self):
+    def test_out_of_range_raises(self):
         from memorygym.env import _parse_task_id
-        from memorygym.worlds import ALL_TEMPLATES
-        templates = list(ALL_TEMPLATES.keys())
-        n = len(templates)
-        for i in range(n * 3):
-            seed, tmpl = _parse_task_id(i)
-            assert tmpl == templates[i % n]
-            assert seed == i // n
+        from memorygym.worlds import TEMPLATE_REGISTRY
+        with pytest.raises(ValueError):
+            _parse_task_id(-1)
+        with pytest.raises(ValueError):
+            _parse_task_id(len(TEMPLATE_REGISTRY))
+
+    def test_stability_contract(self):
+        """First 10 entries must never change — this IS the contract."""
+        from memorygym.worlds import TEMPLATE_REGISTRY
+        expected = [
+            "company", "research", "city", "hospital", "sport",
+            "movie", "university", "codebase", "project", "agentteam",
+        ]
+        assert TEMPLATE_REGISTRY[:10] == expected
+
+    def test_determinism_same_task_id(self):
+        """Same task_id always returns same template."""
+        from memorygym.env import _parse_task_id
+        for tid in range(10):
+            assert _parse_task_id(tid) == _parse_task_id(tid)
 
 
 class TestActorInit:
