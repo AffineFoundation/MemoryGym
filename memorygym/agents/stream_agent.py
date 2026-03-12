@@ -785,6 +785,15 @@ def run_stream_agent(
                            if results[i].correct)
         print(f" {judge_results}/{n_pending} correct, {judge_elapsed:.1f}s")
 
+        # Update trajectory entries with post-judging correct values
+        judged_indices = {i for i, _, _, _, _ in pending_judge}
+        result_idx_counter = 0
+        for t_entry in trajectory:
+            if t_entry.get("type") == "question":
+                if result_idx_counter in judged_indices:
+                    t_entry["correct"] = results[result_idx_counter].correct
+                result_idx_counter += 1
+
     total_elapsed = time.time() - run_t0
     correct_count = sum(r.correct for r in results)
     total_q = len(results)

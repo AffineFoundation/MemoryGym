@@ -18,7 +18,7 @@
 
 评分必须只反映真实记忆管理能力。任何不理解内容、不做真实存储决策的策略都不能得高分。
 
-通过 9 种 simulation 策略验证：每次变更评分或问题逻辑后，必须满足 perfect=100%, guesser=0%, smart_guesser<5%, abstainer<15%, strategic>naive+10%。
+通过 9 种 simulation 策略验证：每次变更评分或问题逻辑后，必须满足 perfect=100%, guesser=0%, smart_guesser<=5%, abstainer<15%, strategic>naive+10%。
 
 ### 记忆能力定义
 

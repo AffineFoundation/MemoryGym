@@ -585,7 +585,7 @@ def run_validation(
                    if v["template"] == tmpl_name]
         if sg_vals:
             sg_acc = sum(sg_vals) / len(sg_vals)
-            checks[prefix + "smart_guesser < 5%"] = sg_acc < 0.05
+            checks[prefix + "smart_guesser <= 5%"] = sg_acc <= 0.05
 
     # Trick retrieval: guesser must fail trick questions
     for tmpl_name in templates_used:

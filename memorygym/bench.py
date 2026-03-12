@@ -414,28 +414,41 @@ def main(argv: list[str] | None = None) -> int:
         print(f"--- {tmpl_name} ---")
         print(f"  {'Strategy':<20s} {'Accuracy':>9s} {'Stored':>7s} "
               f"{'Breadth':>8s} {'Maint.':>7s} "
-              f"{'Reasoning':>10s} {'Abstention':>11s}")
+              f"{'Reasoning':>10s} {'Composite':>10s}")
         print("  " + "-" * 76)
         for s_name in strategy_names:
             vals = [v for v in agg[s_name] if v["template"] == tmpl_name]
+            if not vals:
+                continue
             acc = avg(vals)
-            stored = sum(v["stored"] for v in vals) / len(vals) if vals else 0
+            stored = sum(v["stored"] for v in vals) / len(vals)
 
-            def comp_pct(*comps: str) -> str:
-                c_tot = t_tot = 0
-                for comp in comps:
-                    for v in vals:
-                        c, t = v["by_competency"].get(comp, (0, 0))
-                        c_tot += c
-                        t_tot += t
-                return f"{c_tot/t_tot:.0%}" if t_tot else "n/a"
+            # Aggregate axis scores across seeds
+            axis_accum: dict[str, list[float]] = defaultdict(list)
+            for v in vals:
+                by_comp_tuples = v["by_competency"]
+                by_comp_bools: dict[str, list[bool]] = {}
+                for comp, (c, t) in by_comp_tuples.items():
+                    by_comp_bools[comp] = [True] * c + [False] * (t - c)
+                axes = compute_axis_scores(
+                    by_competency=by_comp_bools,
+                    n_entities=n_entities,
+                    stored_count=v["stored"],
+                    writes_used=v.get("writes_used", v["stored"]),
+                    write_budget=write_budget,
+                )
+                for k, sc in axes.items():
+                    axis_accum[k].append(sc)
 
-            from memorygym.protocol import REASONING_COMPETENCIES
+            def axis_pct(key: str) -> str:
+                vs = axis_accum.get(key, [])
+                return f"{sum(vs)/len(vs):.0%}" if vs else "n/a"
+
             print(f"  {s_name:<20s} {acc:>8.0%} {stored:>6.0f} "
-                  f"{comp_pct('retrieval'):>8s} "
-                  f"{comp_pct('update'):>7s} "
-                  f"{comp_pct(*REASONING_COMPETENCIES):>10s} "
-                  f"{comp_pct('abstention'):>11s}")
+                  f"{axis_pct('breadth'):>8s} "
+                  f"{axis_pct('maintenance'):>7s} "
+                  f"{axis_pct('reasoning'):>10s} "
+                  f"{axis_pct('composite'):>10s}")
         print()
 
     # Validation

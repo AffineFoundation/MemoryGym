@@ -57,50 +57,7 @@
 
 ## 当前任务
 
-### Phase 112 — Correction 免预算 + 搜索增强（maintenance 轴修复）
-
-**背景**（A201 审计发现）：maintenance 轴平均 8%，623 corrections 仅 11.1% 成功。根因是两层失败瀑布：
-
-1. **68% corrections 到达时 budget 已耗尽**（424/623）。模型 entities_per_write=1.0，60 实体耗光 30 budget。此时 Edit 也要消耗 budget，所以 correction 无法执行。
-2. **有预算时搜索不精确**（71/137 with-budget failures）。ChromaDB 语义搜索"Flux Dynamics"返回"Nimbus Dynamics"等相似实体，导致模型放弃更新。
-
-**目标**：让 maintenance 轴真正测"维护能力"而非"budget 管理能力"。
-
-**变更清单**：
-
-1. **Correction Edit 免预算**（`agents/_tool_helpers.py` + `training/env.py`）
-   - 在 correction 事件处理中，Edit 不消耗 budget（或 correction 事件期间临时增加 budget 不计数）
-   - 设计选项 A：`_tool_helpers.py` 的 `execute_tool()` 接收一个 `free_edit=True` 参数，跳过 budget 检查
-   - 设计选项 B：`stream_agent.py` correction 处理阶段临时调高 budget，事后还原
-   - 推荐方案 A——更干净
-
-2. **Correction 消息增强**（`agents/stream_agent.py` L497-503）
-   - 在 correction user message 中明确告知 entity_name（目前只在 notice 文本中隐含）
-   - 附带 old_val 和 new_val 的结构化信息，便于 Edit
-   - 告知"此 Edit 不消耗 budget"
-
-3. **MemoryEnv 同步**（`training/env.py`）
-   - correction 事件中 Edit 不消耗 write budget
-   - SFT trajectory 生成同步此变更
-
-4. **Simulation 不变量验证**
-   - `python -m memorygym.bench --seeds 3 --validate` 必须全部 PASS
-   - 特别关注 strategic vs naive 差距不能减少
-
-5. **测试**
-   - 新增测试验证 correction Edit 不消耗 budget
-   - 验证 correction 免费仅限于 correction 事件期间，非 correction 阶段 Edit 仍消耗 budget
-
-**约束**：
-- 不改变 budget 总量
-- 不改变 ingest/question 阶段的 budget 行为
-- 不改变问题生成逻辑
-- simulation 不变量不得破坏
-
-**验收标准**：
-- `python -m pytest tests/ -q` 全通过
-- `python -m memorygym.bench --seeds 3 --validate` 全 PASS
-- 新增测试覆盖 correction 免费 Edit
+（无待办任务，等待新任务写入）
 
 ---
 
@@ -115,6 +72,7 @@
 
 ## 已完成
 
+### Phase 113 — stdout 评分表 axis scores 一致 + smart_guesser<=5% + trajectory post-judge ✅
 ### Phase 112 — Correction Edit 免预算 + 消息增强（maintenance 轴修复） ✅
 ### Phase 111 — LEADERBOARD 刷新 (121 evals) + stream_agent context overflow 优雅 abstain ✅
 ### Phase 110 — validators.py 推理题型路由补全（8 个未路由题型） ✅
