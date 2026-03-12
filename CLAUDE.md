@@ -65,7 +65,8 @@
 ## 常用命令
 
 ```bash
-python -m pytest tests/ -q                    # 全量测试
+python -m pytest tests/ -q -m "not slow"      # 快速测试（389 tests, ~60s）
+python -m pytest tests/ -q                    # 全量测试（438 tests, ~7min）
 python tests/test_worlds.py                    # 世界模板测试（快速迭代）
 python -m memorygym.bench --seeds 10 --validate  # Simulation 不变量检查
 python -m memorygym.bench --model xxxxxx --seed 42 --template company  # 真实评测
@@ -102,7 +103,7 @@ python -m memorygym.training data --seeds 5 --templates company       # SFT 训�
 
 详细架构见 `docs/ROADMAP.md` §2。核心模块：
 
-- `worlds/` — 8 个领域模板（company/research/city/hospital/sport/movie/university/codebase），每模板 21-23 属性（6 种 dtype），20 种推理题型 + 评分器 + Inspect AI 集成
+- `worlds/` — 10 个领域模板（company/research/city/hospital/sport/movie/university/codebase/project/agentteam），每模板 21-23 属性（6 种 dtype），20 种推理题型 + 评分器 + Inspect AI 集成
 - `evaluation/` — 答案验证 + LLM judge
 - `memory/` — 预算管理 + 后端（ChromaDB/MarkdownBackend）
 - `agents/stream_agent.py` — 真实 LLM agent runner

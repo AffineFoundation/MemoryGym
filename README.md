@@ -58,13 +58,20 @@ python -m memorygym.bench --model moonshotai/Kimi-K2.5-TEE --seed 0 --tier stand
 python -m memorygym.bench --model moonshotai/Kimi-K2.5-TEE --official -o results.json
 ```
 
+### Training data generation
+
+```bash
+python -m memorygym.training data --seeds 5 --templates company  # Generate SFT trajectories
+python -m memorygym.training sft --data data/sft_v6_mixed.jsonl   # Fine-tune (requires torch)
+```
+
 ### Available options
 
 ```
 --model MODEL        LLM model name (OpenAI-compatible)
 --seed N             Single seed
 --seeds N            Number of seeds (default: 10)
---template T         Template: company, research, city, hospital, sport, movie
+--template T         Template: company, research, city, hospital, sport, movie, university, codebase, project, agentteam
 --tier TIER          Evaluation tier: lite, standard (default), hard, multi
 --backend BACKEND    Memory backend: chromadb (default), markdown
 --validate           Run invariant checks
@@ -81,7 +88,7 @@ python -m memorygym.bench --model moonshotai/Kimi-K2.5-TEE --official -o results
 
 ## World templates
 
-8 domain templates generate diverse evaluation scenarios:
+10 domain templates generate diverse evaluation scenarios:
 
 - **company**: Tech companies with revenue, employees, R&D spending
 - **research**: Research labs with publications, citations, funding
@@ -91,26 +98,28 @@ python -m memorygym.bench --model moonshotai/Kimi-K2.5-TEE --official -o results
 - **movie**: Films with box office, ratings, cast
 - **university**: Higher education institutions with enrollment, acceptance rates, research output
 - **codebase**: Software modules/services with LOC, contributors, deployment frequency
+- **project**: Software projects with budgets, sprints, velocity, risk scores
+- **agentteam**: Autonomous agents with throughput, latency, coordination, error patterns
 
 ## Leaderboard
 
 See [LEADERBOARD.md](LEADERBOARD.md) for current results.
 
-Top models (averaged across templates and seeds, 123 evals):
+Top models (averaged across templates and seeds, 138 evals):
 
 | Model | Composite | Evals |
 |-------|-----------|-------|
 | Qwen3.5-397B | 18.0% | 71 |
-| Qwen3-235B | 17.7% | 11 |
-| MiniMax-M2.5 | 15.2% | 11 |
+| Qwen3-235B | 16.8% | 16 |
+| MiniMax-M2.5 | 16.1% | 17 |
 | Kimi-K2.5 | 15.2% | 21 |
-| GLM-5 | 10.2% | 9 |
+| GLM-5 | 11.8% | 13 |
 
 ## Architecture
 
 ```
 memorygym/
-├── worlds/          # 8 domain templates + scorer + Inspect AI integration
+├── worlds/          # 10 domain templates + scorer + Inspect AI integration
 ├── evaluation/      # Answer validation + LLM judge
 ├── memory/          # Budget management + backends (ChromaDB, Markdown)
 ├── agents/          # Real LLM agent runner

@@ -57,37 +57,7 @@
 
 ## 当前任务
 
-### Phase 119 — README 文档同步 + slime import guard
-
-**依据**：A234 宏观审计发现的用户体验缺口。
-
-#### Step 1 — README 模板列表更新
-
-`README.md` L67：当前只列 6 个模板，实际 10 个。更新为：
-```
---template T         Template: company, research, city, hospital, sport, movie, university, codebase, project, agentteam
-```
-
-#### Step 2 — README Training quickstart
-
-在 README.md 的 "Quick start" 段落后添加 Training 段落：
-```markdown
-### Training data generation
-
-```bash
-python -m memorygym.training data --seeds 5 --templates company  # Generate SFT trajectories
-python -m memorygym.training sft --data data/sft_v6_mixed.jsonl   # Fine-tune (requires torch)
-```
-```
-
-#### Step 3 — slime adapter import guard
-
-`memorygym/adapters/slime_adapter.py`：用 try/except 包裹 `import slime`，参考 `verl_adapter.py` 的 `_VERL_AVAILABLE` 模式。防止未安装 slime 时 import crash。
-
-#### 验证标准
-- `python -m pytest tests/ -q -m "not slow"` 全通过
-- README L67 包含全部 10 个模板
-- `python -c "from memorygym.adapters import slime_adapter"` 不 crash
+（无待办任务，等待新任务写入）
 
 ---
 
@@ -255,6 +225,7 @@ _ROLES = ["coordinator", "worker", "monitor", "router", "planner", "executor", "
 
 ## 已完成
 
+### Phase 119 — README 文档同步（10 模板 + Training quickstart + CLAUDE.md 同步） ✅
 ### Phase 118 — agentteam 世界模板（第 10 个模板，23 attrs，6 constraints，correction_rate=0.15） ✅
 ### Phase 117 — project 世界模板 + 117-fix 质量修复（第 9 个模板，23 attrs，4 constraints） ✅
 ### Phase 116 — 战略文档同步（ROADMAP.md + STATUS_REPORT.md，Phase 94-114 补全） ✅
