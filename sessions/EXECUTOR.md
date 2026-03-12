@@ -225,6 +225,7 @@ _ROLES = ["coordinator", "worker", "monitor", "router", "planner", "executor", "
 
 ## 已完成
 
+### Phase 120 — agentteam C1 约束修复（success+error ∈ [85,110] 违反率 40%→0%） ✅
 ### Phase 119 — README 文档同步（10 模板 + Training quickstart + CLAUDE.md 同步） ✅
 ### Phase 118 — agentteam 世界模板（第 10 个模板，23 attrs，6 constraints，correction_rate=0.15） ✅
 ### Phase 117 — project 世界模板 + 117-fix 质量修复（第 9 个模板，23 attrs，4 constraints） ✅

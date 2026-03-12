@@ -499,15 +499,6 @@ class AgentteamWorld(WorldTemplate):
                 continue
             attrs[adef.name] = self._generate_attr_value(rng, adef)
 
-        # Constraint 1: success_rate + error_rate ∈ [85, 110]
-        if "success_rate" in attrs and "error_rate" in attrs:
-            total = attrs["success_rate"] + attrs["error_rate"]
-            if total < 85 or total > 110:
-                # Adjust error_rate to fit
-                target_total = rng.uniform(90, 105)
-                attrs["error_rate"] = round(
-                    max(0, min(50, target_total - attrs["success_rate"])), 2)
-
         # Constraint 2: cpu_utilization ↔ response_latency_ms
         if "cpu_utilization" in attrs and "response_latency_ms" in attrs:
             cpu = attrs["cpu_utilization"]
@@ -528,6 +519,23 @@ class AgentteamWorld(WorldTemplate):
             if "success_rate" in attrs:
                 attrs["success_rate"] = round(
                     min(50, attrs["success_rate"]), 2)
+
+        # Constraint 1: success_rate + error_rate ∈ [85, 110]
+        # Applied after C3 to avoid C3 breaking the invariant
+        if "success_rate" in attrs and "error_rate" in attrs:
+            total = attrs["success_rate"] + attrs["error_rate"]
+            if total < 85 or total > 110:
+                target_total = rng.uniform(90, 105)
+                new_error = target_total - attrs["success_rate"]
+                if new_error > 50:
+                    attrs["error_rate"] = 50.0
+                    attrs["success_rate"] = round(target_total - 50, 2)
+                elif new_error < 0:
+                    attrs["error_rate"] = 0.0
+                    attrs["success_rate"] = round(
+                        min(100, target_total), 2)
+                else:
+                    attrs["error_rate"] = round(new_error, 2)
 
         # Constraint 4: task_throughput ↔ active_connections
         if "task_throughput" in attrs and "active_connections" in attrs:
