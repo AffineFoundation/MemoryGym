@@ -57,7 +57,7 @@
 
 ## 当前任务
 
-（无待办任务，等待新任务写入）
+（待审计线程派发新任务）
 
 ---
 
@@ -225,6 +225,7 @@ _ROLES = ["coordinator", "worker", "monitor", "router", "planner", "executor", "
 
 ## 已完成
 
+### Phase 123 — LEADERBOARD.md 刷新（150 evals, 10 模板，Qwen3-235B #1） ✅
 ### Phase 122 — counterfactual validator 路由修复 + cross_domain dead code 清理 ✅
 ### Phase 121 — eval_salt 约束一致性修复（enforce_constraints 钩子，10 模板全覆盖） ✅
 ### Phase 120 — agentteam C1 约束修复（success+error ∈ [85,110] 违反率 40%→0%） ✅

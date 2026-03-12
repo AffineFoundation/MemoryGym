@@ -105,15 +105,15 @@ python -m memorygym.training sft --data data/sft_v6_mixed.jsonl   # Fine-tune (r
 
 See [LEADERBOARD.md](LEADERBOARD.md) for current results.
 
-Top models (averaged across templates and seeds, 138 evals):
+Top models (averaged across 10 templates and seeds, 150 evals):
 
 | Model | Composite | Evals |
 |-------|-----------|-------|
-| Qwen3.5-397B | 18.0% | 71 |
-| Qwen3-235B | 16.8% | 16 |
-| MiniMax-M2.5 | 16.1% | 17 |
-| Kimi-K2.5 | 15.2% | 21 |
-| GLM-5 | 11.8% | 13 |
+| Qwen3-235B | 18.6% | 18 |
+| Qwen3.5-397B | 18.2% | 75 |
+| MiniMax-M2.5 | 17.6% | 19 |
+| Kimi-K2.5 | 15.8% | 23 |
+| GLM-5 | 11.6% | 15 |
 
 ## Architecture
 
