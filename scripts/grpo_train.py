@@ -192,10 +192,18 @@ def compute_grpo_loss(
     max_length: int,
     chat_kwargs: dict | None = None,
     kl_coeff: float = 0.05,
+    clip_eps: float = 0.2,
+    clip_higher: float = 0.0,
 ):
-    """Compute GRPO advantage-weighted policy gradient loss with KL penalty.
+    """Compute clipped GRPO policy gradient loss with optional KL penalty.
 
-    Loss = -advantage * mean_log_prob + kl_coeff * KL(policy || ref)
+    When clip_higher > 0 (DAPO), uses asymmetric clipping:
+        ratio clipped to [1 - clip_eps, 1 + clip_higher]
+    Otherwise uses standard symmetric clipping:
+        ratio clipped to [1 - clip_eps, 1 + clip_eps]
+
+    ratio = exp(log_policy - log_ref) on assistant tokens.
+    Loss = -min(ratio * A, clipped_ratio * A) + kl_coeff * KL
 
     Uses peft's disable_adapter_layers() to get reference logits without
     loading a separate model (reference = base + merged SFT, no GRPO LoRA).
@@ -207,18 +215,21 @@ def compute_grpo_loss(
         max_length: Max sequence length for tokenization.
         chat_kwargs: Extra kwargs for apply_chat_template.
         kl_coeff: KL penalty coefficient (0 to disable).
-
-    Returns:
-        Scalar loss tensor.
+        clip_eps: PPO-style clip epsilon (lower bound = 1 - clip_eps).
+        clip_higher: DAPO Clip-Higher upper bound (0 = use clip_eps).
     """
     import torch
     import torch.nn.functional as F
 
     chat_kwargs = chat_kwargs or {}
-    total_loss = torch.tensor(0.0, device=model.device, requires_grad=True)
+    total_loss = None  # Accumulate grad-connected losses
     total_kl = 0.0
     n_valid = 0
-    use_kl = kl_coeff > 0 and hasattr(model, "disable_adapter_layers")
+    has_adapter = hasattr(model, "disable_adapter_layers")
+    use_kl = kl_coeff > 0 and has_adapter
+    # Clip-Higher needs reference logits for ratio computation
+    clip_upper = (1.0 + clip_higher) if clip_higher > 0 else (1.0 + clip_eps)
+    clip_lower = 1.0 - clip_eps
 
     for messages, advantage in trajectories:
         if abs(advantage) < 1e-6:
@@ -267,15 +278,8 @@ def compute_grpo_loss(
         if n_tokens < 1:
             continue
 
-        # Mean log prob for this trajectory
-        mean_log_prob = (token_log_probs * mask).sum() / n_tokens
-
-        # GRPO loss: -advantage * log_prob
-        pg_loss = -advantage * mean_log_prob
-        total_loss = total_loss + pg_loss
-
-        # KL penalty: disable LoRA → get reference logits
-        if use_kl:
+        # Get reference logits for ratio-based clipping and KL
+        if has_adapter:
             with torch.no_grad():
                 model.disable_adapter_layers()
                 ref_outputs = model(
@@ -288,21 +292,38 @@ def compute_grpo_loss(
                 ref_token_log_probs = ref_log_probs.gather(
                     2, shift_labels.clamp(min=0).unsqueeze(-1)).squeeze(-1)
 
-            # KL via Schulman's k3 estimator: (r-1) - log(r)
-            # More stable gradient than naive log_policy - log_ref (F2 audit)
-            log_ratio = token_log_probs - ref_token_log_probs
-            ratio = log_ratio.exp()
-            kl_per_token = ((ratio - 1) - log_ratio) * mask
-            kl = kl_per_token.sum() / n_tokens
-            total_loss = total_loss + kl_coeff * kl
-            total_kl += kl.item()
+            # Ratio = exp(log_policy - log_ref) per token
+            log_ratio = (token_log_probs - ref_token_log_probs) * mask
+            # Mean ratio across assistant tokens for stable clipping
+            mean_log_ratio = log_ratio.sum() / n_tokens
+            ratio = torch.exp(mean_log_ratio)
 
+            # Clipped surrogate objective (PPO/GRPO style)
+            clipped_ratio = torch.clamp(ratio, clip_lower, clip_upper)
+            surr1 = ratio * advantage
+            surr2 = clipped_ratio * advantage
+            pg_loss = -torch.min(surr1, surr2)
+
+            # KL penalty
+            if use_kl:
+                kl = mean_log_ratio  # KL ≈ E[log π - log π_ref]
+                pg_loss = pg_loss + kl_coeff * kl
+                total_kl += kl.item()
+        else:
+            # No adapter (fallback): REINFORCE-style, no clipping
+            mean_log_prob = (token_log_probs * mask).sum() / n_tokens
+            pg_loss = -advantage * mean_log_prob
+
+        total_loss = pg_loss if total_loss is None else total_loss + pg_loss
         n_valid += 1
 
-    if n_valid > 0:
+    if total_loss is None:
+        total_loss = torch.tensor(0.0, device=model.device, requires_grad=True)
+    elif n_valid > 1:
         total_loss = total_loss / n_valid
 
-    return total_loss
+    mean_kl = total_kl / max(n_valid, 1)
+    return total_loss, mean_kl
 
 
 def _build_assistant_mask(tokenizer, input_ids, full_text):
@@ -430,6 +451,13 @@ def main():
         "--ips", action="store_true",
         help="Enable IPS-GRPO: inverse probability scaling to prevent mode collapse")
     parser.add_argument(
+        "--clip-eps", type=float, default=0.2,
+        help="PPO/GRPO clip epsilon (lower bound = 1-eps)")
+    parser.add_argument(
+        "--clip-higher", type=float, default=0.0,
+        help="DAPO Clip-Higher: asymmetric upper clip (e.g., 0.28). "
+             "0 = symmetric (use clip-eps for both bounds)")
+    parser.add_argument(
         "--log-file", default=None,
         help="JSON log file path")
     args = parser.parse_args()
@@ -513,6 +541,11 @@ def main():
         print(f"  Templates: {args.templates}")
         print(f"  Tier: {args.tier}")
         print(f"  LR: {args.lr}")
+        clip_desc = f"eps={args.clip_eps}"
+        if args.clip_higher > 0:
+            clip_desc += f", DAPO clip-higher={args.clip_higher}"
+        print(f"  Clipping: {clip_desc}")
+        print(f"  IPS: {args.ips}, KL: {args.kl_coeff}")
         print(f"  Output: {output_dir}")
         print(f"{'=' * 60}\n")
 
@@ -605,11 +638,13 @@ def main():
         model.train()
         optimizer.zero_grad()
 
-        loss = compute_grpo_loss(
+        loss, mean_kl = compute_grpo_loss(
             model, tokenizer, all_trajectories,
             max_length=args.max_length,
             chat_kwargs=chat_kwargs,
             kl_coeff=args.kl_coeff,
+            clip_eps=args.clip_eps,
+            clip_higher=args.clip_higher,
         )
 
         loss.backward()
@@ -626,6 +661,7 @@ def main():
 
         if is_main:
             print(f"\n  Step {step+1}: loss={loss.item():.4f} "
+                  f"kl={mean_kl:.4f} "
                   f"mean_r={mean_reward:.3f} max_r={max_reward:.3f} "
                   f"mean_correct={mean_correct:.1f} "
                   f"time={step_time:.0f}s\n")
@@ -634,6 +670,7 @@ def main():
         entry = {
             "step": step + 1,
             "loss": loss.item(),
+            "mean_kl": mean_kl,
             "mean_reward": mean_reward,
             "max_reward": max_reward,
             "mean_correct": mean_correct,

@@ -283,7 +283,8 @@ class TestMemoryEnv:
             "tool": "memory_store",
             "args": {"content": f"{names[0]} has revenue of $500M"}
         })
-        assert reward == 0.3, f"Expected 0.3 for relevant store, got {reward}"
+        # F43: 0.5 if entity will be questioned, 0.3 otherwise
+        assert reward in (0.3, 0.5), f"Expected 0.3 or 0.5 for relevant store, got {reward}"
         assert "memory_id" in info
 
     def test_shaped_reward_budget_exhausted(self):

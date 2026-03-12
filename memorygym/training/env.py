@@ -564,6 +564,15 @@ class MemoryEnv:
         self._n_corrections = sum(
             1 for e in self._stream if e["type"] == "correction")
 
+        # F43 (ReMemR1): precompute which entities will be questioned
+        # Used for information-gain shaped reward — storing questioned
+        # entities is more valuable than storing unquestioned ones.
+        self._questioned_entities: set[str] = set()
+        for e in self._stream:
+            if e["type"] == "question":
+                for name in e.get("required_entities", []):
+                    self._questioned_entities.add(name)
+
         if not self._stream:
             return "No events in stream."
         return self._format_event(self._stream[0])
@@ -613,19 +622,33 @@ class MemoryEnv:
                 info["remaining"] = self.write_budget - self._writes_used
 
                 if shaped:
-                    # Reward for storing content with entity names
+                    # F41 (ToolRLA): multiplicative reward decomposition
+                    # One zero factor → zero total reward, preventing
+                    # gaming any single dimension.
+                    # F43 (ReMemR1): information gain — entities that will
+                    # be questioned are worth more than unquestioned ones.
                     if current_event and event_type == "ingest":
                         names = current_event.get("entity_names", [])
                         matched = [n for n in names
                                    if n.lower() in content.lower()]
                         if matched:
-                            # Check for duplicates
-                            is_dup = any(n in self._stored_entity_names
-                                         for n in matched)
-                            if is_dup:
-                                reward = -0.1  # Penalty: duplicate wastes budget
+                            new_names = [n for n in matched
+                                         if n not in self._stored_entity_names]
+                            if not new_names:
+                                # All duplicates: novelty=0 → penalty
+                                reward = -0.1
                             else:
-                                reward = 0.3  # Good: stored new entity data
+                                # Base reward for storing new entity data
+                                reward = 0.3
+                                # F43: info gain bonus for questioned entities
+                                n_questioned = sum(
+                                    1 for n in new_names
+                                    if n in self._questioned_entities)
+                                if n_questioned > 0:
+                                    reward = 0.5  # Higher reward: will be useful
+                                # Multi-entity packing bonus (F16/OTC)
+                                if len(new_names) > 1:
+                                    reward += 0.1 * (len(new_names) - 1)
                             self._stored_entity_names.update(matched)
 
         elif tool == "Edit":
@@ -653,8 +676,14 @@ class MemoryEnv:
                         info["remaining"] = (self.write_budget
                                              - self._writes_used)
                         if shaped and is_correction:
+                            # F41: multiplicative — correct value is required
                             corr_new = str(current_event.get("new_val", ""))
-                            reward = 0.5 if corr_new in new_text else 0.1
+                            if corr_new in new_text:
+                                # Correct value: full reward, bonus if searched
+                                reward = 0.6 if self._correction_searched else 0.5
+                            else:
+                                # Wrong value: value_factor=0 → reward near zero
+                                reward = 0.1
                 else:
                     # Fallback for ChromaDB: search + forget + store
                     results = self._backend.search(old_text, top_k=1)
@@ -670,7 +699,10 @@ class MemoryEnv:
                                              - self._writes_used)
                         if shaped and is_correction:
                             corr_new = str(current_event.get("new_val", ""))
-                            reward = 0.5 if corr_new in new_text else 0.1
+                            if corr_new in new_text:
+                                reward = 0.6 if self._correction_searched else 0.5
+                            else:
+                                reward = 0.1
                     else:
                         if not is_correction:
                             self._writes_used -= 1  # Refund on miss

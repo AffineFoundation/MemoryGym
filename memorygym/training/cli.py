@@ -291,6 +291,11 @@ def cmd_grpo(args: argparse.Namespace) -> int:
         print(f"GRPO Training: {args.steps} steps, "
               f"G={args.group_size}, groups/step={args.groups_per_step}")
         print(f"  Templates: {templates}")
+        clip_desc = f"eps={args.clip_eps}"
+        if args.clip_higher > 0:
+            clip_desc += f", DAPO clip-higher={args.clip_higher}"
+        print(f"  Clipping: {clip_desc}")
+        print(f"  IPS: {args.ips}, KL: {args.kl_coeff}")
         print(f"  Output: {run_dir}")
         print(f"{'=' * 60}\n")
 
@@ -343,17 +348,37 @@ def cmd_grpo(args: argparse.Namespace) -> int:
             mean_r = sum(group_rewards) / len(group_rewards)
             std_r = (sum((r - mean_r) ** 2 for r in group_rewards)
                      / len(group_rewards)) ** 0.5
-            for msgs, r in zip(group_messages, group_rewards):
-                adv = (r - mean_r) / (std_r + 1e-6)
+            eps = 1e-6
+
+            if args.ips and len(group_rewards) > 1:
+                # IPS-GRPO: inverse probability scaling (arXiv 2601.21669)
+                from collections import Counter
+                bucket_size = 0.05
+                buckets = [round(r / bucket_size) for r in group_rewards]
+                bucket_counts = Counter(buckets)
+                n = len(buckets)
+                ips_weights = [n / bucket_counts[b] for b in buckets]
+                w_mean = sum(ips_weights) / len(ips_weights)
+                ips_weights = [w / w_mean for w in ips_weights]
+            else:
+                ips_weights = [1.0] * len(group_rewards)
+
+            for msgs, r, w in zip(group_messages, group_rewards,
+                                   ips_weights):
+                adv = (r - mean_r) / (std_r + eps) * w
                 all_trajectories.append((msgs, adv))
 
         # Training phase
         model.train()
         optimizer.zero_grad()
 
-        loss = _compute_grpo_loss(
+        loss, mean_kl = _compute_grpo_loss(
             model, tokenizer, all_trajectories,
-            args.max_length, chat_kwargs)
+            args.max_length, chat_kwargs,
+            kl_coeff=args.kl_coeff,
+            clip_eps=args.clip_eps,
+            clip_higher=args.clip_higher,
+        )
         loss.backward()
         torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
         optimizer.step()
@@ -368,6 +393,7 @@ def cmd_grpo(args: argparse.Namespace) -> int:
         entry = {
             "step": step + 1,
             "loss": loss.item(),
+            "mean_kl": mean_kl,
             "mean_reward": mean_r,
             "max_reward": max_r,
             "mean_correct": mean_c,
@@ -377,9 +403,10 @@ def cmd_grpo(args: argparse.Namespace) -> int:
         log_entries.append(entry)
 
         if is_main:
-            print(f"  → loss={loss.item():.4f} mean_r={mean_r:.3f} "
-                  f"max_r={max_r:.3f} correct={mean_c:.1f} "
-                  f"time={elapsed:.0f}s\n", flush=True)
+            print(f"  → loss={loss.item():.4f} kl={mean_kl:.4f} "
+                  f"mean_r={mean_r:.3f} max_r={max_r:.3f} "
+                  f"correct={mean_c:.1f} time={elapsed:.0f}s\n",
+                  flush=True)
 
         # Save episode samples (best/worst)
         if is_main and (step + 1) % args.sample_every == 0:
@@ -527,19 +554,35 @@ def _run_episode(model, tokenizer, template, tier, seed,
 
 
 def _compute_grpo_loss(model, tokenizer, trajectories, max_length,
-                       chat_kwargs=None):
-    """Compute GRPO advantage-weighted policy gradient loss."""
+                       chat_kwargs=None, kl_coeff=0.05,
+                       clip_eps=0.2, clip_higher=0.0):
+    """Compute clipped GRPO policy gradient loss with optional KL penalty.
+
+    When clip_higher > 0 (DAPO), uses asymmetric clipping:
+        ratio clipped to [1 - clip_eps, 1 + clip_higher]
+    Otherwise uses standard symmetric clipping:
+        ratio clipped to [1 - clip_eps, 1 + clip_eps]
+
+    Uses peft's disable_adapter_layers() for reference logits (zero-copy).
+    """
     import torch
     import torch.nn.functional as F
     from .common import build_assistant_mask, apply_chat_template
 
     chat_kwargs = chat_kwargs or {}
-    total_loss = torch.tensor(0.0, device=model.device, requires_grad=True)
+    total_loss = None
+    total_kl = 0.0
     n_valid = 0
+    has_adapter = hasattr(model, "disable_adapter_layers")
+    use_kl = kl_coeff > 0 and has_adapter
+    clip_upper = (1.0 + clip_higher) if clip_higher > 0 else (1.0 + clip_eps)
+    clip_lower = 1.0 - clip_eps
 
     for messages, advantage in trajectories:
         if abs(advantage) < 1e-6:
             continue
+
+        torch.cuda.empty_cache()
 
         full_text = apply_chat_template(tokenizer, messages, chat_kwargs)
         tokens = tokenizer(
@@ -564,13 +607,52 @@ def _compute_grpo_loss(model, tokenizer, trajectories, max_length,
         if n_tokens < 1:
             continue
 
-        mean_log_prob = (token_log_probs * mask).sum() / n_tokens
-        total_loss = total_loss + (-advantage * mean_log_prob)
+        # Get reference logits for ratio-based clipping and KL
+        if has_adapter:
+            with torch.no_grad():
+                model.disable_adapter_layers()
+                ref_outputs = model(
+                    input_ids=input_ids,
+                    attention_mask=attention_mask,
+                )
+                model.enable_adapter_layers()
+                ref_log_probs = F.log_softmax(
+                    ref_outputs.logits[:, :-1, :], dim=-1)
+                ref_token_log_probs = ref_log_probs.gather(
+                    2, shift_labels.clamp(min=0).unsqueeze(-1)).squeeze(-1)
+
+            # Ratio = exp(log_policy - log_ref) per token
+            log_ratio = (token_log_probs - ref_token_log_probs) * mask
+            mean_log_ratio = log_ratio.sum() / n_tokens
+            ratio = torch.exp(mean_log_ratio)
+
+            # Clipped surrogate objective (PPO/GRPO style)
+            clipped_ratio = torch.clamp(ratio, clip_lower, clip_upper)
+            surr1 = ratio * advantage
+            surr2 = clipped_ratio * advantage
+            pg_loss = -torch.min(surr1, surr2)
+
+            # KL penalty
+            if use_kl:
+                kl = mean_log_ratio
+                pg_loss = pg_loss + kl_coeff * kl
+                total_kl += kl.item()
+        else:
+            # No adapter (fallback): REINFORCE-style, no clipping
+            mean_log_prob = (token_log_probs * mask).sum() / n_tokens
+            pg_loss = -advantage * mean_log_prob
+
+        total_loss = pg_loss if total_loss is None else total_loss + pg_loss
         n_valid += 1
 
-    if n_valid > 0:
+    if total_loss is None:
+        import torch
+        total_loss = torch.tensor(0.0, device=model.device, requires_grad=True)
+    elif n_valid > 1:
         total_loss = total_loss / n_valid
-    return total_loss
+
+    mean_kl = total_kl / max(n_valid, 1)
+    return total_loss, mean_kl
 
 
 def _save_episode_samples(episodes_dir, step, trajectories, rewards):
@@ -702,6 +784,14 @@ def main():
     p_grpo.add_argument("--save-every", type=int, default=10)
     p_grpo.add_argument("--sample-every", type=int, default=5,
                          help="Save episode samples every N steps")
+    p_grpo.add_argument("--kl-coeff", type=float, default=0.05,
+                         help="KL penalty coefficient (0 to disable)")
+    p_grpo.add_argument("--ips", action="store_true",
+                         help="Enable IPS-GRPO: inverse probability scaling")
+    p_grpo.add_argument("--clip-eps", type=float, default=0.2,
+                         help="PPO/GRPO clip epsilon")
+    p_grpo.add_argument("--clip-higher", type=float, default=0.0,
+                         help="DAPO Clip-Higher asymmetric upper clip")
 
     # -- smoke --
     sub.add_parser("smoke", help="Quick pipeline validation (no GPU)")
