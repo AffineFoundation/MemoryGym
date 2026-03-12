@@ -18,7 +18,7 @@ def create_memory_tools(
     backend_type: str = "chromadb",
     collection_name: str = "memorygym",
     backend: MemoryBackend | None = None,
-) -> tuple[list[Tool], MemoryBudget, MemoryBackend]:
+) -> tuple[list[Tool], MemoryBudget, MemoryBackend, dict]:
     """Create all memory tools backed by a shared backend.
 
     Args:
@@ -28,13 +28,14 @@ def create_memory_tools(
         backend: Pre-created backend (overrides backend_type).
 
     Returns:
-        (list_of_tools, budget, backend) — budget and backend are returned
-        for scorer / solver access.
+        (list_of_tools, budget, backend, state) — state dict contains
+        mutable flags like free_edit for correction handling.
     """
     if backend is None:
         backend = ChromaDBBackend(collection_name=collection_name)
 
     mem_budget = MemoryBudget(total_writes=budget)
+    state = {"free_edit": False}
 
     @tool(name="Write")
     def write_memory() -> Tool:
@@ -68,7 +69,7 @@ def create_memory_tools(
 
     @tool(name="Edit")
     def edit_memory() -> Tool:
-        """Edit existing content in your memory file. Costs 1 write."""
+        """Edit existing content in your memory file. Costs 1 write (free during corrections)."""
         async def execute(old_text: str, new_text: str) -> str:
             """Replace existing text in your memory file.
 
@@ -76,19 +77,22 @@ def create_memory_tools(
                 old_text: The text to find and replace.
                 new_text: The replacement text.
             """
-            if not mem_budget.can_write():
-                raise ToolError(
-                    f"Write budget exhausted "
-                    f"({mem_budget.writes_used}/{mem_budget.total_writes})."
-                )
-            mem_budget.consume_write()
+            is_free = state["free_edit"]
+            if not is_free:
+                if not mem_budget.can_write():
+                    raise ToolError(
+                        f"Write budget exhausted "
+                        f"({mem_budget.writes_used}/{mem_budget.total_writes})."
+                    )
+                mem_budget.consume_write()
             if hasattr(backend, "edit"):
                 ok = backend.edit(old_text, new_text)
                 if not ok:
-                    mem_budget.writes_used -= 1
+                    if not is_free:
+                        mem_budget.writes_used -= 1
                     raise ToolError("Text not found in memory.")
                 return (
-                    f"Edited. "
+                    f"Edited{' (free correction)' if is_free else ''}. "
                     f"Budget: {mem_budget.remaining()} writes remaining."
                 )
             # Fallback for ChromaDB
@@ -98,10 +102,11 @@ def create_memory_tools(
                 content = results[0]["content"].replace(old_text, new_text, 1)
                 backend.store(content)
                 return (
-                    f"Edited. "
+                    f"Edited{' (free correction)' if is_free else ''}. "
                     f"Budget: {mem_budget.remaining()} writes remaining."
                 )
-            mem_budget.writes_used -= 1
+            if not is_free:
+                mem_budget.writes_used -= 1
             raise ToolError("Text not found in memory.")
         return execute
 
@@ -154,7 +159,7 @@ def create_memory_tools(
         read_memory(),
         memory_search(),
     ]
-    return tools, mem_budget, backend
+    return tools, mem_budget, backend, state
 
 
 @tool

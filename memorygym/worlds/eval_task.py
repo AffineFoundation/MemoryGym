@@ -40,7 +40,7 @@ Call tools by outputting JSON blocks:
 **Write** — Append to your memory file (costs 1 write, budget: {budget}):
 <tool_call>{{"name": "Write", "arguments": {{"content": "info to store"}}}}</tool_call>
 
-**Edit** — Edit existing content in your memory file (costs 1 write):
+**Edit** — Edit existing content in your memory file (costs 1 write, except during corrections):
 <tool_call>{{"name": "Edit", "arguments": {{"old_text": "text to find", "new_text": "replacement text"}}}}</tool_call>
 
 **Read** — Read your memory file (free):
@@ -54,7 +54,7 @@ Call tools by outputting JSON blocks:
 
 ## Memory Budget
 - You have limited write operations — plan your usage carefully
-- Each Write or Edit counts against your budget
+- Each Write or Edit counts against your budget (except Edit during corrections — those are free)
 
 ## Answering Questions
 - Search by entity name, then submit_answer with the value
@@ -78,7 +78,8 @@ CORRECTION_TEMPLATE = """=== Event {event_num}/{total_events} [CORRECTION] ===
 **Correction Notice:**
 {notice}
 
-A correction has been issued. Decide how to handle it."""
+A correction has been issued. If you stored this entity, use Edit to update it.
+Correction edits do not consume your write budget."""
 
 QUESTION_TEMPLATE = """=== Event {event_num}/{total_events} [QUESTION] ===
 
@@ -212,6 +213,7 @@ def worldbench_solver(
     mem_budget: Any = None,
     backend: Any = None,
     no_redaction: bool = False,
+    tool_state: dict | None = None,
 ) -> Solver:
     """Interleaved stream solver: events arrive in unpredictable order.
 
@@ -291,11 +293,15 @@ def worldbench_solver(
                         content="OK."))
 
             elif event_type == "correction":
+                if tool_state is not None:
+                    tool_state["free_edit"] = True
                 state.messages.append(ChatMessageUser(
                     content=CORRECTION_TEMPLATE.format(
                         event_num=event_idx + 1, total_events=total_events,
                         notice=event["notice"])))
                 state = await generate(state, tool_calls="loop")
+                if tool_state is not None:
+                    tool_state["free_edit"] = False
                 if not no_redaction:
                     del state.messages[initial_len:]
                     mem_summary = _build_mem_summary(
@@ -459,7 +465,7 @@ def worldbench(
         entities_per_batch=entities_per_batch,
     )
 
-    memory_tools, mem_budget, backend_obj = create_memory_tools(
+    memory_tools, mem_budget, backend_obj, tool_state = create_memory_tools(
         budget=write_budget,
         backend_type=backend,
         collection_name=f"worldbench_{run_hash}",
@@ -495,6 +501,7 @@ def worldbench(
                 stream_data=stream_data,
                 mem_budget=mem_budget,
                 backend=backend_obj,
+                tool_state=tool_state,
             ),
         ),
         scorer=worldbench_scorer(),
