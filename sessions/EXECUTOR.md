@@ -225,6 +225,7 @@ _ROLES = ["coordinator", "worker", "monitor", "router", "planner", "executor", "
 
 ## 已完成
 
+### Phase 127 — test_worlds.py 补齐 4 缺失模板测试覆盖（6→10 模板） ✅
 ### Phase 126 — Inspect AI correction Edit 免费 + 提示词同步（两路径行为一致） ✅
 ### Phase 125 — task_id 稳定映射（TEMPLATE_REGISTRY + _parse_task_id 重写） ✅
 ### Phase 124 — 并发 & Long-Run 资源泄漏修复（MarkdownBackend/ChromaDB/bench.py close） ✅

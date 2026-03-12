@@ -27,6 +27,10 @@ from memorygym.worlds.hospital import HospitalWorld
 from memorygym.worlds.research import ResearchWorld
 from memorygym.worlds.sport import SportWorld
 from memorygym.worlds.movie import MovieWorld
+from memorygym.worlds.university import UniversityWorld
+from memorygym.worlds.codebase import CodebaseWorld
+from memorygym.worlds.project import ProjectWorld
+from memorygym.worlds.agentteam import AgentteamWorld
 
 
 @dataclass
@@ -407,7 +411,7 @@ def test_ingest_uses_original_values():
 @pytest.mark.slow
 def test_abstraction_generality():
     """All WorldTemplate implementations must produce consistent evaluation."""
-    for TmplClass in [CompanyWorld, ResearchWorld, CityWorld, HospitalWorld, SportWorld, MovieWorld]:
+    for TmplClass in [CompanyWorld, ResearchWorld, CityWorld, HospitalWorld, SportWorld, MovieWorld, UniversityWorld, CodebaseWorld, ProjectWorld, AgentteamWorld]:
         tmpl = TmplClass()
         accs = {}
         for seed in range(5):
@@ -422,6 +426,7 @@ def test_abstraction_generality():
         assert sep >= 0.10, f"{tmpl.name}: sep={sep:.0%} < 10%"
 
 
+@pytest.mark.slow
 def test_monotonicity():
     """Storing more entities must never decrease accuracy."""
     tmpl = CompanyWorld()
@@ -448,7 +453,7 @@ def test_question_quality():
     """
     global_has_max = False
     global_has_min = False
-    for TmplClass in [CompanyWorld, ResearchWorld, CityWorld, HospitalWorld, SportWorld, MovieWorld]:
+    for TmplClass in [CompanyWorld, ResearchWorld, CityWorld, HospitalWorld, SportWorld, MovieWorld, UniversityWorld, CodebaseWorld, ProjectWorld, AgentteamWorld]:
         tmpl = TmplClass()
         entity_uniq_rates = []
         has_updates = False
@@ -495,7 +500,7 @@ def test_document_volume():
     At 200 entities, total volume should exceed 40K chars.
     Volume pressure comes from entity quantity, not prose filler.
     """
-    for TmplClass in [CompanyWorld, ResearchWorld, CityWorld, HospitalWorld, SportWorld, MovieWorld]:
+    for TmplClass in [CompanyWorld, ResearchWorld, CityWorld, HospitalWorld, SportWorld, MovieWorld, UniversityWorld, CodebaseWorld, ProjectWorld, AgentteamWorld]:
         tmpl = TmplClass()
         world = tmpl.generate_world(seed=42, n_entities=200)
         rng = Random(42)
@@ -552,7 +557,7 @@ def test_abstention_not_identifiable():
 
 def test_fictitious_entity_not_in_world():
     """Verify abstention uses fictitious entities across all templates."""
-    for TmplClass in [CompanyWorld, ResearchWorld, CityWorld, HospitalWorld, SportWorld, MovieWorld]:
+    for TmplClass in [CompanyWorld, ResearchWorld, CityWorld, HospitalWorld, SportWorld, MovieWorld, UniversityWorld, CodebaseWorld, ProjectWorld, AgentteamWorld]:
         tmpl = TmplClass()
         for seed in range(3):
             world = tmpl.generate_world(seed=seed, n_entities=60)
