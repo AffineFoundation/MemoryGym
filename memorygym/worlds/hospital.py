@@ -508,6 +508,19 @@ class HospitalWorld(WorldTemplate):
                     min_staff, max(min_staff + 1, attrs["beds"] * 3))
         return EntitySpec(name=name, category=category, attrs=attrs)
 
+    def enforce_constraints(self, entity: EntitySpec,
+                            active_attrs: list[str],
+                            rng: Random) -> None:
+        attrs = entity.attrs
+        if "beds" in attrs and "icu_beds" in attrs:
+            if attrs["icu_beds"] > attrs["beds"]:
+                attrs["icu_beds"] = rng.randint(0, attrs["beds"] // 5)
+        if "staff_count" in attrs and "beds" in attrs:
+            min_staff = int(attrs["beds"] * 0.5)
+            if attrs["staff_count"] < min_staff:
+                attrs["staff_count"] = rng.randint(
+                    min_staff, max(min_staff + 1, attrs["beds"] * 3))
+
     def _format_value(self, attr: str, val: Any) -> str:
         return _fmt(attr, val)
 

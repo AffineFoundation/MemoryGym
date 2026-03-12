@@ -526,6 +526,31 @@ class UniversityWorld(WorldTemplate):
 
         return EntitySpec(name=name, category=category, attrs=attrs)
 
+    def enforce_constraints(self, entity: EntitySpec,
+                            active_attrs: list[str],
+                            rng: Random) -> None:
+        attrs = entity.attrs
+        if "enrollment" in attrs and "faculty_count" in attrs:
+            enr, fac = attrs["enrollment"], attrs["faculty_count"]
+            ratio = enr / fac if fac > 0 else 999
+            if ratio < 8 or ratio > 25:
+                attrs["faculty_count"] = max(
+                    30, round(enr / rng.uniform(10, 20)))
+        if "dorm_capacity" in attrs and "enrollment" in attrs:
+            if attrs["dorm_capacity"] > attrs["enrollment"]:
+                attrs["dorm_capacity"] = rng.randint(
+                    max(200, attrs["enrollment"] // 5), attrs["enrollment"])
+        if "acceptance_rate_pct" in attrs and "avg_sat" in attrs:
+            acc = attrs["acceptance_rate_pct"]
+            expected = int(1580 - (acc / 100) * 700)
+            attrs["avg_sat"] = max(
+                800, min(1580, expected + rng.randint(-50, 50)))
+        if ("graduation_rate_pct" in attrs
+                and "retention_rate_pct" in attrs):
+            if attrs["retention_rate_pct"] < attrs["graduation_rate_pct"]:
+                attrs["retention_rate_pct"] = min(
+                    99.0, attrs["graduation_rate_pct"] + rng.uniform(2, 10))
+
     def _format_value(self, attr: str, val: Any) -> str:
         return _fmt(attr, val)
 

@@ -431,6 +431,18 @@ class CompanyWorld(WorldTemplate):
                 attrs["revenue_m"] = round(emp * target_per_emp / 1_000_000, 2)
         return EntitySpec(name=name, category=category, attrs=attrs)
 
+    def enforce_constraints(self, entity: EntitySpec,
+                            active_attrs: list[str],
+                            rng: Random) -> None:
+        attrs = entity.attrs
+        if "employees" in attrs and "revenue_m" in attrs:
+            emp = attrs["employees"]
+            if emp > 0:
+                per_emp = (attrs["revenue_m"] * 1_000_000) / emp
+                if per_emp < 50_000 or per_emp > 2_000_000:
+                    target = rng.uniform(100_000, 800_000)
+                    attrs["revenue_m"] = round(emp * target / 1_000_000, 2)
+
     def _format_value(self, attr: str, val: Any) -> str:
         return _fmt(attr, val)
 

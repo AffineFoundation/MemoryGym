@@ -451,6 +451,15 @@ class SportWorld(WorldTemplate):
             attrs["win_pct"] = round(attrs["wins"] / total, 3) if total > 0 else 0.0
         return EntitySpec(name=name, category=category, attrs=attrs)
 
+    def enforce_constraints(self, entity: EntitySpec,
+                            active_attrs: list[str],
+                            rng: Random) -> None:
+        attrs = entity.attrs
+        if "win_pct" in attrs and "wins" in attrs and "losses" in attrs:
+            total = attrs["wins"] + attrs["losses"]
+            attrs["win_pct"] = round(
+                attrs["wins"] / total, 3) if total > 0 else 0.0
+
     def _format_value(self, attr: str, val: Any) -> str:
         return _fmt(attr, val)
 

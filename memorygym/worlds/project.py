@@ -86,7 +86,7 @@ _STATUSES = ["planning", "active", "on-hold", "completed", "cancelled"]
 _PRIORITIES = ["critical", "high", "medium", "low"]
 
 _ATTR_DEFS = [
-    # int (7)
+    # int (8)
     AttrDef("team_size", "int", 2, 200, "", "Team size"),
     AttrDef("milestone_count", "int", 3, 50, "", "Milestones"),
     AttrDef("task_backlog", "int", 0, 5000, "", "Task backlog"),
@@ -508,6 +508,37 @@ class ProjectWorld(WorldTemplate):
             if "task_backlog" in attrs:
                 attrs["task_backlog"] = rng.randint(0, 5)
         return EntitySpec(name=name, category=category, attrs=attrs)
+
+    def enforce_constraints(self, entity: EntitySpec,
+                            active_attrs: list[str],
+                            rng: Random) -> None:
+        attrs = entity.attrs
+        # C1: burn_rate realistic given budget
+        if "burn_rate_k" in attrs and "budget_k" in attrs:
+            if attrs["burn_rate_k"] * 12 > attrs["budget_k"] * 3:
+                attrs["burn_rate_k"] = round(
+                    rng.uniform(attrs["budget_k"] * 0.02,
+                                attrs["budget_k"] * 0.15), 2)
+        # C2: task_backlog + closed_issues realistic
+        if "task_backlog" in attrs and "closed_issues" in attrs:
+            if attrs["task_backlog"] + attrs["closed_issues"] < 20:
+                attrs["closed_issues"] = rng.randint(20, 500)
+        # C3: completion correlates with closed ratio
+        if ("completion_pct" in attrs and "closed_issues" in attrs
+                and "task_backlog" in attrs):
+            closed = attrs["closed_issues"]
+            total = closed + attrs["task_backlog"]
+            if total > 0:
+                implied = (closed / total) * 100
+                attrs["completion_pct"] = round(
+                    max(0, min(100, implied * 0.6 + attrs["completion_pct"] * 0.4)), 2)
+        # C4: completed → high completion, low backlog
+        if "status" in attrs and attrs["status"] == "completed":
+            if "completion_pct" in attrs:
+                attrs["completion_pct"] = round(
+                    max(95, attrs["completion_pct"]), 2)
+            if "task_backlog" in attrs:
+                attrs["task_backlog"] = min(5, attrs["task_backlog"])
 
     def _format_value(self, attr: str, val: Any) -> str:
         return _fmt(attr, val)

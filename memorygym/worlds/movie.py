@@ -469,6 +469,15 @@ class MovieWorld(WorldTemplate):
 
         return EntitySpec(name=name, category=category, attrs=attrs)
 
+    def enforce_constraints(self, entity: EntitySpec,
+                            active_attrs: list[str],
+                            rng: Random) -> None:
+        attrs = entity.attrs
+        if ("opening_weekend_m" in attrs and "box_office_m" in attrs
+                and attrs["opening_weekend_m"] > attrs["box_office_m"]):
+            attrs["box_office_m"] = round(
+                attrs["opening_weekend_m"] * rng.uniform(1.1, 3.0), 2)
+
     def _format_value(self, attr: str, val: Any) -> str:
         return _fmt(attr, val)
 

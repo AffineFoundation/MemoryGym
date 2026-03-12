@@ -555,6 +555,73 @@ class CodebaseWorld(WorldTemplate):
 
         return EntitySpec(name=name, category=category, attrs=attrs)
 
+    def enforce_constraints(self, entity: EntitySpec,
+                            active_attrs: list[str],
+                            rng: Random) -> None:
+        attrs = entity.attrs
+        loc = attrs.get("lines_of_code", 0)
+        # C1: test_count / LOC ∈ [0.005, 0.15]
+        if "test_count" in attrs and loc > 0:
+            ratio = attrs["test_count"] / loc
+            if ratio < 0.005 or ratio > 0.15:
+                attrs["test_count"] = max(
+                    0, min(5000, round(loc * rng.uniform(0.01, 0.08))))
+        # C2: coverage ↔ bugs
+        if "test_coverage_pct" in attrs and "open_bugs" in attrs:
+            cov = attrs["test_coverage_pct"]
+            if cov > 80:
+                hi = min(30, max(1, loc // 5000)) if loc else 30
+                attrs["open_bugs"] = rng.randint(0, hi)
+            elif cov < 30:
+                lo = min(150, max(1, loc // 2000)) if loc else 20
+                attrs["open_bugs"] = rng.randint(lo, 200)
+        # C3: LOC × contributors × churn
+        if ("lines_of_code" in attrs and "contributors" in attrs
+                and "code_churn_pct" in attrs):
+            cont = attrs["contributors"]
+            if loc > 100000 and cont < 5:
+                attrs["code_churn_pct"] = round(
+                    min(attrs["code_churn_pct"], rng.uniform(0.5, 5.0)), 2)
+            elif loc < 10000 and cont > 20:
+                attrs["code_churn_pct"] = round(
+                    max(attrs["code_churn_pct"], rng.uniform(10.0, 25.0)), 2)
+        # C4: CPU ↔ response
+        if "cpu_utilization_pct" in attrs and "avg_response_ms" in attrs:
+            cpu = attrs["cpu_utilization_pct"]
+            if cpu > 70:
+                attrs["avg_response_ms"] = max(200, attrs["avg_response_ms"])
+            elif cpu < 20:
+                attrs["avg_response_ms"] = min(500, attrs["avg_response_ms"])
+        # C5: memory ↔ LOC
+        if "memory_usage_mb" in attrs and loc > 0:
+            lo = max(10, loc / 100)
+            hi = max(lo + 1, loc / 10)
+            if attrs["memory_usage_mb"] < lo or attrs["memory_usage_mb"] > hi:
+                attrs["memory_usage_mb"] = round(
+                    rng.uniform(lo, min(hi, 16000)), 1)
+        # C6: uptime ↔ error
+        if "uptime_pct" in attrs and "error_rate_pct" in attrs:
+            if attrs["uptime_pct"] > 99.9:
+                attrs["error_rate_pct"] = round(
+                    min(attrs["error_rate_pct"], rng.uniform(0, 0.5)), 2)
+        # C7: deprecated cascade
+        if "status" in attrs and attrs["status"] == "deprecated":
+            if "deployment_count" in attrs:
+                attrs["deployment_count"] = rng.randint(0, 100)
+            if "code_churn_pct" in attrs:
+                attrs["code_churn_pct"] = round(rng.uniform(0.5, 2.0), 2)
+            if "contributors" in attrs:
+                attrs["contributors"] = rng.randint(1, 5)
+            if "tech_debt_hours" in attrs:
+                attrs["tech_debt_hours"] = round(rng.uniform(500, 2000), 1)
+            if "open_bugs" in attrs:
+                attrs["open_bugs"] = max(20, attrs.get("open_bugs", 20))
+            if "weekly_deploys" in attrs:
+                vals = attrs["weekly_deploys"]
+                if len(vals) >= 2:
+                    vals[-1] = round(rng.uniform(0, 1), 2)
+                    vals[-2] = round(rng.uniform(0, 1), 2)
+
     def _format_value(self, attr: str, val: Any) -> str:
         return _fmt(attr, val)
 

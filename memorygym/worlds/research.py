@@ -423,6 +423,18 @@ class ResearchWorld(WorldTemplate):
                 max(10, min_cites), max(min_cites + 1, max_cites))
         return EntitySpec(name=name, category=category, attrs=attrs)
 
+    def enforce_constraints(self, entity: EntitySpec,
+                            active_attrs: list[str],
+                            rng: Random) -> None:
+        attrs = entity.attrs
+        if "h_index" in attrs and "citations" in attrs:
+            h = attrs["h_index"]
+            min_c = h * h
+            max_c = min(h * h * 15, 50000)
+            if attrs["citations"] < min_c or attrs["citations"] > max_c:
+                attrs["citations"] = rng.randint(
+                    max(10, min_c), max(min_c + 1, max_c))
+
     def _format_value(self, attr: str, val: Any) -> str:
         return _fmt(attr, val)
 

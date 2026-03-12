@@ -104,6 +104,15 @@ class WorldTemplate(
         """Return (attr1, attr2, label) triples for ratio questions."""
         ...
 
+    def enforce_constraints(self, entity: EntitySpec,
+                            active_attrs: list[str],
+                            rng: Random) -> None:
+        """Re-enforce inter-attribute constraints after perturbation.
+
+        Called after _apply_eval_salt() perturbs individual attributes.
+        Override in templates that have inter-attribute constraints.
+        """
+
     @property
     def correction_rate(self) -> float:
         """Fraction of entities that typically receive corrections.
@@ -408,6 +417,11 @@ class WorldTemplate(
                     day = salt_rng.randint(1, 28)
                     entity.attrs[adef.name] = (
                         f"{year:04d}-{month:02d}-{day:02d}")
+
+            # Re-enforce inter-attribute constraints after perturbation
+            entity_active = [a for a in active_attrs
+                             if a in entity.attrs]
+            self.enforce_constraints(entity, entity_active, salt_rng)
 
     def attr_label(self, attr_name: str) -> str:
         """Human-readable attribute label."""

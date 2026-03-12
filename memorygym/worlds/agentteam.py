@@ -568,6 +568,64 @@ class AgentteamWorld(WorldTemplate):
 
         return EntitySpec(name=name, category=category, attrs=attrs)
 
+    def enforce_constraints(self, entity: EntitySpec,
+                            active_attrs: list[str],
+                            rng: Random) -> None:
+        attrs = entity.attrs
+        # C2: cpu ↔ latency
+        if "cpu_utilization" in attrs and "response_latency_ms" in attrs:
+            cpu = attrs["cpu_utilization"]
+            if cpu > 80 and attrs["response_latency_ms"] < 500:
+                attrs["response_latency_ms"] = round(
+                    rng.uniform(500, 3000), 2)
+            elif cpu < 20 and attrs["response_latency_ms"] > 200:
+                attrs["response_latency_ms"] = round(
+                    rng.uniform(1, 200), 2)
+        # C3: error state cascade
+        if "status" in attrs and attrs["status"] == "error":
+            if "error_rate" in attrs:
+                attrs["error_rate"] = round(max(20, attrs["error_rate"]), 2)
+            if "queue_depth" in attrs:
+                attrs["queue_depth"] = max(100, attrs["queue_depth"])
+            if "success_rate" in attrs:
+                attrs["success_rate"] = round(
+                    min(50, attrs["success_rate"]), 2)
+        # C1: success + error ∈ [85, 110] (after C3)
+        if "success_rate" in attrs and "error_rate" in attrs:
+            total = attrs["success_rate"] + attrs["error_rate"]
+            if total < 85 or total > 110:
+                target = rng.uniform(90, 105)
+                ne = target - attrs["success_rate"]
+                if ne > 50:
+                    attrs["error_rate"] = 50.0
+                    attrs["success_rate"] = round(target - 50, 2)
+                elif ne < 0:
+                    attrs["error_rate"] = 0.0
+                    attrs["success_rate"] = round(min(100, target), 2)
+                else:
+                    attrs["error_rate"] = round(ne, 2)
+        # C4: throughput ↔ connections
+        if "task_throughput" in attrs and "active_connections" in attrs:
+            conns = attrs["active_connections"]
+            if conns > 0:
+                lo, hi = conns * 0.05, conns * 2
+                if attrs["task_throughput"] < lo or attrs["task_throughput"] > hi:
+                    attrs["task_throughput"] = round(
+                        rng.uniform(max(0.1, lo), max(0.2, hi)), 2)
+        # C5: high uptime + high retry → low memory efficiency
+        if ("uptime_hours" in attrs and "retry_count" in attrs
+                and "memory_efficiency_pct" in attrs):
+            if attrs["uptime_hours"] > 8000 and attrs["retry_count"] > 200:
+                attrs["memory_efficiency_pct"] = round(
+                    min(50, attrs["memory_efficiency_pct"]), 2)
+        # C6: coordination ↔ message/task ratio
+        if ("coordination_score" in attrs and "message_count" in attrs
+                and "task_count" in attrs):
+            tc = attrs["task_count"]
+            if tc > 0 and attrs["coordination_score"] > 80:
+                if attrs["message_count"] / tc < 5:
+                    attrs["message_count"] = rng.randint(tc * 5, tc * 20)
+
     def _format_value(self, attr: str, val: Any) -> str:
         return _fmt(attr, val)
 

@@ -487,6 +487,28 @@ class CityWorld(WorldTemplate):
                 max(2, pop // 10000), max(3, pop // 3000)))
         return EntitySpec(name=name, category=category, attrs=attrs)
 
+    def enforce_constraints(self, entity: EntitySpec,
+                            active_attrs: list[str],
+                            rng: Random) -> None:
+        attrs = entity.attrs
+        if "population" in attrs and "area_km2" in attrs:
+            pop, area = attrs["population"], attrs["area_km2"]
+            if area > 0:
+                density = pop / area
+                if density < 50:
+                    attrs["area_km2"] = round(pop / rng.uniform(200, 2000), 1)
+                elif density > 30000:
+                    attrs["area_km2"] = round(
+                        pop / rng.uniform(5000, 15000), 1)
+        if "population" in attrs and "hospital_count" in attrs:
+            pop = attrs["population"]
+            attrs["hospital_count"] = max(1, rng.randint(
+                max(1, pop // 80000), max(2, pop // 20000)))
+        if "population" in attrs and "school_count" in attrs:
+            pop = attrs["population"]
+            attrs["school_count"] = max(2, rng.randint(
+                max(2, pop // 10000), max(3, pop // 3000)))
+
     def _format_value(self, attr: str, val: Any) -> str:
         return _fmt(attr, val)
 
