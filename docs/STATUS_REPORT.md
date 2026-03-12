@@ -1,10 +1,10 @@
 # MemoryGym Status Report
 
-> Version 0.6.7 | 2026-03-11 | Phase 65 complete
+> Version 0.10.19 | 2026-03-12 | Phase 116 complete
 
 ## Executive Summary
 
-MemoryGym is the only benchmark that simultaneously tests **budget-constrained storage decisions**, provides **RL training environments**, and **proves anti-gaming robustness** through 9 simulation strategies. 50 real evaluations across 5 models and 6 domains confirm the system produces meaningful, reproducible scores with clear discriminative power.
+MemoryGym is the only benchmark that simultaneously tests **budget-constrained storage decisions**, provides **RL training environments**, and **proves anti-gaming robustness** through 9 simulation strategies. 123 real evaluations across 5 models and 8 domains confirm the system produces meaningful, reproducible scores with clear discriminative power.
 
 ---
 
@@ -33,7 +33,7 @@ No other benchmark forces the agent to make **storage trade-offs under hard budg
 ### 2.1 Evaluation Flow
 
 ```
-seed → WorldTemplate → generate N entities (22-23 attributes each)
+seed → WorldTemplate → generate N entities (21-23 attributes each)
                        → render as natural language documents
                        → stream events to agent:
                            ├── INGEST batches (entity documents)
@@ -58,6 +58,8 @@ seed → WorldTemplate → generate N entities (22-23 attributes each)
 
 `abstention_diagnostic` is reported separately (not in composite) — it measures whether the agent correctly says "I don't know" for unstored entities.
 
+**Phase 112 — Correction Edit 免预算**: The biggest single-change impact. Correction Edits no longer consume write budget, allowing agents to update stored data after corrections. Impact: composite +3.6pp, maintenance +5.6pp. M>0% rate improved from ~20% to 70%.
+
 ### 2.3 Evaluation Tiers
 
 | Tier | Entities | Questions | Corrections | Budget | Pressure Ratio | Sessions |
@@ -71,7 +73,7 @@ The `hard` tier doubles entities while keeping the same budget — the agent mus
 
 ### 2.4 World Templates
 
-6 domain templates, each with domain-specific characteristics:
+8 domain templates, each with domain-specific characteristics:
 
 | Template | Entities | Attributes | Correction Rate | Question Focus |
 |----------|----------|------------|-----------------|----------------|
@@ -81,6 +83,8 @@ The `hard` tier doubles entities while keeping the same budget — the agent mus
 | hospital | 600 names | 23 | 15% | Status monitoring (update=30%) |
 | sport | 600 names | 23 | 12% | Performance tracking (update=25%) |
 | movie | 600 names | 23 | 7% | Box office analysis (default weights) |
+| university | 600 names | 23 | 10% | Academic performance |
+| codebase | 600 names | 23 | 10% | Software metrics |
 
 Each template uses 6 data types: `int`, `float`, `text`, `enum`, `date`, `list_float`. The `list_float` type generates domain-specific temporal patterns (seasonal revenue for companies, citation impact curves for research, exponential box office decay for movies).
 
@@ -100,7 +104,7 @@ Tools: `Write` / `Edit` / `Read` / `memory_search`. Two backends:
 - **ChromaDB**: Embedding-based vector search (all-MiniLM-L6-v2)
 - **MarkdownBackend**: MEMORY.md file + hybrid search (BM25 70% + vector 30% + RRF fusion)
 
-Backend comparison (batch 14, 4 evals each): MarkdownBackend avg 30% vs ChromaDB avg 31.7% — no significant difference. Retrieval bottleneck is model-side, not backend-side.
+Backend comparison (batch 14, 4 evals each): MarkdownBackend 30% vs ChromaDB 31.7% — no significant difference. Retrieval bottleneck is model-side, not backend-side.
 
 ---
 
@@ -117,7 +121,7 @@ priority_strategic (store important)   >  random ← proves importance weighting
 template_expert (domain-aware)         >  strategic ← proves domain knowledge helps
 naive (store 40%, no updates)          ≈  19%   ← proves updates matter
 guesser (store nothing, guess)         =   0%   ← proves guessing is impossible
-smart_guesser (guess median/midpoint)  <   5%   ← proves clever guessing fails
+smart_guesser (guess median/midpoint)  <=  5%   ← proves clever guessing fails
 abstainer (store all, always "IDK")    <  15%   ← proves blanket abstention has a ceiling
 ```
 
@@ -136,34 +140,34 @@ abstainer (store all, always "IDK")    <  15%   ← proves blanket abstention ha
 
 ---
 
-## 4. Empirical Evidence: 50 Real Evaluations
+## 4. Empirical Evidence: 123 Real Evaluations
 
-### 4.1 Multi-Model Results (V2, standard tier, lite tier)
+### 4.1 Multi-Model Results (V2, 123 evals, 5 models × 8 templates)
 
-| Model | N | Composite | Breadth | Maintenance | Reasoning | Efficiency |
-|-------|---|-----------|---------|-------------|-----------|------------|
-| Qwen3.5-397B | 15 | **30%** | 12% | 49% | 12% | 13% |
-| Kimi-K2.5 | 18 | **28%** | 14% | 40% | 13% | 12% |
-| Qwen3-235B | 7 | **18%** | 16% | 48% | 2% | 11% |
-| MiniMax-M2.5 | 7 | **13%** | 3% | 27% | 4% | 5% |
-| GLM-5 | 2 | **8%** | 0% | 0% | 0% | 0% |
+| Model | N | Composite | Avg Score | Templates |
+|-------|---|-----------|-----------|-----------|
+| Qwen3.5-397B | 71 | **18.0%** | 31.0% | 8/8 |
+| Qwen3-235B | 11 | **17.7%** | 20.9% | 8/8 |
+| MiniMax-M2.5 | 11 | **15.2%** | 21.8% | 8/8 |
+| Kimi-K2.5 | 21 | **15.2%** | 26.0% | 8/8 |
+| GLM-5 | 9 | **10.2%** | 20.6% | 8/8 |
 
 ### 4.2 What These Numbers Prove
 
 **1. The benchmark discriminates genuine capability differences.**
 
-The score distribution (0% to 55%) spans a wide range with clear tiers:
-- **Tier 1** (28-30%): Qwen3.5-397B, Kimi-K2.5 — can store, search, and partially update
-- **Tier 2** (13-18%): MiniMax, Qwen3-235B — can store but struggle with search/reasoning
-- **Tier 3** (0-8%): GLM-5 — stores data but cannot search it back (tool use failure)
+The score distribution (0% to 48%) spans a wide range with clear ordering:
+- **Top**: Qwen3.5-397B (18.0%) and Qwen3-235B (17.7%) — strongest storage + retrieval
+- **Mid**: MiniMax-M2.5 and Kimi-K2.5 (both 15.2%) — competitive but weaker on breadth
+- **Bottom**: GLM-5 (10.2%) — weakest tool use and storage decisions
 
-**2. Maintenance is the easiest axis; reasoning is the hardest.**
+**2. Breadth is the cascade bottleneck.**
 
-Across all models: maintenance (27-49%) >> breadth (12-16%) > reasoning (2-13%). 7 reasoning types at 0% across all models (outlier, comparison, cross_category, text_match, enum_filter, aggregation, multi_hop) — genuinely hard competencies.
+Breadth averages only 10.8% across all models. Low storage coverage cascades: reasoning and maintenance also fail because the data was never stored. This is the primary target for improvement.
 
-**3. Retrieval is the biggest bottleneck.**
+**3. Correction Edit 免预算 is the largest single-change impact.**
 
-Retrieval accuracy is only 11% — with 60% abstention rate meaning models store entities but cannot search them back. Backend comparison (ChromaDB vs MarkdownBackend) confirms this is model-side, not backend-side.
+Phase 112 made correction Edits free. Impact: composite +3.6pp, maintenance +5.6pp. Before this change, agents exhausted their 30 writes during ingest and could not Edit when corrections arrived. After: M>0% rate improved from ~20% to 70%.
 
 **4. entities_per_write = 1.0 across all models.**
 
@@ -171,7 +175,7 @@ No model packs multiple entities per write operation. This represents a major un
 
 ### 4.3 Variance Analysis
 
-Both top models show high variance (CV ≈ 55-65%). Root cause: ChromaDB embedding instability (HIGH), template difficulty variation (MEDIUM), entity name composition (LOW).
+Models show high variance (CV ≈ 55-65%). Root cause: template difficulty variation (MEDIUM), seed randomness (MEDIUM), entity name composition (LOW). Best results: Qwen3.5 company seed 9 at 48% composite.
 
 Recommendation: use 5+ seeds per evaluation for stable mean estimates.
 
@@ -191,6 +195,7 @@ MemoryEnv (training/env.py)
 │   ├── binary: correct=+1.0, incorrect=0.0
 │   └── shaped: store=+0.3, correction_flow=+0.5, answer=+1.0
 ├── get_verifiable_reward() → accuracy (for GRPO)
+├── Correction Edit 免预算 (Phase 112, aligned with eval)
 └── Tier support: lite → standard → hard (curriculum)
 
 Training Module (training/)
@@ -207,10 +212,11 @@ Adapters (adapters/)
 
 ### 5.2 Training Progress
 
-SFT v2b achieved the first model that correctly answers questions:
-- Loss: 1.785 → 0.674 (8 epochs), 9/15 writes, 3/10 correct, reward=0.46
+**SFT v6 data ready**: 160 perfect + 160 strategic trajectories, 8 templates, Edit coverage ≥45%.
 
-GRPO v2 identified policy collapse (loss → negative). Next: KL regularization (v3) + step-wise GRPO (AgeMem reference).
+**GRPO v3 code ready**: IPS (importance sampling) + DAPO Clip-Higher + KL regularization + clipped ratio. Addresses v2 policy collapse (loss → negative).
+
+**Blocked**: GPU SSH not reachable for 9+ days. Requires infrastructure admin intervention.
 
 ---
 
@@ -225,8 +231,8 @@ GRPO v2 identified policy collapse (loss → negative). Next: KL regularization 
 | Anti-gaming verification | **9 strategies** | No | No | No | No |
 | Deterministic reproduction | **Seed-based** | No | No | No | No |
 | Multi-session evaluation | Yes (3 sessions) | Yes | No | Yes | No |
-| Correction/update testing | Yes | No | Conflict resolution | No | No |
-| Domain templates | 6 | Schema-based | Multi-turn tasks | Chat logs | Real trajectories |
+| Correction/update testing | Yes (free Edit) | No | Conflict resolution | No | No |
+| Domain templates | 8 | Schema-based | Multi-turn tasks | Chat logs | Real trajectories |
 
 ### 6.2 Emerging Competitors (2026)
 
@@ -238,32 +244,34 @@ GRPO v2 identified policy collapse (loss → negative). Next: KL regularization 
 | A-MAC (2603.04549) | 5-factor admission | Fine-grained memory admission |
 | PlugMem (Microsoft) | Hierarchical memory architecture | Production memory management |
 | BudgetMem (2511.04919) | Dual-tier memory + trainable gating + budget constraints | Closest competitor; token-level vs our entity-level tool-based |
-| Mem-alpha (2509.25911) | RL memory construction, 13x generalization | Validates RL training for memory policies |
+| MEM-alpha (2509.25911) | RL memory construction, 13x generalization | Validates RL training for memory policies |
+| MemoryArena | Interdependent multi-session agentic memory | Multi-session competitor |
 
 ---
 
 ## 7. Engineering Maturity
 
 ```
-Codebase:     12,478 lines of production code
-              4,500+ lines of test code
-              341 tests passing, 1 skipped
-              All files ≤ 987 lines (limit: 1,000)
+Codebase:     ~13,000 lines of production code
+              ~5,000 lines of test code
+              437 tests passing
+              All files ≤ 1,000 lines
 
-Templates:    6 domains × 600+ entity names × 22-23 attributes × 6 dtypes
+Templates:    8 domains × 600+ entity names × 21-23 attributes × 6 dtypes
 
-Eval data:    50 real evaluations, 5 models, 5 vendors
+Eval data:    123 real evaluations, 5 models, 5 vendors, 8 templates
 
 Backends:     ChromaDB (embedding) + MarkdownBackend (BM25+vector hybrid)
 
 Training:     MemoryEnv (binary + shaped reward)
               verl + slime adapters
-              SFT v2b: first correct answers (3/10, reward=0.46)
+              SFT v6: 320 trajectories (160 perfect + 160 strategic)
+              GRPO v3 code ready (IPS + DAPO + KL)
               Remote training CLI (scripts/train.py)
 
 Anti-gaming:  9 simulation strategies
               eval_salt prevents training overfit
-              341+ invariant checks per validation run
+              437+ invariant checks per validation run
 ```
 
 ### Version History
@@ -276,22 +284,24 @@ Anti-gaming:  9 simulation strategies
 | 0.4.x | 25-28 | Scoring unification, red team audit |
 | 0.5.0 | 29-44 | V2 system: counterfactual questions, template differentiation, noise injection |
 | 0.6.x | 45-65 | OpenClaw tools (Write/Edit/Read), MarkdownBackend, mem0 removal, training module restructure |
+| 0.7.x-0.9.x | 67-93 | Bug fixes, SFT trajectory quality, RL reward alignment, CLI UX |
+| 0.10.x | 94-114 | University/Codebase templates (8 total), Correction Edit free (Phase 112), validators routing, 123 evals |
 
 ---
 
 ## 8. Honest Assessment
 
-### 8.1 Retrieval is the Primary Bottleneck
-11% retrieval accuracy with 60% abstention. Backend comparison confirms model-side query formulation, not backend quality.
+### 8.1 Breadth is the Primary Bottleneck
+10.8% breadth across all models. Low storage coverage cascades into reasoning and maintenance failures. This is a model-side limitation, not a system issue.
 
 ### 8.2 Training Not Yet Validated End-to-End
-SFT v2b achieved first correct answers, but GRPO v2 hit policy collapse. Largest open risk.
+SFT v6 data and GRPO v3 code are ready, but GPU access has been blocked for 9+ days. Largest open risk.
 
 ### 8.3 Reasoning Tests Computation, Not Understanding
 All 20 reasoning types are formula-based. Measures "can you compute on stored data?" not semantic understanding.
 
 ### 8.4 Known Resource Leaks
-MemoryEnv creates ChromaDB collections per reset without cleanup. MarkdownBackend creates temp directories without cleanup. Both need fixing for training loops.
+MemoryEnv creates ChromaDB collections per reset without cleanup. Needs fixing for training loops.
 
 ---
 
@@ -299,4 +309,4 @@ MemoryEnv creates ChromaDB collections per reset without cleanup. MarkdownBacken
 
 MemoryGym answers a question no other benchmark asks: **can an LLM agent make intelligent storage decisions under resource pressure?**
 
-50 real evaluations across 5 models show a 0-55% score range. Current best: **30% (Qwen3.5-397B, 15 evals)**. The gap between 30% and 100% represents a concrete capability deficit — and MemoryGym is the only system designed to both measure and close it through RL training.
+123 real evaluations across 5 models show a 0-48% score range. Current best: **18.0% composite (Qwen3.5-397B, 71 evals)**. The gap between 18% and 100% represents a concrete capability deficit — and MemoryGym is the only system designed to both measure and close it through RL training.

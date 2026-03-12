@@ -57,6 +57,14 @@
 
 ## 当前任务
 
+~~Phase 115 — 检索精度增强~~ **已撤回（A224 红队攻击）**
+
+**撤回理由**：
+1. 根因诊断错误 — 瓶颈是 breadth 10.8%（存储覆盖率），不是搜索精度
+2. 53% 的搜索 query 已含实体名，现有 ChromaDB re-ranking 已有效
+3. Phase 115 能帮到的场景仅占 10-15%，ROI 不高
+4. 会轻微削弱"存储组织能力"的 RL 训练信号
+
 （无待办任务，等待新任务写入）
 
 ---
@@ -72,6 +80,7 @@
 
 ## 已完成
 
+### Phase 116 — 战略文档同步（ROADMAP.md + STATUS_REPORT.md，Phase 94-114 补全） ✅
 ### Phase 114 — README 排行榜数据同步（123 evals, Composite 列） ✅
 ### Phase 113 — stdout 评分表 axis scores 一致 + smart_guesser<=5% + trajectory post-judge ✅
 ### Phase 112 — Correction Edit 免预算 + 消息增强（maintenance 轴修复） ✅
