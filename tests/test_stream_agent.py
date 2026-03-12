@@ -412,6 +412,69 @@ def test_correction_tracker_write_budget_exhausted():
     assert _check_correction_tracking(turns, "120k") is False
 
 
+def test_free_edit_skips_budget():
+    """Edit with free_edit=True does not consume budget."""
+    backend = _fresh_backend()
+    budget = MemoryBudget(total_writes=5)
+    _execute_tool("Write", {"content": "Alice | salary: 100k"}, backend, budget)
+    assert budget.writes_used == 1
+    result, _ = _execute_tool(
+        "Edit",
+        {"old_text": "salary: 100k", "new_text": "salary: 120k"},
+        backend, budget,
+        free_edit=True,
+    )
+    assert "Edited" in result
+    assert budget.writes_used == 1  # Budget unchanged
+
+
+def test_free_edit_works_when_budget_exhausted():
+    """Edit with free_edit=True succeeds even when budget is exhausted."""
+    backend = _fresh_backend()
+    budget = MemoryBudget(total_writes=1)
+    _execute_tool("Write", {"content": "Alice | salary: 100k"}, backend, budget)
+    assert budget.writes_used == 1
+    assert not budget.can_write()
+    result, _ = _execute_tool(
+        "Edit",
+        {"old_text": "salary: 100k", "new_text": "salary: 120k"},
+        backend, budget,
+        free_edit=True,
+    )
+    assert "Edited" in result
+    assert budget.writes_used == 1  # Still exhausted, but Edit worked
+
+
+def test_normal_edit_still_consumes_budget():
+    """Edit without free_edit still consumes budget (regression check)."""
+    backend = _fresh_backend()
+    budget = MemoryBudget(total_writes=5)
+    _execute_tool("Write", {"content": "Alice | salary: 100k"}, backend, budget)
+    assert budget.writes_used == 1
+    result, _ = _execute_tool(
+        "Edit",
+        {"old_text": "salary: 100k", "new_text": "salary: 120k"},
+        backend, budget,
+    )
+    assert "Edited" in result
+    assert budget.writes_used == 2  # Budget consumed
+
+
+def test_free_edit_miss_no_refund_needed():
+    """Edit miss with free_edit=True doesn't touch budget at all."""
+    backend = _fresh_backend()
+    budget = MemoryBudget(total_writes=5)
+    _execute_tool("Write", {"content": "Alice | salary: 100k"}, backend, budget)
+    result, _ = _execute_tool(
+        "Edit",
+        {"old_text": "nonexistent text", "new_text": "new text"},
+        backend, budget,
+        free_edit=True,
+    )
+    assert "not found" in result.lower()
+    assert budget.writes_used == 1  # Only the initial Write
+
+
 if __name__ == "__main__":
     import sys
     tests = [v for k, v in sorted(globals().items()) if k.startswith("test_")]

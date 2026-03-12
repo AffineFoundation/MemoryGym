@@ -176,6 +176,7 @@ def _run_tool_loop(
     client: OpenAI, model: str, messages: list[dict],
     backend: MemoryBackend, budget: MemoryBudget,
     max_turns: int = 10, max_retries: int = 10,
+    *, free_edit: bool = False,
 ) -> _LoopStats:
     """Run text-based tool loop until submit_answer or max_turns.
 
@@ -248,7 +249,7 @@ def _run_tool_loop(
             name = call.get("name", "")
             args = call.get("arguments", {})
             result_text, submitted = _execute_tool(
-                name, args, backend, budget)
+                name, args, backend, budget, free_edit=free_edit)
             results.append(f"[{name}] {result_text}")
             if submitted is not None:
                 answer = submitted
@@ -497,12 +498,16 @@ def run_stream_agent(
             content = (
                 f"=== Event {event_idx+1}/{total_events} [CORRECTION] ===\n\n"
                 f"**Correction Notice:**\n{event['notice']}\n\n"
-                f"A correction has been issued. If you stored data about this entity, "
-                f"use memory_search to find it and Edit to update the old value to the new value.\n"
-                f"Budget: {budget.remaining()} writes remaining."
+                f"Entity: {entity_name}\n"
+                f"Old value: {old_val}\n"
+                f"New value: {new_val}\n\n"
+                f"If you stored data about this entity, use memory_search "
+                f"to find it and Edit to update. "
+                f"Correction edits do not consume your write budget."
             )
             messages.append({"role": "user", "content": content})
-            stats = _run_tool_loop(client, model, messages, backend, budget)
+            stats = _run_tool_loop(client, model, messages, backend, budget,
+                                   free_edit=True)
             total_api_calls += stats.api_calls
 
             # Determine if correction was actually applied

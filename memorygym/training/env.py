@@ -209,10 +209,17 @@ def generate_sft_trajectory(
 
         elif event_type == "correction":
             ename = event["entity_name"]
+            old_val_str = str(event.get("old_val", ""))
+            new_val_str = str(event.get("new_val", ""))
             user_msg = (
                 f"=== Event {event_idx+1}/{total_events} [CORRECTION] ===\n\n"
                 f"**Correction Notice:**\n{event['notice']}\n\n"
-                "Update your stored memories with the corrected value."
+                f"Entity: {ename}\n"
+                f"Old value: {old_val_str}\n"
+                f"New value: {new_val_str}\n\n"
+                f"If you stored data about this entity, use memory_search "
+                f"to find it and Edit to update. "
+                f"Correction edits do not consume your write budget."
             )
             messages.append({"role": "user", "content": user_msg})
 
@@ -624,25 +631,28 @@ class MemoryEnv:
         elif tool == "Edit":
             old_text = args.get("old_text", "")
             new_text = args.get("new_text", "")
+            is_correction = event_type == "correction"
             if not old_text:
                 info["error"] = "old_text is required"
-            elif self._writes_used >= self.write_budget:
+            elif not is_correction and self._writes_used >= self.write_budget:
                 info["error"] = "Budget exhausted"
                 if shaped:
                     reward = -0.05
             else:
-                self._writes_used += 1  # Consume upfront (match eval)
+                if not is_correction:
+                    self._writes_used += 1  # Consume upfront (match eval)
                 if hasattr(self._backend, "edit"):
                     ok = self._backend.edit(old_text, new_text)
                     if not ok:
-                        self._writes_used -= 1  # Refund on miss
+                        if not is_correction:
+                            self._writes_used -= 1  # Refund on miss
                         info["edited"] = False
                         info["error"] = "Text not found in memory"
                     else:
                         info["edited"] = True
                         info["remaining"] = (self.write_budget
                                              - self._writes_used)
-                        if shaped and event_type == "correction":
+                        if shaped and is_correction:
                             corr_new = str(current_event.get("new_val", ""))
                             reward = 0.5 if corr_new in new_text else 0.1
                 else:
@@ -658,11 +668,12 @@ class MemoryEnv:
                         info["edited"] = True
                         info["remaining"] = (self.write_budget
                                              - self._writes_used)
-                        if shaped and event_type == "correction":
+                        if shaped and is_correction:
                             corr_new = str(current_event.get("new_val", ""))
                             reward = 0.5 if corr_new in new_text else 0.1
                     else:
-                        self._writes_used -= 1  # Refund on miss
+                        if not is_correction:
+                            self._writes_used -= 1  # Refund on miss
                         info["edited"] = False
                         info["error"] = "Text not found in memory"
 

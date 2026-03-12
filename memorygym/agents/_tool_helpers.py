@@ -73,8 +73,14 @@ def format_documents(docs: list[str]) -> str:
 
 def execute_tool(
     name: str, args: dict, backend: MemoryBackend, budget: MemoryBudget,
+    *, free_edit: bool = False,
 ) -> tuple[str, str | None]:
-    """Execute a tool call. Returns (result_text, submitted_answer_or_None)."""
+    """Execute a tool call. Returns (result_text, submitted_answer_or_None).
+
+    Args:
+        free_edit: If True, Edit operations skip budget consumption.
+            Used during correction events so maintenance isn't blocked by budget.
+    """
     if name == "submit_answer":
         return f"ANSWER_SUBMITTED: {args.get('answer', '')}", args.get("answer", "")
 
@@ -97,13 +103,15 @@ def execute_tool(
         new_text = args.get("new_text", "")
         if not old_text:
             return "old_text is required.", None
-        if not budget.can_write():
-            return f"Budget exhausted ({budget.writes_used}/{budget.total_writes}).", None
-        budget.consume_write()
+        if not free_edit:
+            if not budget.can_write():
+                return f"Budget exhausted ({budget.writes_used}/{budget.total_writes}).", None
+            budget.consume_write()
         if hasattr(backend, "edit"):
             ok = backend.edit(old_text, new_text)
             if not ok:
-                budget.writes_used -= 1  # Refund on miss
+                if not free_edit:
+                    budget.writes_used -= 1  # Refund on miss
                 return "Text not found in memory.", None
             return f"Edited. {budget.remaining()} writes left.", None
         # Fallback for ChromaDB: search + forget + store
@@ -113,7 +121,8 @@ def execute_tool(
             content = results[0]["content"].replace(old_text, new_text, 1)
             backend.store(content)
             return f"Edited. {budget.remaining()} writes left.", None
-        budget.writes_used -= 1  # Refund on miss
+        if not free_edit:
+            budget.writes_used -= 1  # Refund on miss
         return "Text not found in memory.", None
 
     if name == "Read" or name == "memory_get":
