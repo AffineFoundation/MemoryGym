@@ -70,6 +70,45 @@
 - **环境级**：GPU 机不可用 → 本地只做代码准备，标记阻塞
 - **方向级**：连续多个任务无进展 → 在 devlog 记录分析，质疑方向本身
 
+## 当前阻塞状态与选项（2026-03-12）
+
+### 主阻塞：GPU SSH 不可达
+
+```
+$ ssh xmyf@123.181.192.110 -p 60022
+Permission denied (publickey,password).
+```
+
+连续失败 7+ 次。原因未知（SSH key rotation？网络改变？）。
+
+### 本地可做工作（无 GPU）
+
+✅ 已完成：
+- 本地测试通过（47/47 training tests）
+- 代码审计（IPS/KL/DAPO/Clip 实现）
+- Training-Free GRPO 可行性评估（不可行，已记录）
+- Frontier 反馈分类（F48-F51 已纳入优先级）
+
+🟡 可继续做（低价值）：
+- 代码清洁（无新逻辑）
+- 文档补充（已基本完整）
+- 本地冒烟测试迭代（已通过）
+
+❌ 必须 GPU：
+- GRPO v3 训练实验
+- 模型权重微调
+- 轨迹采样
+
+### 策略选项
+
+| 选项 | 风险 | 价值 |
+|------|------|------|
+| 等待 GPU 恢复后启动 GRPO v3 | 中（恢复时间不确定） | 高（完整训练流程） |
+| 迭代改进本地代码（无 GPU）| 低 | 低（无法验证） |
+| 向 AUDITOR 升级此阻塞 | 低 | 中（其他 phase 可并行） |
+
+**当前选择**：继续监控 GPU 恢复。若 GPU 在 24h 内恢复 → 立即启动 GRPO v3。若超过 24h → 向 AUDITOR 报告并建议其他开发线程接手优化 evaluation 层面的问题（如 ChromaDB entity 混淆）。
+
 ## 提示词自优化
 
 每次更新本文件时，审视规则是否仍然有效——冗余则合并，过时则删除，缺失则补充。文档服务于演进。
@@ -649,9 +688,9 @@ memorygym/training/
 
 ## 待办
 
-1. **GRPO v3：IPS-GRPO + Clipped Ratio + DAPO Clip-Higher + KL + SFT v6 base**（阻塞于 GPU，**最高优先**）
+1. **GRPO v3：IPS-GRPO + Clipped Ratio + DAPO Clip-Higher + KL + SFT v6 base**（🔴 阻塞于 GPU SSH，持续 7+ 天，**最高优先**）
    - ✅ Phase 113 提交：F41/F43/F16 shaped reward + PPO-style clipped loss + IPS-GRPO + KL + DAPO
-   - ✅ 代码全部就绪（IPS/KL/Clip/DAPO）— 两个入口均已同步（commit 60502ed）
+   - ✅ 代码全部就绪（IPS/KL/Clip/DAPO）— 两个入口均已同步（commit 60502ed + 63a2cdf）
    - ✅ `scripts/grpo_train.py`：独立 GRPO 脚本，完整 IPS/KL/Clip/DAPO
    - ✅ `memorygym/training/cli.py` `cmd_grpo`：已同步 IPS/KL/Clip/DAPO
    - ✅ SFT v6 数据已生成（Phase 112 post-fix）：160 perfect + 160 strategic，80.6% edit rate，100% free-edit messaging
@@ -659,23 +698,35 @@ memorygym/training/
    - ✅ 代码审计完毕：PPO-style clipped surrogate loss，reference logits via peft disable_adapter_layers，mean_kl 返回用于诊断
    - ✅ F2（KL 梯度）已审查：当前实现使用稳定的 Schulman k3 estimator，梯度正确
    - ✅ 本地测试通过：47 training tests + 48 simulation invariants ALL PASS
-   - **阻塞**：GPU 机 SSH 不可达（Permission denied, 连续 7 次失败），等待恢复
-   - GPU 恢复后立即执行实验计划（baseline GRPO v3 → baseline+IPS → baseline+IPS+DAPO）
-2. ~~**Training-Free GRPO（F28）**~~ — **已评估，不可行**（详见 `devlog/training-free-grpo-feasibility.md`）
-   - 原因 1：单 episode 96K+ chars，K=8 需 770K+ — 超出任何模型上下文窗口
-   - 原因 2：任何存储策略提示违反 CLAUDE.md 提示词中立性约束
-   - 结论：GPU GRPO 是唯一可行训练路径
-3. ~~更多 shaped reward 信号~~ → **✅ 已实现 F41/F43/F16 shaped reward 改进**（Phase 113）
+   - 🔴 **GPU SSH 不可达** `Permission denied` (连续 7+ 次失败)：`ssh xmyf@123.181.192.110 -p 60022 → Authentication failed`
+   - **未来行动**：GPU 恢复后立即执行实验计划（baseline GRPO v3 → baseline+IPS → baseline+IPS+DAPO）
+
+2. **F28 Training-Free GRPO：不可行**（✅ 已评估，详见 `devlog/2026-03-11-training-free-grpo-analysis.md`）
+   - 约束 1：单 episode 96K+ chars，K=8 few-shot 需 770K+ — 超出任何开源模型上下文窗口
+   - 约束 2：CLAUDE.md "提示词中立性" — 任何存储策略示例都违反约束
+   - 约束 3：即使解决上述两个约束，架构上也不可行（详见分析）
+   - ✅ 结论已记录：GPU GRPO 是唯一可行训练路径
+
+3. ✅ **Shaped Reward 改进：F41/F43/F16**（Phase 113 已实现）
    - F43（ReMemR1 info gain）：预计算 `_questioned_entities`，存储被问实体 reward 0.5 vs 未被问 0.3
    - F41（ToolRLA multiplicative）：Edit reward 区分 search+correct(0.6) vs correct-only(0.5) vs wrong(0.1)
    - F16（OTC packing bonus）：多实体打包每多一个 +0.1
-   - 全部测试通过（47 training + simulation ALL PASS）
-4. **F42 (MAPO) turn-level advantage**（设计就绪，GPU 恢复后实现）
+
+4. **F42 (MAPO/MT-GRPO) turn-level advantage**（设计就绪，GPU 恢复后实现）
+   - **F48（MT-GRPO 新发现）**：标准 GRPO 在 multi-turn 会导致 tool collapse，turn-level advantage 必需。与 MAPO 同向。
+   - **F49（LOOP：turn-level PPO**）：如果 GRPO v3 失败的 Plan B。leave-one-out baseline 比 group mean 更稳定。
    - 核心思路：将 trajectory 按 assistant turns（tool calls）分组，每 turn 独立计算 advantage
-   - 与当前 token-level mean log ratio 的区别：当前把一次 Write（数百 tokens）的 gradient 稀释到每个 token；MAPO 在 turn 级评估"这次 Write 是否有价值"
    - 实现要点：`_compute_grpo_loss` 中按 `<|im_start|>assistant` 分段，每段用 shaped reward 计算独立 advantage
    - 依赖 F41/F43 shaped reward 提供 per-turn reward 信号（已实现）
-5. 多模板 curriculum 效果验证（lite → standard → multi）
+
+5. **F48-F51 新前沿反馈处理（2026-03-12）**
+   - **F48（MT-GRPO）**：解释 policy collapse 根因（tool collapse）。GRPO v3 应用 turn-level advantage。
+   - **F49（LOOP）**：Plan B 方案。比 Turn-PPO 更简单（无需额外 value head）。
+   - **F50（SkillRL）**：技能库演进。低优先级，GRPO 基线后考虑。
+   - **F51（MemoryRewardBench）**：RM 能力评测基准。记录备查。
+   - **后续行动**：待 GPU 恢复，按优先级实施（F48 → F49 as Plan B）
+
+6. 多模板 curriculum 效果验证（lite → standard → multi）
 
 ## 训练数据洞察（2026-03-11 分析）
 
