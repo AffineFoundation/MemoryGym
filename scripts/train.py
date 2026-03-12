@@ -416,6 +416,10 @@ def build_grpo_cmd(args: argparse.Namespace) -> str:
         parts.append("--ips")
     if getattr(args, "turn_level", False):
         parts.append("--turn-level")
+    if getattr(args, "load_in_4bit", False):
+        parts.append("--load-in-4bit")
+    if getattr(args, "backend", "chromadb") != "chromadb":
+        parts.append(f"--backend {args.backend}")
     return "python3 scripts/grpo_train.py " + " ".join(parts)
 
 
@@ -812,6 +816,11 @@ Examples:
                             help="Max tokens during rollout (lower = more memory pressure)")
     grpo_train.add_argument("--turn-level", action="store_true",
                             help="Mix shaped per-turn rewards into advantage (F42/MT-GRPO)")
+    grpo_train.add_argument("--load-in-4bit", action="store_true",
+                            help="Load base model in 4-bit (NF4) for low-VRAM training")
+    grpo_train.add_argument("--backend", default="chromadb",
+                            choices=["chromadb", "markdown"],
+                            help="Memory backend (markdown avoids SentenceTransformer VRAM)")
 
     args = parser.parse_args()
 

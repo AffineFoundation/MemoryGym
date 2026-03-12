@@ -68,6 +68,7 @@ def run_episode(
     temperature: float = 0.7,
     chat_kwargs: dict | None = None,
     rollout_max_tokens: int = 16384,
+    backend_type: str = "chromadb",
 ) -> tuple[list[dict], float, dict]:
     """Run a single episode, return (messages, reward, stats).
 
@@ -77,7 +78,8 @@ def run_episode(
     """
     import torch
 
-    env = MemoryEnv(template, tier=tier, seed=seed, reward_mode="shaped")
+    env = MemoryEnv(template, tier=tier, seed=seed, reward_mode="shaped",
+                    backend_type=backend_type)
     obs = env.reset(seed=seed)
     system_prompt = get_system_prompt(env.write_budget)
 
@@ -470,6 +472,12 @@ def main():
         help="DAPO Clip-Higher: asymmetric upper clip (e.g., 0.28). "
              "0 = symmetric (use clip-eps for both bounds)")
     parser.add_argument(
+        "--load-in-4bit", action="store_true",
+        help="Load base model in 4-bit (NF4) quantization to reduce VRAM")
+    parser.add_argument(
+        "--backend", default="chromadb", choices=["chromadb", "markdown"],
+        help="Memory backend (markdown avoids SentenceTransformer VRAM)")
+    parser.add_argument(
         "--log-file", default=None,
         help="JSON log file path")
     args = parser.parse_args()
@@ -490,23 +498,45 @@ def main():
         tokenizer.pad_token = tokenizer.eos_token
 
     model_kwargs = {
-        "dtype": torch.bfloat16,
         "trust_remote_code": True,
     }
+    if args.load_in_4bit:
+        from transformers import BitsAndBytesConfig
+        model_kwargs["quantization_config"] = BitsAndBytesConfig(
+            load_in_4bit=True,
+            bnb_4bit_compute_dtype=torch.bfloat16,
+            bnb_4bit_quant_type="nf4",
+        )
+        if is_main:
+            print("  4-bit quantization enabled (NF4)")
+    else:
+        model_kwargs["dtype"] = torch.bfloat16
     if not is_distributed:
         model_kwargs["device_map"] = "auto"
 
     model = AutoModelForCausalLM.from_pretrained(args.model, **model_kwargs)
 
-    # Load SFT adapter if provided, then merge
+    # Load SFT adapter if provided
     if args.adapter:
         if is_main:
             print(f"Loading SFT adapter: {args.adapter}")
         from peft import PeftModel
         model = PeftModel.from_pretrained(model, args.adapter)
-        model = model.merge_and_unload()
-        if is_main:
-            print("  SFT adapter merged")
+        if args.load_in_4bit:
+            # Don't merge into 4-bit — rounding errors destroy tool-calling.
+            # Keep SFT adapter loaded and add trainable adapter on top.
+            if is_main:
+                print("  SFT adapter kept (4-bit: skip merge to avoid "
+                      "rounding errors)")
+        else:
+            model = model.merge_and_unload()
+            if is_main:
+                print("  SFT adapter merged")
+
+    # Prepare for k-bit training if quantized
+    if args.load_in_4bit:
+        from peft import prepare_model_for_kbit_training
+        model = prepare_model_for_kbit_training(model)
 
     # Apply new trainable LoRA for GRPO
     if is_main:
@@ -520,7 +550,12 @@ def main():
         lora_dropout=0.0,  # No dropout for RL
         task_type="CAUSAL_LM",
     )
-    model = get_peft_model(model, lora_config)
+    if args.adapter and args.load_in_4bit:
+        # Add second adapter on top of existing SFT adapter
+        model.add_adapter("grpo", lora_config)
+        model.set_adapter("grpo")
+    else:
+        model = get_peft_model(model, lora_config)
     model.gradient_checkpointing_enable()
     if is_main:
         model.print_trainable_parameters()
@@ -558,6 +593,7 @@ def main():
             clip_desc += f", DAPO clip-higher={args.clip_higher}"
         print(f"  Clipping: {clip_desc}")
         print(f"  IPS: {args.ips}, KL: {args.kl_coeff}")
+        print(f"  4-bit: {args.load_in_4bit}")
         print(f"  Output: {output_dir}")
         print(f"{'=' * 60}\n")
 
@@ -598,6 +634,7 @@ def main():
                     temperature=temp,
                     chat_kwargs=chat_kwargs,
                     rollout_max_tokens=args.rollout_max_tokens,
+                    backend_type=args.backend,
                 )
                 group_rewards.append(reward)
                 group_messages.append(messages)
