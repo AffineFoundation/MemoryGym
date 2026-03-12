@@ -10,6 +10,7 @@ from .movie import MovieWorld
 from .university import UniversityWorld
 from .codebase import CodebaseWorld
 from .project import ProjectWorld
+from .agentteam import AgentteamWorld
 
 ALL_TEMPLATES: dict[str, type[WorldTemplate]] = {
     "company": CompanyWorld,
@@ -21,10 +22,11 @@ ALL_TEMPLATES: dict[str, type[WorldTemplate]] = {
     "university": UniversityWorld,
     "codebase": CodebaseWorld,
     "project": ProjectWorld,
+    "agentteam": AgentteamWorld,
 }
 
 __all__ = [
     "WorldTemplate", "World", "EntitySpec", "GeneratedQA", "Correction", "Contradiction", "Relationship",
     "CompanyWorld", "ResearchWorld", "CityWorld", "HospitalWorld", "SportWorld",
-    "MovieWorld", "UniversityWorld", "CodebaseWorld", "ProjectWorld", "ALL_TEMPLATES",
+    "MovieWorld", "UniversityWorld", "CodebaseWorld", "ProjectWorld", "AgentteamWorld", "ALL_TEMPLATES",
 ]
