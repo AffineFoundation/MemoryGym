@@ -72,6 +72,7 @@
 
 ## 已完成
 
+### Phase 114 — README 排行榜数据同步（123 evals, Composite 列） ✅
 ### Phase 113 — stdout 评分表 axis scores 一致 + smart_guesser<=5% + trajectory post-judge ✅
 ### Phase 112 — Correction Edit 免预算 + 消息增强（maintenance 轴修复） ✅
 ### Phase 111 — LEADERBOARD 刷新 (121 evals) + stream_agent context overflow 优雅 abstain ✅

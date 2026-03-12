@@ -96,15 +96,15 @@ python -m memorygym.bench --model moonshotai/Kimi-K2.5-TEE --official -o results
 
 See [LEADERBOARD.md](LEADERBOARD.md) for current results.
 
-Top models (averaged across templates and seeds):
+Top models (averaged across templates and seeds, 123 evals):
 
-| Model | Avg Score | Evals |
+| Model | Composite | Evals |
 |-------|-----------|-------|
-| Qwen3.5-397B | 30% | 15 |
-| Kimi-K2.5 | 28% | 18 |
-| Qwen3-235B | 18% | 7 |
-| MiniMax-M2.5 | 13% | 7 |
-| GLM-5 | 8% | 2 |
+| Qwen3.5-397B | 17.9% | 71 |
+| Qwen3-235B | 17.7% | 11 |
+| Kimi-K2.5 | 16.1% | 21 |
+| MiniMax-M2.5 | 15.2% | 11 |
+| GLM-5 | 10.2% | 9 |
 
 ## Architecture
 
