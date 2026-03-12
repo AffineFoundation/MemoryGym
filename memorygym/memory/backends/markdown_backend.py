@@ -190,7 +190,10 @@ class MarkdownBackend:
         self._write_seq = 0
 
     def close(self) -> None:
-        """Remove the temp directory if it exists under /tmp."""
+        """Release model and temp directory."""
+        self._model = None
+        self._embeddings = None
+        self._bm25 = None
         import shutil
         if self._dir.exists() and str(self._dir).startswith("/tmp/"):
             shutil.rmtree(self._dir, ignore_errors=True)

@@ -185,8 +185,10 @@ class ChromaDBBackend:
         )
 
     def close(self) -> None:
-        """Delete the collection to free resources."""
+        """Delete the collection and release client references."""
         try:
             self._client.delete_collection(self._collection.name)
         except Exception:
             pass
+        self._client = None
+        self._collection = None

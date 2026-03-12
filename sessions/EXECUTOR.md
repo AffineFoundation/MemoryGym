@@ -225,6 +225,7 @@ _ROLES = ["coordinator", "worker", "monitor", "router", "planner", "executor", "
 
 ## 已完成
 
+### Phase 124 — 并发 & Long-Run 资源泄漏修复（MarkdownBackend/ChromaDB/bench.py close） ✅
 ### Phase 123 — LEADERBOARD.md 刷新（150 evals, 10 模板，Qwen3-235B #1） ✅
 ### Phase 122 — counterfactual validator 路由修复 + cross_domain dead code 清理 ✅
 ### Phase 121 — eval_salt 约束一致性修复（enforce_constraints 钩子，10 模板全覆盖） ✅

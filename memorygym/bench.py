@@ -370,6 +370,8 @@ def main(argv: list[str] | None = None) -> int:
                     traj_tmp.rename(traj_path)
                     print(f"  Trajectory: {traj_path}")
 
+                backend_obj.close()
+
             else:
                 # Simulation mode (system self-testing)
                 for profile in strategies:
