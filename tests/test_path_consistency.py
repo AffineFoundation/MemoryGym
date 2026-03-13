@@ -131,8 +131,8 @@ class TestEditRefundOnFailure:
     @pytest.mark.parametrize("relpath", _FILES_WITH_EDIT)
     def test_edit_refunds_on_miss(self, relpath: str):
         src = _read(relpath)
-        # Must contain budget refund pattern (writes_used -= 1)
-        assert re.search(r"writes?_used\s*-=\s*1", src), \
+        # Must contain budget refund pattern (writes_used -= 1 or max(0, writes_used - 1))
+        assert re.search(r"writes?_used\s*(-=\s*1|=\s*max\(0)", src), \
             f"{relpath}: Edit path missing budget refund on failure"
 
 

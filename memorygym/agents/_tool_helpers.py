@@ -111,7 +111,7 @@ def execute_tool(
             ok = backend.edit(old_text, new_text)
             if not ok:
                 if not free_edit:
-                    budget.writes_used -= 1  # Refund on miss
+                    budget.writes_used = max(0, budget.writes_used - 1)
                 return "Text not found in memory.", None
             return f"Edited. {budget.remaining()} writes left.", None
         # Fallback for ChromaDB: search + forget + store
@@ -122,7 +122,7 @@ def execute_tool(
             backend.store(content)
             return f"Edited. {budget.remaining()} writes left.", None
         if not free_edit:
-            budget.writes_used -= 1  # Refund on miss
+            budget.writes_used = max(0, budget.writes_used - 1)
         return "Text not found in memory.", None
 
     if name == "Read" or name == "memory_get":

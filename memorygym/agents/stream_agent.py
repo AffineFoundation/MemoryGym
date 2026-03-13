@@ -238,6 +238,8 @@ def _run_tool_loop(
         if response is None:
             break  # context overflow, unrecoverable for this turn
         stats.api_calls += 1
+        if not response.choices:
+            break  # API returned empty choices, unrecoverable
         text = response.choices[0].message.content or ""
         messages.append({"role": "assistant", "content": text})
 
