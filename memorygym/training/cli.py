@@ -731,15 +731,23 @@ def main():
 
     # -- data --
     p_data = sub.add_parser("data", help="Generate SFT training data")
-    p_data.add_argument("--output", "-o", default="data/sft_train.jsonl")
-    p_data.add_argument("--seeds", type=int, default=20)
-    p_data.add_argument("--templates", nargs="+", default=None)
+    p_data.add_argument("--output", "-o", default="data/sft_train.jsonl",
+                        help="Output JSONL path (default: data/sft_train.jsonl)")
+    p_data.add_argument("--seeds", type=int, default=20,
+                        help="Number of seeds per template (default: 20)")
+    p_data.add_argument("--templates", nargs="+", default=None,
+                        help="Templates to use (default: all 10)")
     p_data.add_argument("--strategy", default="perfect",
-                        choices=["perfect", "strategic"])
-    p_data.add_argument("--n-entities", type=int, default=60)
-    p_data.add_argument("--n-questions", type=int, default=20)
-    p_data.add_argument("--n-corrections", type=int, default=5)
-    p_data.add_argument("--write-budget", type=int, default=30)
+                        choices=["perfect", "strategic"],
+                        help="Trajectory strategy (default: perfect)")
+    p_data.add_argument("--n-entities", type=int, default=60,
+                        help="Entities per world (default: 60)")
+    p_data.add_argument("--n-questions", type=int, default=20,
+                        help="Questions per eval (default: 20)")
+    p_data.add_argument("--n-corrections", type=int, default=5,
+                        help="Corrections per eval (default: 5)")
+    p_data.add_argument("--write-budget", type=int, default=30,
+                        help="Write budget for agent (default: 30)")
 
     # -- sft --
     p_sft = sub.add_parser("sft", help="SFT training (auto-generates data)")

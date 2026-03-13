@@ -154,7 +154,12 @@ def main(argv: list[str] | None = None) -> int:
     if is_model_eval:
         # Pre-check API key before loading heavy dependencies
         from memorygym.config import get_api_config
-        get_api_config(api_url=args.api_base)
+        try:
+            get_api_config(api_url=args.api_base)
+        except (RuntimeError, ValueError) as e:
+            print(f"\nError: {e}")
+            print("Set CHUTES_API_KEY or OPENAI_API_KEY environment variable.")
+            return 1
         strategy_names = [args.model]
     else:
         strategies = ([s for s in STRATEGIES if s["name"] in args.strategy]
