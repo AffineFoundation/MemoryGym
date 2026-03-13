@@ -134,6 +134,22 @@ sessions/AUDITOR.md（你，/loop 30m）— 调度中枢：审计、设计、方
 
 ## 当前任务
 
+### 审计 A360 — Phase 131 直接执行完成 + Batch 39 数据确认 ✅
+
+**Phase 131 完成**：
+- `training/cli.py` — data 子命令 8 个参数添加 help text
+- `bench.py` — API key 缺失时友好错误信息（catch RuntimeError/ValueError）
+- 版本 v0.10.34，commit da46346
+- 验证：390 passed, simulation ALL PASS ✅
+
+**Batch 39 确认**：4/4 evals 完成，覆盖缺口已填补。MiniMax movie s2 M=100%（完美维护）。总 evals ~177。
+
+**待办队列清空**：Phase 130 ✅ + Phase 131 ✅ + Batch 39 ✅。仅剩 Writer CRITICAL（捏造训练数据）和 Trainer GPU 阻塞。
+
+**下一轮**：A361，需要新的审计发现来派发任务。维度轮转恢复。
+
+---
+
 ### 审计 A359 — Phase 130 直接执行完成 ✅
 
 **行动**：审计线程直接执行 Phase 130（所有执行线程空闲）。
