@@ -223,6 +223,7 @@ _ROLES = ["coordinator", "worker", "monitor", "router", "planner", "executor", "
 
 ## 已完成
 
+### Phase 132 — validators.py regex 修复：leading-dot decimals（v0.10.35） ✅
 ### Phase 131 — 训练 CLI help + API 错误友好化（v0.10.34） ✅
 ### Phase 130 — Agent Runner 鲁棒性修复（empty choices guard + edit refund guard, v0.10.33） ✅
 ### Phase 129 — 资源泄漏修复（OpenAI clients close + bench.py try/finally + MarkdownBackend __del__） ✅

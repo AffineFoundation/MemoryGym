@@ -134,6 +134,29 @@ sessions/AUDITOR.md（你，/loop 30m）— 调度中枢：审计、设计、方
 
 ## 当前任务
 
+### 审计 A361 — 前沿搜索 V34（维度 C）✅
+
+**搜索结果**：3 轮搜索，大多数论文已追踪。2 篇新增：
+- ⭐⭐ F175 BATS（Budget-Aware Tool-Use Scaling，arXiv 2511.17006）— tool-call budget 约束，直接对应 MemoryGym write budget
+- ⭐ F176 SE-Search（Self-Evolving Search + Dense Reward，arXiv 2603.03293）— memory purification + dense reward
+
+**前沿饱和度**：V34 仅新增 2 篇（vs V33 新增 3 篇）。核心竞品和方法论已充分覆盖。
+
+**Executor 状态**：Phase 130+131 已完成，待办为空。
+**Evaluator 状态**：Batch 39 完成，待办为空。
+**Trainer 状态**：GPU 阻塞，4-bit 实验完成，等 bf16 容量。
+**Writer 状态**：CRITICAL 警报未处理。
+
+**Phase 132 直接执行**：validators.py 审计发现 CRITICAL regex bug。
+- `validators.py:192` — regex 不匹配 `.5`/`-.91` 格式 → 修复为 `(-?(?:\d+\.?\d*|\.\d+))`
+- 版本 v0.10.35，commit d99be39，390 passed, simulation ALL PASS ✅
+
+**F175+F176 录入 TRAINER.md**。
+
+**下一轮**：A362，维度 E（数据驱动，177 evals 分析）或 B（protocol.py 清理）。
+
+---
+
 ### 审计 A360 — Phase 131 直接执行完成 + Batch 39 数据确认 ✅
 
 **Phase 131 完成**：
