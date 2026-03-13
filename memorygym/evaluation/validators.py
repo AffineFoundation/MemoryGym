@@ -189,7 +189,7 @@ class AnswerValidator:
         When apply_suffix=False, K/M are ignored (decorative labels).
         """
         text = text.replace(",", "").replace("$", "").strip()
-        match = re.search(r"(-?\d[\d]*\.?\d*)\s*([KkMm])?", text)
+        match = re.search(r"(-?(?:\d+\.?\d*|\.\d+))\s*([KkMm])?", text)
         if not match:
             raise ValueError(f"No number found in: {text}")
         num = float(match.group(1))
