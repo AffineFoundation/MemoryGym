@@ -242,135 +242,136 @@ def main(argv: list[str] | None = None) -> int:
                     backend_obj = ChromaDBBackend()
 
                 seed_t0 = time.time()
-                agent_results, writes_used, stored, eval_error, traj = run_stream_agent(
-                    model=args.model,
-                    stream=stream,
-                    write_budget=write_budget,
-                    api_base=args.api_base,
-                    verbose=args.verbose,
-                    quiet=args.quiet,
-                    backend=backend_obj,
-                    world=world,
-                    template=tmpl,
-                    seed=seed,
-                    no_redaction=args.no_redaction,
-                )
+                try:
+                    agent_results, writes_used, stored, eval_error, traj = run_stream_agent(
+                        model=args.model,
+                        stream=stream,
+                        write_budget=write_budget,
+                        api_base=args.api_base,
+                        verbose=args.verbose,
+                        quiet=args.quiet,
+                        backend=backend_obj,
+                        world=world,
+                        template=tmpl,
+                        seed=seed,
+                        no_redaction=args.no_redaction,
+                    )
 
-                # Convert to standard format
-                seed_elapsed = time.time() - seed_t0
-                correct = sum(r.correct for r in agent_results)
-                total = len(agent_results)
-                by_comp: dict[str, list[bool]] = defaultdict(list)
-                by_purp: dict[str, list[bool]] = defaultdict(list)
-                answer_details = []
-                for r in agent_results:
-                    by_comp[r.competency].append(r.correct)
-                    by_purp[r.purpose].append(r.correct)
-                    detail = {
-                        "question": r.question,
-                        "expected": r.ground_truth,
-                        "actual": r.answer,
-                        "score": 1.0 if r.correct else 0.0,
-                        "is_correct": r.correct,
-                        "competency": r.competency,
-                        "purpose": r.purpose,
-                        "validation_method": r.validation_method,
-                        "validation_reason": r.validation_reason,
-                        "api_calls": r.api_calls,
-                        "elapsed": round(r.elapsed, 2),
-                        "retries": r.retries,
+                    # Convert to standard format
+                    seed_elapsed = time.time() - seed_t0
+                    correct = sum(r.correct for r in agent_results)
+                    total = len(agent_results)
+                    by_comp: dict[str, list[bool]] = defaultdict(list)
+                    by_purp: dict[str, list[bool]] = defaultdict(list)
+                    answer_details = []
+                    for r in agent_results:
+                        by_comp[r.competency].append(r.correct)
+                        by_purp[r.purpose].append(r.correct)
+                        detail = {
+                            "question": r.question,
+                            "expected": r.ground_truth,
+                            "actual": r.answer,
+                            "score": 1.0 if r.correct else 0.0,
+                            "is_correct": r.correct,
+                            "competency": r.competency,
+                            "purpose": r.purpose,
+                            "validation_method": r.validation_method,
+                            "validation_reason": r.validation_reason,
+                            "api_calls": r.api_calls,
+                            "elapsed": round(r.elapsed, 2),
+                            "retries": r.retries,
+                        }
+                        if r.error:
+                            detail["error"] = r.error
+                        answer_details.append(detail)
+
+                    # Detect stored entities
+                    stored_names, missed = tmpl.detect_stored_entities(
+                        world, stored)
+
+                    comp_scores = {
+                        c: round(sum(v) / len(v), 4) if v else 0.0
+                        for c, v in by_comp.items()
                     }
-                    if r.error:
-                        detail["error"] = r.error
-                    answer_details.append(detail)
 
-                # Detect stored entities
-                stored_names, missed = tmpl.detect_stored_entities(
-                    world, stored)
-
-                comp_scores = {
-                    c: round(sum(v) / len(v), 4) if v else 0.0
-                    for c, v in by_comp.items()
-                }
-
-                result = {
-                    "strategy": args.model,
-                    "template": tmpl.name,
-                    "seed": seed,
-                    "accuracy": correct / total if total else 0.0,
-                    "correct": correct,
-                    "total": total,
-                    "stored": len(stored_names),
-                    "missed": len(missed),
-                    "doc_chars": 0,
-                    "by_purpose": {
-                        p: (sum(v), len(v)) for p, v in by_purp.items()},
-                    "by_competency": {
-                        c: (sum(v), len(v)) for c, v in by_comp.items()},
-                    "details": answer_details,
-                }
-                agg[args.model].append(result)
-
-                # Compute 4-axis scores
-                axis_scores = compute_axis_scores(
-                    by_competency=by_comp,
-                    n_entities=n_entities,
-                    stored_count=len(stored_names),
-                    writes_used=writes_used,
-                    write_budget=write_budget,
-                )
-
-                # Save per-seed result in LiveWeb-compatible format
-                eval_result = {
-                    "task_name": (f"memorygym:{tmpl.name}"
-                                  f":{n_entities}e:{n_questions}q"),
-                    "score": correct / total if total else 0.0,
-                    "success": total > 0 and eval_error is None,
-                    "time_taken": seed_elapsed,
-                    "extra": {
-                        "version": __version__,
-                        "model": args.model,
-                        "backend": args.backend,
-                        "seed": seed,
+                    result = {
+                        "strategy": args.model,
                         "template": tmpl.name,
-                        "n_entities": n_entities,
-                        "n_questions": n_questions,
-                        "n_corrections": n_corrections,
-                        "write_budget": write_budget,
-                        "writes_used": writes_used,
-                        "stored_entities": len(stored_names),
-                        "missed_entities": len(missed),
-                        "per_axis": axis_scores,
-                        "composite": axis_scores["composite"],
-                        "by_competency": comp_scores,
-                        "answer_details": answer_details,
-                        "conversation": trajectory_to_conversation(traj),
-                    },
-                }
-                if eval_error:
-                    eval_result["error"] = eval_error
-                eval_dir = Path("eval")
-                eval_dir.mkdir(exist_ok=True)
-                safe_model = args.model.replace("/", "_")
-                eval_path = (eval_dir / f"{safe_model}_{tmpl.name}"
-                             f"_s{seed}.json")
-                tmp_path = eval_path.with_suffix(".tmp")
-                tmp_path.write_text(
-                    json.dumps(eval_result, indent=2, default=str))
-                tmp_path.rename(eval_path)
-                print(f"  Saved: {eval_path}")
+                        "seed": seed,
+                        "accuracy": correct / total if total else 0.0,
+                        "correct": correct,
+                        "total": total,
+                        "stored": len(stored_names),
+                        "missed": len(missed),
+                        "doc_chars": 0,
+                        "by_purpose": {
+                            p: (sum(v), len(v)) for p, v in by_purp.items()},
+                        "by_competency": {
+                            c: (sum(v), len(v)) for c, v in by_comp.items()},
+                        "details": answer_details,
+                    }
+                    agg[args.model].append(result)
 
-                # Save trajectory alongside result
-                if traj:
-                    traj_path = (eval_dir / f"{safe_model}_{tmpl.name}"
-                                 f"_s{seed}_trajectory.json")
-                    traj_tmp = traj_path.with_suffix(".tmp")
-                    traj_tmp.write_text(
-                        json.dumps(traj, indent=2, default=str))
-                    traj_tmp.rename(traj_path)
-                    print(f"  Trajectory: {traj_path}")
+                    # Compute 4-axis scores
+                    axis_scores = compute_axis_scores(
+                        by_competency=by_comp,
+                        n_entities=n_entities,
+                        stored_count=len(stored_names),
+                        writes_used=writes_used,
+                        write_budget=write_budget,
+                    )
 
-                backend_obj.close()
+                    # Save per-seed result in LiveWeb-compatible format
+                    eval_result = {
+                        "task_name": (f"memorygym:{tmpl.name}"
+                                      f":{n_entities}e:{n_questions}q"),
+                        "score": correct / total if total else 0.0,
+                        "success": total > 0 and eval_error is None,
+                        "time_taken": seed_elapsed,
+                        "extra": {
+                            "version": __version__,
+                            "model": args.model,
+                            "backend": args.backend,
+                            "seed": seed,
+                            "template": tmpl.name,
+                            "n_entities": n_entities,
+                            "n_questions": n_questions,
+                            "n_corrections": n_corrections,
+                            "write_budget": write_budget,
+                            "writes_used": writes_used,
+                            "stored_entities": len(stored_names),
+                            "missed_entities": len(missed),
+                            "per_axis": axis_scores,
+                            "composite": axis_scores["composite"],
+                            "by_competency": comp_scores,
+                            "answer_details": answer_details,
+                            "conversation": trajectory_to_conversation(traj),
+                        },
+                    }
+                    if eval_error:
+                        eval_result["error"] = eval_error
+                    eval_dir = Path("eval")
+                    eval_dir.mkdir(exist_ok=True)
+                    safe_model = args.model.replace("/", "_")
+                    eval_path = (eval_dir / f"{safe_model}_{tmpl.name}"
+                                 f"_s{seed}.json")
+                    tmp_path = eval_path.with_suffix(".tmp")
+                    tmp_path.write_text(
+                        json.dumps(eval_result, indent=2, default=str))
+                    tmp_path.rename(eval_path)
+                    print(f"  Saved: {eval_path}")
+
+                    # Save trajectory alongside result
+                    if traj:
+                        traj_path = (eval_dir / f"{safe_model}_{tmpl.name}"
+                                     f"_s{seed}_trajectory.json")
+                        traj_tmp = traj_path.with_suffix(".tmp")
+                        traj_tmp.write_text(
+                            json.dumps(traj, indent=2, default=str))
+                        traj_tmp.rename(traj_path)
+                        print(f"  Trajectory: {traj_path}")
+                finally:
+                    backend_obj.close()
 
             else:
                 # Simulation mode (system self-testing)

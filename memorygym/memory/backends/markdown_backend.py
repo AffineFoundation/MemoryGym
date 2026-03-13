@@ -197,3 +197,10 @@ class MarkdownBackend:
         import shutil
         if self._dir.exists() and str(self._dir).startswith("/tmp/"):
             shutil.rmtree(self._dir, ignore_errors=True)
+
+    def __del__(self) -> None:
+        """Fallback cleanup if close() was not called."""
+        try:
+            self.close()
+        except Exception:
+            pass

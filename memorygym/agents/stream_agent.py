@@ -857,4 +857,6 @@ def run_stream_agent(
     stored_contents = [e["content"] for e in backend.list()]
     if hasattr(backend, "close"):
         backend.close()
+    client.close()
+    judge_client.close()
     return results, budget.writes_used, stored_contents, eval_error, trajectory
