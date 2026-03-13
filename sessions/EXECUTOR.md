@@ -57,7 +57,31 @@
 
 ## 当前任务
 
-（待审计线程派发新任务）
+### Phase 131 — 训练 CLI help + API 错误友好化
+
+**依据**：A353 用户体验审计发现 2 处 UX 缺陷。
+
+#### Step 1 — 训练 CLI 参数添加 help text
+
+**文件**：`memorygym/training/cli.py`
+
+**问题**：`data` 子命令所有 `add_argument()` 无 `help=` 参数。用户运行 `python -m memorygym.training data --help` 看到参数名但无说明。
+
+**修复**：给每个 `add_argument()` 添加 `help=` 字符串，包含用途和默认值。至少覆盖 `data`、`smoke` 子命令。`sft` 和 `grpo` 如果也缺 help 一并补上。
+
+#### Step 2 — bench.py API 错误友好化
+
+**文件**：`memorygym/bench.py`
+
+**问题**：`--model nonexistent --seed 42 --template company` 产出完整 traceback，而非友好错误信息。
+
+**修复**：在 bench.py 的 model eval 路径上（API key 获取和首次 API 调用处），catch 常见错误（缺 API key、连接失败）并打印一行友好提示后 `sys.exit(1)`。不要 catch 所有异常——只 catch `RuntimeError`（API key 缺失）和 `ConnectionError`（连接失败）。
+
+#### 验证标准
+- `python -m memorygym.training data --help` 显示每个参数的说明
+- `python -m memorygym.bench --model fake --seed 42 --template company` 显示友好错误而非 traceback
+- `python -m pytest tests/ -q -m "not slow"` 全部通过
+- 版本号 patch 递增
 
 ---
 
@@ -225,6 +249,8 @@ _ROLES = ["coordinator", "worker", "monitor", "router", "planner", "executor", "
 
 ## 已完成
 
+### Phase 130 — Agent Runner 鲁棒性修复（empty choices guard + edit refund guard, v0.10.33） ✅
+### Phase 129 — 资源泄漏修复（OpenAI clients close + bench.py try/finally + MarkdownBackend __del__） ✅
 ### Phase 128 — LEADERBOARD/README 刷新（173 evals）+ pyproject.toml 版本同步 ✅
 ### Phase 127 — test_worlds.py 补齐 4 缺失模板测试覆盖（6→10 模板） ✅
 ### Phase 126 — Inspect AI correction Edit 免费 + 提示词同步（两路径行为一致） ✅
