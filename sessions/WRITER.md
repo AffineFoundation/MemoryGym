@@ -143,16 +143,16 @@ Benchmark & Training Platform Paper（评测+训练平台论文）
 
 ## 当前任务
 
-### Task W2 — 交叉验证脚本 + 论文质量提升
+### Task W3 — 自我红队审查 + 投稿就绪
 
-**背景**：W1 完成初稿 + PA-1 修复已验证。所有数据与代码/eval JSON 一致。
+**背景**：W1+W2 完成。所有数据验证通过，PA-1/PA-2 全部 FIXED，写作质量已提升。
 
 **步骤**：
-1. 创建 `scripts/validate_paper.py` — 自动交叉验证论文数据引用
-2. 补充 template difficulty 表的真实 per-model-per-template 数据
-3. 优化写作质量：消除冗余、增强 narrative flow
-4. 确保 references.bib 覆盖所有 \citep
-5. 标注 PA-1 所有 13 个 issue 为 [FIXED]
+1. 以审稿人视角进行红队攻击（最可能的 reject 理由是什么？）
+2. 处理审计线程新反馈（如有）
+3. 确保论文可编译（需 texlive 环境）
+4. 检查 appendix 数据与主文一致性
+5. 最终 validate_paper.py 通过
 
 ---
 
@@ -270,6 +270,55 @@ Benchmark & Training Platform Paper（评测+训练平台论文）
 
 ---
 
+### PA-3 — 残留 minor 修复（A315）
+
+**M1-残留**：related_work.tex 行 11 表标题仍写 "formal validation against gaming strategies"。改为 "empirical validation"（与正文用词一致）。
+
+**M2-残留**：appendix.tex 行 208 写 "range from 0 to 10"，应为 "0 to 9"（range(10) 不含 10）。
+
+---
+
+### PA-4 — 审稿人视角攻击（A316）
+
+> 模拟顶会审稿人的攻击性审查。每条标注严重程度和建议修复方式。
+
+**R1. 训练贡献无实验支撑** [CRITICAL]
+- §6 (Training Environment) 声称 MemoryEnv 是核心贡献之一，但全文无任何训练实验结果（无 loss 曲线、无 SFT 前后对比、无 GRPO 收敛数据）
+- 审稿人会质疑：一个没有训练结果的"训练平台"能算贡献吗？
+- **建议**：(a) 降低训练贡献的声称力度，改为"提供训练接口和初步验证"；(b) 补充至少一个 SFT baseline 实验（用 Perfect 轨迹微调小模型，展示训练前后评分变化）；(c) 最差情况：在 limitation 中坦承尚无训练结果，明确标注为 future work
+
+**R2. 模型选择偏差** [HIGH]
+- 5 个模型全部来自 Chutes 平台，全部是中国厂商模型（Qwen/MiniMax/Kimi/GLM）
+- 缺少 GPT-4、Claude、Gemini 等代表性模型
+- discussion.tex L26 已有一句 limitation，但审稿人可能认为不够：如果最强模型（GPT-4o/Claude Opus）能到 50%+，那"18.6% 说明记忆管理是未解决能力"的核心论断就被推翻
+- **建议**：(a) 在 limitation 中更强化此点，明确说明是 API 访问限制而非选择性评估；(b) 加一句"we encourage evaluation of additional models"（已有）；(c) 如果可能，补充 1-2 个非 Chutes 模型的评测数据
+
+**R3. 主表缺少误差线/标准差** [HIGH]
+- Table 2 只有均值，无 stderr/std
+- 不同模型 runs 数差异大（Qwen3.5=81 vs GLM=21），无法判断差异是否统计显著
+- **建议**：(a) 每个 score 后加 ±std 或 ±stderr；(b) 加一行说明不同 runs 数的原因；(c) 考虑对关键模型间差异做 t-test 或 bootstrap CI
+
+**R4. 缺少人类基线** [MEDIUM]
+- 审稿人会问：人类在这个任务上能达到什么水平？
+- 如果人类也只能达到 30%，那 18.6% 并不差；如果人类能达到 90%，那 18.6% 确实揭示了大差距
+- **建议**：(a) 做一个小规模人类实验（3-5 人，2-3 个 seed）；(b) 如果不可行，在 discussion 中解释为何人类基线不适用（工具接口不是人类自然工作方式）
+
+**R5. Abstention 诊断题未分析** [MEDIUM]
+- Framework 提到 abstention diagnostic questions（3 道，不计入 efficiency），但 experiments 中完全未分析结果
+- 它们本应测试元认知能力（知道自己不知道什么），但结果被忽略了
+- **建议**：加一段分析 abstention 诊断结果（模型在未存储实体上是否正确 abstain？abstain 率？与 breadth 的关系？）
+
+**R6. Anti-gaming 保证的范围限制** [MEDIUM]
+- 9 种 simulation 策略是手动设计的，不能证明"所有"gaming 策略都失败
+- **建议**：(a) 承认这是经验验证而非形式证明（M1 已改 "empirical"）；(b) 解释 9 种策略覆盖了主要攻击面（不存储/少存储/不更新/随机猜测/领域知识猜测）；(c) 在 discussion 中邀请社区贡献新的攻击策略
+
+**R7. 18.6% 是模型限制还是基准设计问题？** [HIGH]
+- 审稿人最可能的总体攻击：低分反映的是基准太难/设计不合理，而非模型真的缺乏记忆管理能力
+- 目前的反驳证据：(a) Perfect 达 91.3%（天花板够高）；(b) TemplateExpert 达 70.3%（合理策略可获高分）；(c) 分数随设计改进提升（敏感度好）
+- **建议**：(a) 在 experiments 或 discussion 中展示 simulation 梯度（Perfect 91% → TemplateExpert 70% → Strategic 65% → ... → SmartGuesser 1%），证明分数阶梯合理；(b) **最强论据**：18.6% 低于 Naive simulation（32.8%），说明真实模型甚至不如随机存储 40% 实体的策略——这证明低分确实反映模型限制，不是基准设计问题
+
+---
+
 ## 数据需求
 
 > 论文写作中发现需要补充的实验或数据，记录在此。审计线程会定期检查并转化为评测任务。
@@ -283,6 +332,14 @@ Benchmark & Training Platform Paper（评测+训练平台论文）
 ### W1 — 论文初稿 ✅
 
 完整 LaTeX 框架：7 章节 + appendix，5 张图，30 条 references。PA-1 审计 13 个 issue + PA-2 新增 2 个 issue 全部 FIXED。数据经 eval JSON 和 simulation 交叉验证。
+
+### W2 — 交叉验证 + 质量提升 ✅
+
+- `validate_paper.py` ALL PASS（25 个 axis 值 max diff 0.05pp）
+- Template difficulty 表已为真实 per-model-per-template 数据
+- references.bib 100% 覆盖率
+- 修复 3 处数据不一致：breadth 10.3→22.9%、"no model >20%" claim、efficiency 20→17 scorable questions
+- "formal" → "systematic/empirical" 全文清理完毕
 
 ---
 
