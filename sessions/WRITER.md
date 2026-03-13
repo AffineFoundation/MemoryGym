@@ -143,24 +143,16 @@ Benchmark & Training Platform Paper（评测+训练平台论文）
 
 ## 当前任务
 
-### Task W1 — 论文初稿：完整框架搭建
+### Task W2 — 交叉验证脚本 + 论文质量提升
 
-**目标**：在 `../memorygym-paper/` 中搭建完整的 LaTeX 论文框架，写完所有章节的初稿。
+**背景**：W1 完成初稿 + PA-1 修复已验证。所有数据与代码/eval JSON 一致。
 
 **步骤**：
-1. 创建 LaTeX 项目结构（main.tex + 各章节 .tex 文件）
-2. 编写 Abstract + Introduction 初稿
-3. 编写 Related Work（引用 ROADMAP §7 的文献 + TRAINER.md 前沿发现）
-4. 编写 Framework 章节（方法描述）
-5. 编写 Experiments 章节（从 eval 数据提取关键结果）
-6. 编写 MemoryEnv 章节
-7. 编写 Discussion + Conclusion
-8. 创建图表生成脚本（Python）
-
-**验证标准**：
-- `pdflatex main.tex` 可编译
-- 所有章节有实质内容（非占位符）
-- 数据引用与 eval 结果一致
+1. 创建 `scripts/validate_paper.py` — 自动交叉验证论文数据引用
+2. 补充 template difficulty 表的真实 per-model-per-template 数据
+3. 优化写作质量：消除冗余、增强 narrative flow
+4. 确保 references.bib 覆盖所有 \citep
+5. 标注 PA-1 所有 13 个 issue 为 [FIXED]
 
 ---
 
@@ -244,6 +236,40 @@ Benchmark & Training Platform Paper（评测+训练平台论文）
 
 ---
 
+### PA-2 — 修复进度审计 + 勘误（A312）
+
+#### PA-1 修复状态
+
+| 编号 | 状态 | 备注 |
+|------|------|------|
+| C1 | [FIXED] ✅ | Efficiency 公式已改为 min(correct/B, 1.0) |
+| C2 | [FIXED] ✅ | Perfect 改为 >90%，appendix S_E=56.7/S_C=91.3 经验证正确 |
+| C3 | [FIXED] ✅ | 策略名改为代码真实名称 |
+| C4 | [FIXED] ✅ | gen_tables.py 已创建，主表数据与 173 eval JSON 完全匹配 |
+| C5 | [FIXED] ✅ | Simulation 10 seeds×10 templates 数据经验证与 appendix 完全一致 |
+| H1 | [FIXED] ✅ | 主表 5 模型数据与 eval JSON 逐一验证通过 |
+| H2 | [FIXED] ✅ | 20 种推理类型已对照 protocol.py REASONING_COMPETENCIES 修正 |
+| H3 | [FIXED] ✅ | references.bib 已创建（30 条目） |
+| H4 | [FIXED] ✅ | framework.tex 行 76 已含维护缩放公式及设计动机解释 |
+| H5 | [FIXED] ✅ | Backend 对比表已删除，改为文字说明 + future work |
+| M1 | [FIXED] ✅ | "formal" → "empirical" 全文替换（abstract/intro/related_work/framework/discussion） |
+| M2 | [FIXED] ✅ | 种子范围改为 "0 to 9"，引用 OFFICIAL_SEEDS |
+| M3 | [FIXED] ✅ | 贡献点从 5 个减到 3 个 |
+
+#### PA-1 勘误
+
+**C2 审计方修正**：PA-1 声称 Perfect S_E 应为 66.7%（20/30），实际经代码验证 correct_total=17（3 道 abstention 诊断题不计入 efficiency），所以 S_E = 17/30 = 56.7%，S_C = 91.3%。**论文 appendix 当前数值正确**。审计方原始攻击基于错误假设（误以为 20 题全部计入 efficiency）。
+
+#### 新问题
+
+**C6. framework.tex 行 92 的 S_E 文字描述仍然错误** [FIXED] ✅
+- 已修正：改为 "17 scorable questions, S_E = 17/30 ≈ 0.567"，并说明 abstention 诊断不计入
+
+**H6. Maintenance 缩放公式** [FIXED] ✅
+- framework.tex 行 76 已含公式及解释
+
+---
+
 ## 数据需求
 
 > 论文写作中发现需要补充的实验或数据，记录在此。审计线程会定期检查并转化为评测任务。
@@ -254,7 +280,9 @@ Benchmark & Training Platform Paper（评测+训练平台论文）
 
 ## 已完成
 
-（暂无）
+### W1 — 论文初稿 ✅
+
+完整 LaTeX 框架：7 章节 + appendix，5 张图，30 条 references。PA-1 审计 13 个 issue + PA-2 新增 2 个 issue 全部 FIXED。数据经 eval JSON 和 simulation 交叉验证。
 
 ---
 
