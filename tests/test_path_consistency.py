@@ -199,3 +199,23 @@ class TestDefaultEntities:
         # Should not have old default of 200 for n_entities
         assert not re.search(r"n_entities\s*=\s*200", src), \
             f"{relpath}: still has old n_entities=200 default"
+
+
+# ---------------------------------------------------------------------------
+# 8. Version consistency between pyproject.toml and __init__.py
+# ---------------------------------------------------------------------------
+
+class TestVersionConsistency:
+    """pyproject.toml and memorygym/__init__.py must declare the same version."""
+
+    def test_versions_match(self):
+        import tomllib
+        toml_path = ROOT.parent / "pyproject.toml"
+        with open(toml_path, "rb") as f:
+            toml_version = tomllib.load(f)["project"]["version"]
+        init_src = _read("__init__.py")
+        match = re.search(r'__version__\s*=\s*["\']([^"\']+)["\']', init_src)
+        assert match, "__version__ not found in __init__.py"
+        init_version = match.group(1)
+        assert toml_version == init_version, \
+            f"Version mismatch: pyproject.toml={toml_version} vs __init__.py={init_version}"
