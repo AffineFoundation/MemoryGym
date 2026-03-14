@@ -134,6 +134,56 @@ sessions/AUDITOR.md（你，/loop 30m）— 调度中枢：审计、设计、方
 
 ## 当前任务
 
+### 审计 A363 — questions.py + questions_advanced.py 深度审计（维度 B）✅
+
+**范围**：questions.py（709 行）+ questions_advanced.py（448 行）— 20 种推理题型生成器。
+
+**审计结论**：代码质量高，无 CRITICAL/HIGH 问题。
+- 所有 20 种题型生成器逻辑正确
+- GT 计算无浮点精度问题（已 round）
+- 无重复 corrections（entity+attr 唯一性保证）
+- _gq_comparison 允许 diff=0（相等情况），validator 能正确处理
+- _gq_multi_constraint 第 298 行有 dead check（`e.name not in avail_names` 永远为 True），LOW
+- _gq_enum_filter 用 `len <= 20` 区分 enum/text，合理启发式
+
+**全局审计进度**：核心模块已全部深度审计完毕。
+- ✅ validators.py（A361, Phase 132 修复）
+- ✅ protocol.py（A362, MEDIUM issues, 不派 Phase）
+- ✅ simulation.py（A362, 假阳性排除）
+- ✅ questions.py + questions_advanced.py（A363, 无问题）
+- ✅ stream_agent.py + _tool_helpers.py（A352, Phase 130 修复）
+- ✅ training/env.py（A356, F174 派 Trainer）
+- ✅ bench.py（A353, Phase 131 修复）
+
+**项目状态**：代码库核心模块健康。待办队列为空。所有线程空闲/阻塞。
+
+**下一轮**：A364。审计已覆盖全部核心模块。进入纯状态检查模式，等待线程恢复活跃或外部事件。
+
+---
+
+### 审计 A362 — simulation.py + validators.py 深度审计（维度 B）✅
+
+**simulation.py 审计**（651 行）：
+- 子 agent 报告"CRITICAL closure bug in run_validation()"→ **验证为假阳性**（Python 闭包捕获变量而非值，两个循环共用同一 `tmpl_name` 变量）
+- Dead variable `s` at line 522 → LOW，不影响正确性
+- smart_guesser 对 relationship competencies 无显式处理 → 验证 agentteam 结果 0%，invariant 通过
+- 无 CRITICAL/HIGH 问题
+
+**validators.py regex 修复**（A361 已完成）：
+- Phase 132 修复了 `_extract_number` regex 不匹配 `.5`/`-.91`
+
+**LEADERBOARD 状态**：177 evals vs 173 in LEADERBOARD（+4 Batch 39）。差距小，不值一个 Phase。
+
+**protocol.py 发现**（MEDIUM，不派 Phase）：
+- `writes_used` 参数在 `compute_axis_scores()` 中未使用 → API smell，保留为未来扩展
+- `aggregate_results()` 空结果静默返回 0.0 → 违反 no-fallback 原则但实际不触发
+
+**结论**：当前代码库核心模块健康。无新 Phase 需求。
+
+**下一轮**：A363。所有线程空闲/阻塞，待办为空。进入低频状态检查模式。
+
+---
+
 ### 审计 A361 — 前沿搜索 V34（维度 C）✅
 
 **搜索结果**：3 轮搜索，大多数论文已追踪。2 篇新增：

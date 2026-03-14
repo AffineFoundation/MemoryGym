@@ -3,7 +3,11 @@
 import uuid
 from pathlib import Path
 
+import pytest
+
 from memorygym.memory.backends.markdown_backend import MarkdownBackend
+
+pytestmark = pytest.mark.slow  # ChromaDB embedding init ~3s per test
 
 
 def _fresh_backend(tmp_path: Path | None = None) -> MarkdownBackend:

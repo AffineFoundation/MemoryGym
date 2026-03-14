@@ -140,6 +140,7 @@ def test_stream_determinism():
                     f"seed={seed} event {i}: answer differs")
 
 
+@pytest.mark.slow
 def test_trick_retrieval():
     """Trick retrieval questions exist and have real (non-ABSTAIN) GT."""
     for TmplClass in [CompanyWorld, ResearchWorld, CityWorld, HospitalWorld, SportWorld, MovieWorld]:
@@ -735,6 +736,7 @@ def test_lite_tier_contradictions_not_lost():
         "Lite tier must include contradiction events in stream"
 
 
+@pytest.mark.slow
 def test_mid_question_weights_match_template():
     """Mid-stream questions should respect template question_weights."""
     from memorygym.worlds.hospital import HospitalWorld

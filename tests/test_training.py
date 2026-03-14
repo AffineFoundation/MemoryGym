@@ -5,6 +5,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
 from memorygym.training import (
     MemoryEnv,
     export_trajectories,
@@ -301,6 +303,7 @@ class TestMemoryEnv:
         assert reward == -0.05
         assert "error" in info
 
+    @pytest.mark.slow
     def test_shaped_reward_correction_flow(self):
         """Shaped mode: Edit during correction with correct value → +0.5."""
         env = MemoryEnv("company", seed=0, n_entities=30,
@@ -524,6 +527,7 @@ class TestMemoryEnv:
             f"Old collection {old_name} still exists after reset()")
         env.close()
 
+    @pytest.mark.slow
     def test_reset_cleans_old_markdown_tmpdir(self):
         """Multiple reset() calls should not leak /tmp directories."""
         import os
@@ -538,6 +542,7 @@ class TestMemoryEnv:
             f"Old temp dir {old_dir} still exists after reset()")
         env.close()
 
+    @pytest.mark.slow
     def test_env_close_cleans_up(self):
         """MemoryEnv.close() cleans up backend resources."""
         env = MemoryEnv("company", seed=0, n_entities=10,
@@ -639,6 +644,7 @@ class TestMemoryEnv:
                     f"Write for {c.entity_name} has neither {c.attr}={old_fmt} nor {new_fmt}"
                 )
 
+    @pytest.mark.slow
     def test_sft_correction_edit_coverage(self):
         """SFT trajectory should have Edit demos for most corrections."""
         from memorygym.simulation import TEMPLATES
@@ -696,6 +702,7 @@ class TestMemoryEnv:
                                         f"after skipped correction missing {new_fmt}"
                                     )
 
+    @pytest.mark.slow
     def test_env_edit_reward_requires_correct_value(self):
         """Shaped Edit reward: +0.5 only if new_text contains new_val."""
         env = MemoryEnv("company", seed=0, n_entities=30,

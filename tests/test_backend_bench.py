@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
+import pytest
+
 from memorygym.evaluation.backend_bench import benchmark_backend
+
+pytestmark = pytest.mark.slow  # ChromaDB backend init + search
 from memorygym.memory.backends.chromadb_backend import ChromaDBBackend
 from memorygym.worlds.company import CompanyWorld
 from memorygym.worlds.city import CityWorld

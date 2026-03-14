@@ -204,6 +204,7 @@ def test_comparison_gt_correct():
             f"{tmpl.name}: no comparison questions across 10 seeds")
 
 
+@pytest.mark.slow
 def test_delta_gt_correct():
     """Delta GT must equal abs(new_val - old_val) from correction."""
     v = AnswerValidator()
