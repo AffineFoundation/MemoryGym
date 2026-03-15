@@ -65,6 +65,7 @@ async def generate(
     done = False
     max_turns = 200
     turn = 0
+    info: dict = {}
 
     # slime provides a post() function for LLM inference
     post = getattr(args, "post", None)

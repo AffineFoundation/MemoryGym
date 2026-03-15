@@ -54,6 +54,6 @@ def compute_score(
         if abs(sol_num - gt_num) / abs(gt_num) <= 0.02:
             return 1.0
     except ValueError:
-        pass
+        return 0.0
 
     return 0.0

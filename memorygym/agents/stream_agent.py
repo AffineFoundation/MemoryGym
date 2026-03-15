@@ -347,6 +347,17 @@ def run_stream_agent(
 
     if backend is None:
         backend = ChromaDBBackend()
+
+    def _close_clients() -> None:
+        try:
+            client.close()
+        except Exception:
+            pass
+        try:
+            judge_client.close()
+        except Exception:
+            pass
+
     budget = MemoryBudget(total_writes=write_budget)
 
     total_events = len(stream)
@@ -856,9 +867,10 @@ def run_stream_agent(
             print(f"\n  ERROR: {eval_error[:120]}")
         print(f"  {'═' * 50}")
 
-    stored_contents = [e["content"] for e in backend.list()]
-    if hasattr(backend, "close"):
-        backend.close()
-    client.close()
-    judge_client.close()
+    try:
+        stored_contents = [e["content"] for e in backend.list()]
+    finally:
+        if hasattr(backend, "close"):
+            backend.close()
+        _close_clients()
     return results, budget.writes_used, stored_contents, eval_error, trajectory

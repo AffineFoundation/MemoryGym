@@ -741,7 +741,10 @@ class MemoryEnv:
 
         elif tool == "submit_answer":
             answer = args.get("answer", "")
-            event = self._stream[self._event_idx]
+            if current_event is None:
+                info["error"] = "No current event to answer"
+                return self._make_obs(), reward, True, info
+            event = current_event
             if event["type"] == "question":
                 gt = str(event["answer"])
                 competency = event["competency"]

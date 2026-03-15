@@ -375,6 +375,9 @@ def main(argv: list[str] | None = None) -> int:
                             json.dumps(traj, indent=2, default=str))
                         traj_tmp.rename(traj_path)
                         print(f"  Trajectory: {traj_path}")
+                except Exception as e:
+                    print(f"\n  ERROR (seed {seed}): {e}")
+                    continue
                 finally:
                     backend_obj.close()
 

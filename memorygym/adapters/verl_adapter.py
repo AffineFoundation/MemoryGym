@@ -138,6 +138,7 @@ if _VERL_AVAILABLE:
 
             done = False
             turn = 0
+            info: dict = {}
 
             while not done and turn < self.max_env_turns:
                 # Check length limit
