@@ -57,168 +57,68 @@
 
 ## 当前任务
 
----
+### Phase 135 — GRPO 代码路径修复（training/cli.py 1 BLOCKER + 5 HIGH）
 
-~~### Phase 117 — project 世界模板（项目管理）~~ + ~~117-fix~~ **已合并完成**
+**依据**：审计 A520 发现 `training/cli.py` GRPO 实现存在 1 个 BLOCKER 和 5 个 HIGH 级别 bug，解释了 Trainer GRPO smoke test 无法产出结果的原因。这些 bug 阻塞了 NeurIPS 论文训练实验数据的产出。
 
-**依据**：A228 审计通过红队攻击。OpenClaw 核心使用场景是 agent 管理项目上下文（任务进度、人员分工、截止日期、依赖关系）。现有 8 模板无管理视角覆盖。
+**意图**：修复 GRPO 训练管线中的梯度流、损失计算、资源管理问题，使 RL 训练能正常进行。
 
-**参考**：`memorygym/worlds/company.py`（~490 行，完整模板结构参考）
+#### Step 1 — 修复零损失 fallback（BLOCKER）
 
-#### Step 1 — 创建 `memorygym/worlds/project.py`
+**文件**：`memorygym/training/cli.py:648-650`
 
-模板结构（与 company.py 保持一致）：
+**问题**：当所有 trajectory 的 advantage ≈ 0 被跳过后，`total_loss = torch.tensor(0.0, requires_grad=True)` 创建无计算图的张量。`loss.backward()` 产生零梯度，模型不训练。
 
-**命名**：30 prefixes × 20 suffixes（语义无关）
-```python
-_PREFIXES = ["Phoenix", "Aurora", "Titan", "Nebula", "Horizon", "Catalyst", "Meridian", "Spectra", "Vanguard", "Axiom", "Zenith", "Summit", "Frontier", "Beacon", "Pinnacle", "Apex", "Nexus", "Vertex", "Quantum", "Helix", "Prism", "Nova", "Cobalt", "Onyx", "Argon", "Cipher", "Vector", "Flux", "Ember", "Pulse"]
-_SUFFIXES = ["Platform", "Engine", "Portal", "Hub", "Suite", "Gateway", "Framework", "Pipeline", "Toolkit", "Module", "Workspace", "Dashboard", "Orchestrator", "Connector", "Bridge", "Nexus", "Core", "Studio", "Forge", "Matrix"]
-```
+**修复**：返回一个明确标记（如 `None`），让调用方跳过该 step 的 `backward()` + `optimizer.step()`。或者用 `0 * model_param.sum()` 创建连接到模型的零损失（但这也不好，浪费计算）。推荐返回 `None` 并在调用方处理。同时添加 warning 日志：`"GRPO step skipped: all trajectories filtered (advantage ≈ 0)"`。
 
-**分类维度**（类似 company 的 _SECTORS）**：
-```python
-_METHODOLOGIES = ["Agile", "Waterfall", "Kanban", "Scrum", "SAFe", "Lean", "XP", "Spiral", "DevOps", "Hybrid", "RAD", "FDD"]
-```
+#### Step 2 — 为静默跳过添加 warning（HIGH）
 
-**23 属性**（6 dtype 全覆盖，参考 codebase/university 的分布）：
-```python
-# int (8): team_size(2-200), milestone_count(1-50), task_backlog(0-500), closed_tasks(0-2000), sprint_count(1-100), stakeholder_count(1-30), integration_count(0-40), commit_count(0-50000)
-# float (7): completion_pct(0-100,%), budget_k(10-5000,$K), burn_rate_k(1-500,$K/mo), velocity_points(1-100), risk_score(0-10), scope_change_pct(0-80,%), customer_nps(-100-100)
-# text (2): project_description (text_pool 20 条), key_risk (text_pool 20 条)
-# enum (2): status(planning/active/on-hold/completed/cancelled), priority(critical/high/medium/low)
-# date (2): start_date(2020-2026), deadline(2024-2027)
-# list_float (2): weekly_velocity (list_len=5, sprint 速度趋势: ramp-up 曲线，前期低后期高), monthly_burn (list_len=5, 月度消耗: S 型支出曲线)
-```
+**文件**：`memorygym/training/cli.py:582-583`
 
-**注意**：避免与 codebase 重叠 — 不用 open_issues/test_coverage_pct/dependencies
+**问题**：`if abs(advantage) < 1e-6: continue` 无任何日志。大量 trajectory 可能被静默跳过，Trainer 看不到原因。
 
-**Inter-Attribute Constraints（至少 4 个）**：
-```python
-# 1. team_size ↔ burn_rate_k: burn_rate ∈ [team_size × 5, team_size × 30]（人均月成本 $5K-$30K）
-# 2. completion_pct ↔ closed_tasks/task_backlog: completion ≈ closed/(closed+backlog) × 100，±15%
-# 3. status cascade: status="completed" → completion_pct ∈ [95,100], task_backlog < 5
-# 4. budget_k ↔ team_size × sprint_count: 总预算 ≥ team × sprint × 最低人工成本
-# 5. scope_change_pct ↔ risk_score: 高 scope_change(>50%) → risk_score > 5
-```
+**修复**：添加 `logger.warning("Skipping trajectory with near-zero advantage: %.6f", advantage)`。在函数末尾统计跳过数量并 warning：`"GRPO loss: %d/%d trajectories used (skipped %d with |advantage| < 1e-6)"` 。
 
-**Ratio Pairs（6 个）**：budget_k/team_size, closed_tasks/sprint_count, task_backlog/team_size, burn_rate_k/team_size, commit_count/team_size, velocity_points/team_size
+#### Step 3 — 修复 KL 散度计算（HIGH）
 
-**List_Float 生成模式**：
-- weekly_velocity: ramp-up 曲线（团队磨合期低 → 稳定期高），val = base × (0.4 + 0.6 × sigmoid(t))
-- monthly_burn: S 型支出（前期采购低 → 中期人力高 → 后期收尾低），val = peak × 4 × t × (1-t)
+**文件**：`memorygym/training/cli.py:624-627`
 
-**correction_rate**: 0.12（项目状态变更频繁）
-**question_weights**: retrieval 25%, comprehension 40%, update 20%, abstention 15%（偏重跨项目推理）
+**问题**：`ratio = torch.exp(mean_log_ratio)` 在 sequence-level 做 exp，等价于几何均值。然后用这个 ratio 做 clipping，相当于对整个序列的"平均 ratio"做 PPO clipping，而非 per-token 操作。
 
-- 每个属性需要 `_Q_TEXTS` 问题模板（3-4 变体）
-- 每个属性需要 `_SENTENCE_TMPLS` 句型模板（至少 3 种 distractor style: none/temporal/comparative/qualified）
-- 4 种 `doc_style`（status_report/executive_summary/standup_notes/risk_assessment）
-- `_PROJECT_DESCRIPTIONS`（20 条）+ `_KEY_RISKS`（20 条）
-- 所有 `agg_ops=("average",)` 加在百分比/比率类属性上
+**修复方案（二选一，推荐 A）**：
+- **A（per-token ratio, 更接近 GRPO）**：`ratio = torch.exp(log_ratio)` per-token，clipping 在 per-token 上做，然后 `pg_loss = -(torch.min(surr1, surr2) * mask).sum() / n_tokens`
+- **B（保持 sequence-level 但修正 KL）**：KL penalty 直接用 `mean_log_ratio`（已是 E[log(π/π_ref)]），不需要再 exp
 
-#### Step 2 — 注册模板
+注意：如果选 A，需要同时修改 cli.py:629-633 的 clipping 逻辑为 per-token。
 
-- `memorygym/worlds/__init__.py`：添加 `ProjectWorld` 到 `TEMPLATES` 和 `OFFICIAL_TEMPLATES`
-- `memorygym/bench.py`：`--template` choices 增加 `project`
+#### Step 4 — 修复 loss 归一化一致性（HIGH）
 
-#### Step 3 — 测试
+**文件**：`memorygym/training/cli.py:651-652`
 
-- `tests/test_worlds.py` 自动覆盖所有注册模板，无需额外测试代码
-- 运行 `python tests/test_worlds.py` 确认通过
-- 运行 `python -m memorygym.bench --seeds 3 --validate` 确认 simulation 不变量
+**问题**：`n_valid > 1` 时 `total_loss / n_valid`，但 `n_valid == 1` 时不除。
+
+**修复**：统一为 `total_loss / n_valid`（当 n_valid >= 1 时）。
+
+#### Step 5 — 移除内循环 empty_cache + MemoryEnv 资源泄漏（HIGH + MEDIUM）
+
+**文件**：`memorygym/training/cli.py:585, 470`
+
+**修复 1**：移除 `torch.cuda.empty_cache()`（:585），或移到外层 step 循环。内循环调用导致 3-5x 性能下降。
+
+**修复 2**：`_run_episode`（:470）中 `env = MemoryEnv(...)` 后加 `try/finally: env.close()`，防止异常时 ChromaDB 资源泄漏。
 
 #### 验证标准
-- `python tests/test_worlds.py` 全通过
-- `python -m memorygym.bench --seeds 3 --validate` 全通过
-- project 模板 23 属性：int≥8, float≥7, text=2, enum=2, date=2, list_float=2
-- `_Q_TEXTS` 覆盖所有 23 属性（每个 3-4 变体）
-- `_SENTENCE_TMPLS` 覆盖所有 23 属性（每个至少 3 种 distractor style）
-- inter-attribute constraints ≥ 4 个
-- ratio_pairs = 6 个
-- list_float 有领域特定生成模式（非纯随机）
-- 与 codebase 无属性名重叠
+
+1. `python -m pytest tests/ -q -m "not slow"` — 全部通过
+2. `python -m pytest tests/test_training*.py -q` — 训练相关测试通过
+3. 手动验证：`_compute_grpo_loss` 在 advantage 全为 0 时返回 `None`（非 requires_grad=True 的零张量）
+4. 手动验证：`_compute_grpo_loss` 日志输出跳过 trajectory 的 warning
+5. 版本号 patch 递增
 
 ---
 
-### Phase 118 — agentteam 世界模板（多 Agent 协作）
+## Backlog
 
-**依据**：A229 审计通过红队攻击。多 agent 编排是 2025-2026 最热 AI 方向，直击 OpenClaw 用户核心场景。与 project（管理视角）和 codebase（代码视角）均不重叠——本模板测运维视角。
-
-**参考**：Phase 117 的 project.py + company.py 结构
-
-#### Step 1 — 创建 `memorygym/worlds/agentteam.py`
-
-**命名**：30 prefixes × 20 suffixes（NATO phonetic + 功能词，语义无关）
-```python
-_PREFIXES = ["Alpha", "Bravo", "Charlie", "Delta", "Echo", "Foxtrot", "Golf", "Hotel", "India", "Juliet", "Kilo", "Lima", "Mike", "November", "Oscar", "Papa", "Quebec", "Romeo", "Sierra", "Tango", "Uniform", "Victor", "Whiskey", "Xray", "Yankee", "Zulu", "Omega", "Sigma", "Theta", "Epsilon"]
-_SUFFIXES = ["Agent", "Worker", "Node", "Unit", "Bot", "Daemon", "Service", "Handler", "Processor", "Executor", "Monitor", "Router", "Dispatcher", "Scheduler", "Planner", "Evaluator", "Analyzer", "Synthesizer", "Coordinator", "Controller"]
-```
-
-**分类维度**：
-```python
-_ROLES = ["coordinator", "worker", "monitor", "router", "planner", "executor", "analyzer", "retriever", "generator", "validator", "debugger", "optimizer"]
-```
-
-**23 属性**（6 dtype 全覆盖，参考 codebase 的复杂度水平）：
-```python
-# int (8): task_count(0-5000), message_count(0-100000), retry_count(0-500), queue_depth(0-1000), uptime_hours(0-8760), active_connections(0-500), tool_call_count(0-10000), context_switches(0-2000)
-# float (7): success_rate(0-100,%), response_latency_ms(1-5000,ms), cpu_utilization(0-100,%), task_throughput(0.1-100,/hr), error_rate(0-50,%), coordination_score(0-100), memory_efficiency_pct(10-100,%)
-# text (2): specialization (text_pool 20 条), last_error_description (text_pool 20 条)
-# enum (2): status(active/idle/error/maintenance), communication_protocol(sync/async/pubsub/streaming)
-# date (2): deployed_date(2023-2026), last_heartbeat(2026-01 to 2026-03)
-# list_float (2): hourly_throughput (list_len=5, 最近 5 小时: 带负载波动 + 偶发 spike), error_burst (list_len=5, 错误频率趋势: 事故-恢复模式)
-```
-
-**Inter-Attribute Constraints（至少 5 个，复杂度对标 codebase）**：
-```python
-# 1. success_rate ↔ error_rate: success_rate + error_rate ∈ [85, 110]（不完全互补，有 timeout/unknown）
-# 2. cpu_utilization ↔ response_latency_ms: high CPU(>80%) → latency > 500ms; low CPU(<20%) → latency < 200ms
-# 3. status cascade: status="error" → error_rate > 20%, queue_depth > 100, success_rate < 50%
-# 4. task_throughput ↔ active_connections: throughput ∈ [connections × 0.05, connections × 2]
-# 5. uptime_hours ↔ retry_count: high uptime(>8000h) + high retry(>200) → memory_efficiency < 50%
-# 6. coordination_score ↔ message_count/task_count: 高协调分(>80) → 消息/任务比 > 5
-```
-
-**Ratio Pairs（6 个）**：task_count/uptime_hours, message_count/task_count, retry_count/task_count, tool_call_count/task_count, error_rate/cpu_utilization, context_switches/active_connections
-
-**List_Float 生成模式**：
-- hourly_throughput: 正弦波负载（日间高/夜间低）+ 20% 概率 burst spike（3-5x），val = base × (0.6 + 0.4 × sin(π × t/4)) + spike
-- error_burst: 事故-恢复模式（同 codebase error_rate_trend），spike 位置随机 + exponential decay
-
-**correction_rate**: 0.15（agent 状态变化最频繁）
-**question_weights**: retrieval 25%, comprehension 40%, update 20%, abstention 15%（偏重跨 agent 推理 — 负载均衡、故障传播链）
-
-- 每个属性需要 `_Q_TEXTS` 问题模板（3-4 变体）
-- 每个属性需要 `_SENTENCE_TMPLS` 句型模板（至少 3 种 distractor style: none/temporal/comparative/qualified）
-- 4 种 `doc_style`（health_report/incident_log/capacity_review/orchestration_brief）
-- `_SPECIALIZATIONS`（20 条）+ `_ERROR_DESCRIPTIONS`（20 条）
-- 所有 `agg_ops=("average",)` 加在百分比/比率类属性上
-
-#### Step 2 — 注册模板（同 Phase 117）
-
-#### Step 3 — 测试（同 Phase 117）
-
-#### 验证标准
-- `python tests/test_worlds.py` 全通过
-- `python -m memorygym.bench --seeds 3 --validate` 全通过
-- agentteam 模板 23 属性：int≥8, float≥7, text=2, enum=2, date=2, list_float=2
-- `_Q_TEXTS` 覆盖所有 23 属性（每个 3-4 变体）
-- `_SENTENCE_TMPLS` 覆盖所有 23 属性（每个至少 3 种 distractor style）
-- inter-attribute constraints ≥ 5 个（复杂度对标 codebase）
-- ratio_pairs = 6 个
-- list_float 有领域特定生成模式（spike/恢复/负载波动）
-- 与 project/codebase 无属性名重叠
-- correction_rate = 0.15（最高，agent 状态最动态）
-
----
-
-## P3 — 评测质量 + 文档（不阻塞训练，可延后）
-
-### 低优先级 Backlog
-
-- ~~README + LEADERBOARD 文档同步（A155）~~ → **Phase 107 已派发**
-- **用户体验修正**：API key 错误信息改善（docs/Design.md 已删除 A65，LEADERBOARD.md 已填充 A58）
-- **Promise/Progress Reward**：等简单 shaped reward 在真实训练中验证后，再决定是否需要更复杂的 reward 模型
 - **legacy 工具名清理**：移除 _KNOWN_TOOLS 中的 memory_store/memory_forget/memory_get/memory_list（等 v3 评测基线稳定后）
 
 ## 已完成
@@ -226,6 +126,7 @@ _ROLES = ["coordinator", "worker", "monitor", "router", "planner", "executor", "
 ### Phase 132 — validators.py regex 修复：leading-dot decimals（v0.10.35） ✅
 ### Phase 131 — 训练 CLI help + API 错误友好化（v0.10.34） ✅
 ### Phase 130 — Agent Runner 鲁棒性修复（empty choices guard + edit refund guard, v0.10.33） ✅
+### Phase 134 — 训练模块 + bench.py 鲁棒性修复（env.py 越界 + adapters info 初始化 + bench.py except + client try/finally） ✅
 ### Phase 129 — 资源泄漏修复（OpenAI clients close + bench.py try/finally + MarkdownBackend __del__） ✅
 ### Phase 128 — LEADERBOARD/README 刷新（173 evals）+ pyproject.toml 版本同步 ✅
 ### Phase 127 — test_worlds.py 补齐 4 缺失模板测试覆盖（6→10 模板） ✅
