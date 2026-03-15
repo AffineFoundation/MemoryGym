@@ -379,9 +379,10 @@ def cmd_grpo(args: argparse.Namespace) -> int:
             clip_eps=args.clip_eps,
             clip_higher=args.clip_higher,
         )
-        loss.backward()
-        torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
-        optimizer.step()
+        if loss is not None:
+            loss.backward()
+            torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+            optimizer.step()
 
         elapsed = time.time() - step_start
         mean_r = sum(step_rewards) / len(step_rewards)
@@ -392,7 +393,7 @@ def cmd_grpo(args: argparse.Namespace) -> int:
 
         entry = {
             "step": step + 1,
-            "loss": loss.item(),
+            "loss": loss.item() if loss is not None else 0.0,
             "mean_kl": mean_kl,
             "mean_reward": mean_r,
             "max_reward": max_r,
@@ -548,9 +549,12 @@ def _run_episode(model, tokenizer, template, tier, seed,
 
         turn += 1
 
-    reward = env.get_verifiable_reward()
-    stats = info.get("episode_stats", {}) if info else {}
-    return context, reward, stats
+    try:
+        reward = env.get_verifiable_reward()
+        stats = info.get("episode_stats", {}) if info else {}
+        return context, reward, stats
+    finally:
+        env.close()
 
 
 def _compute_grpo_loss(model, tokenizer, trajectories, max_length,
@@ -573,6 +577,8 @@ def _compute_grpo_loss(model, tokenizer, trajectories, max_length,
     total_loss = None
     total_kl = 0.0
     n_valid = 0
+    n_skipped = 0
+    n_total = len(trajectories)
     has_adapter = hasattr(model, "disable_adapter_layers")
     use_kl = kl_coeff > 0 and has_adapter
     clip_upper = (1.0 + clip_higher) if clip_higher > 0 else (1.0 + clip_eps)
@@ -580,9 +586,8 @@ def _compute_grpo_loss(model, tokenizer, trajectories, max_length,
 
     for messages, advantage in trajectories:
         if abs(advantage) < 1e-6:
+            n_skipped += 1
             continue
-
-        torch.cuda.empty_cache()
 
         full_text = apply_chat_template(tokenizer, messages, chat_kwargs)
         tokens = tokenizer(
@@ -621,20 +626,19 @@ def _compute_grpo_loss(model, tokenizer, trajectories, max_length,
                 ref_token_log_probs = ref_log_probs.gather(
                     2, shift_labels.clamp(min=0).unsqueeze(-1)).squeeze(-1)
 
-            # Ratio = exp(log_policy - log_ref) per token
+            # Per-token ratio = exp(log_policy - log_ref)
             log_ratio = (token_log_probs - ref_token_log_probs) * mask
-            mean_log_ratio = log_ratio.sum() / n_tokens
-            ratio = torch.exp(mean_log_ratio)
+            ratio = torch.exp(log_ratio)
 
-            # Clipped surrogate objective (PPO/GRPO style)
+            # Per-token clipped surrogate objective (GRPO style)
             clipped_ratio = torch.clamp(ratio, clip_lower, clip_upper)
             surr1 = ratio * advantage
             surr2 = clipped_ratio * advantage
-            pg_loss = -torch.min(surr1, surr2)
+            pg_loss = -(torch.min(surr1, surr2) * mask).sum() / n_tokens
 
-            # KL penalty
+            # KL penalty (mean per-token log ratio)
             if use_kl:
-                kl = mean_log_ratio
+                kl = log_ratio.sum() / n_tokens
                 pg_loss = pg_loss + kl_coeff * kl
                 total_kl += kl.item()
         else:
@@ -645,10 +649,16 @@ def _compute_grpo_loss(model, tokenizer, trajectories, max_length,
         total_loss = pg_loss if total_loss is None else total_loss + pg_loss
         n_valid += 1
 
+    if n_skipped > 0:
+        print(f"[GRPO] {n_valid}/{n_total} trajectories used "
+              f"(skipped {n_skipped} with |advantage| < 1e-6)")
+
     if total_loss is None:
-        import torch
-        total_loss = torch.tensor(0.0, device=model.device, requires_grad=True)
-    elif n_valid > 1:
+        print("[GRPO] WARNING: step skipped — all trajectories filtered")
+        mean_kl = total_kl / max(n_valid, 1)
+        return None, mean_kl
+
+    if n_valid >= 1:
         total_loss = total_loss / n_valid
 
     mean_kl = total_kl / max(n_valid, 1)
