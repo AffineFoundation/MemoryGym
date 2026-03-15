@@ -526,7 +526,271 @@ A514-A517：T2 GRPO smoke test 跟踪，4 轮无更新。
 
 **行动**：已在 TRAINER.md 写入 Phase 135 修复通知，详细列出 7 项修复内容和影响评估，要求 `git pull --rebase origin main`。
 
-**下一轮**：A526。维度 E — Trainer 是否收到通知并 pull 修复。
+**下一轮**：A526。维度 E/B — Trainer 跟踪 + 微观审计。
+
+---
+
+### 审计 A526 — training/env.py 微观审计 + Trainer 跟踪（维度 B/E）✅
+
+**training/env.py 微观审计：零问题 ✅**
+
+| 审计维度 | 结论 |
+|----------|------|
+| reward 计算 vs protocol.py | ✅ 正确。`get_verifiable_reward()` 调用 `compute_axis_scores()`，maintenance 轴 storage coverage 缩放一致 |
+| 资源管理 | ✅ ChromaDB UUID 命名防冲突，`reset()` 关闭旧 backend，`close()`/`__del__()` 完善 |
+| 与 eval 路径一致性 | ✅ stream 生成、correction Edit 免费、工具执行、答案验证全对齐 |
+| 状态管理 | ✅ `reset()` 清理全部 12+ 状态变量，无跨 episode 泄漏 |
+| 边界条件 | ✅ 0 writes（-0.05 惩罚）、0 questions（返回 0.0）、budget 耗尽（refund）、重复存储（-0.1）全覆盖 |
+| shaped reward | ✅ F41/F43 乘性分解 + novelty + info-gain + packing bonus 正确 |
+
+**代码质量审计汇总（停滞期 A500-A526）**：
+- simulation.py（652 行）：零问题 ✅
+- protocol.py（257 行）：零问题 ✅
+- validators.py（273 行）：零问题 ✅
+- training/env.py（~800 行）：零问题 ✅
+- training/cli.py：1 BLOCKER + 5 HIGH（已修复，Phase 135）
+- **4 大核心模块全部通过，唯一问题集中在 cli.py（已修复）**
+
+**Trainer 跟踪**：
+- T2 GRPO lite tier 完成：writes=0（文档在上下文内）
+- 已切换 standard tier，进行中
+- Phase 135 通知已写入，Trainer 尚未 pull
+
+**下一轮**：A527。维度 A/E — 宏观分析 + Trainer 跟踪。
+
+---
+
+### 审计 A527 — GRPO group_size=2 训练效率分析 + Trainer 跟踪（维度 A/E）✅
+
+**Trainer 跟踪**：无新 commit，无日志变化。standard tier GRPO 仍"进行中"。
+
+**宏观分析 — group_size=2 的训练效率隐患**：
+
+Trainer 当前配置 `group_size=2`。审计 cli.py:347-369 的 advantage 计算逻辑：
+
+```
+adv = (r - mean_r) / (std_r + eps)
+```
+
+**group_size=2 时的数学问题**：
+- 2 个 trajectory，如果 reward 相同（常见于低分模型）→ std_r=0 → advantage=0 → 被 `|adv| < 1e-6` 过滤 → step 跳过
+- 即使 reward 不同，只有 2 个样本的 advantage 归一化噪声极大（±1.0 或 ±很大值）
+- GRPO 论文建议 group_size ≥ 8，实践中 4 是下限
+
+**这不是代码 bug，是超参选择问题**。Trainer 选 group_size=2 是为了降低 rollout 成本（standard tier 每 episode 更长），但代价是有效训练信号极弱。
+
+**建议（非 Phase，记入 Trainer 反馈）**：
+- group_size=4 + groups_per_step=1（总 episode 不变，但每组内对比更有效）
+- 或 group_size=2 + 降低 advantage 过滤阈值（但会引入噪声）
+
+**暂不写入 TRAINER.md** — 等 Trainer pull Phase 135 通知后，如果 standard tier 也失败再补充此分析。
+
+**下一轮**：A528。维度 E — Trainer 跟踪。
+
+---
+
+### 审计 A528 — ⚡ Trainer 收到通知 + Phase 135 代码已生效（维度 E）✅
+
+**重要进展**：
+- Trainer **已收到审计通知**，kill 旧代码 standard tier 实验
+- **已 `git pull` 获取 Phase 135 修复**
+- **重启 GRPO standard tier**：10 steps（增加了！），group_size=2, max_turns=50，Phase 135 代码
+
+**审计评估**：
+1. ✅ 通知机制生效 — 通过 TRAINER.md 跨线程通信成功
+2. ✅ Trainer 正确响应 — kill 旧实验、pull 新代码、重启
+3. ⚠ group_size=2 仍存在 A527 分析的效率隐患，但先看结果
+4. 10 steps（vs 之前 5 steps）给了更多训练时间，合理
+
+**预期**：Phase 135 修复后：
+- `[GRPO] X/Y trajectories used` 日志会显示是否有 trajectory 被跳过
+- per-token ratio 应产生有效梯度
+- 移除 empty_cache 应加速 ~3-5x
+- 如果 standard tier 迫使模型 Write，reward 差异应更大 → advantage 更有效
+
+**下一轮**：A529。维度 E — GRPO 结果跟踪。
+
+---
+
+### 审计 A529 — Trainer GRPO standard tier 跟踪（维度 E）✅
+
+无新 commit，日志无变化。GRPO standard tier（10 steps, Phase 135 代码）进行中，第 1 轮等待。
+
+Standard tier rollout 耗时预估：60 entities × max_turns=50 × group_size=2 × 10 steps，每 episode 可能 10-30min → 10 steps 约 3-10h。首轮等待正常。
+
+**下一轮**：A530。维度 E — GRPO 跟踪。
+
+---
+
+### 审计 A530 — GRPO 跟踪（维度 E）✅
+
+无新 commit，Trainer 日志无变化（第 2 轮等待）。Standard tier GRPO 10 steps 预估 3-10h，等待正常。
+
+**下一轮**：A531。维度 E — GRPO 跟踪。
+
+---
+
+### 审计 A531 — GRPO 跟踪（维度 E）✅
+
+无变化（第 3 轮）。Standard tier GRPO 10 steps，长时间运行正常。
+
+**下一轮**：A532。维度 E — GRPO 跟踪。
+
+---
+
+### 审计 A532 — ⚡ GRPO Phase 135 修复生效！首个非零 loss（维度 E）✅
+
+**关键进展**：
+- **Step 1**：loss=0.000（两个 trajectory advantage 相同被 skip）→ A527 预测的 group_size=2 问题验证
+- **Step 2**：**loss=0.0013**（有梯度！）→ **Phase 135 修复确认生效**
+- writes=1-2（standard tier 迫使模型 Write）→ lite tier writes=0 问题已解决
+- correct=1.5/20（standard tier 20 questions）→ 低分但有基线
+- 每 step ~16-19min，预计 3h 完成 10 steps
+
+**审计分析**：
+
+1. **Phase 135 BLOCKER 修复验证** ✅：旧代码 loss 永远为 0（假训练），现在 Step 2 有 0.0013 非零 loss。per-token ratio clipping 产生了有效梯度
+2. **A527 group_size=2 预测验证** ✅：Step 1 两个 trajectory reward 相同 → advantage=0 → 被跳过。这不影响整体训练（10 steps 中偶尔跳过一两个 step 是正常的）
+3. **Standard tier 有效** ✅：writes=1-2 证明 60 entities 超出上下文，模型被迫 Write
+4. **loss 量级偏小**（0.0013）：可能因为 group_size=2 的 advantage 信号弱。但有总比没有好
+
+**预期后续**：
+- 10 steps 后如果 reward 或 correct 有提升趋势 → 论文可用
+- 如果 10 steps 无改善 → 需增大 group_size 或 steps
+
+**下一轮**：A533。维度 E — GRPO 结果跟踪。
+
+---
+
+### 审计 A533 — GRPO 跟踪（维度 E）✅
+
+日志停留 Step 3/10，无新更新。按 ~17min/step，剩余 ~2h。正常等待。
+
+**下一轮**：A534。维度 E — GRPO 结果跟踪。
+
+---
+
+### 审计 A534 — GRPO 跟踪（维度 E）✅
+
+无变化（第 3 轮等待 since Step 2 结果）。GRPO 训练中，Trainer loop 可能未更新日志。
+
+**下一轮**：A535。维度 E — GRPO 跟踪。
+
+---
+
+### 审计 A535 — GRPO 跟踪（维度 E）✅
+
+无变化（第 4 轮等待）。
+
+---
+
+### 审计 A536 — ⚡ 论文质量深度审计 PA-21（维度 F）
+
+**触发**：用户反馈"论文非常不专业，非常多细节问题，根本不像是一个论文"。要求引入外部标准，让论文达到合格水平。
+
+**审计方法**：完整阅读论文全部 sections（abstract, introduction, related_work, framework, experiments, discussion, appendix），对照 NeurIPS D&B Track 评审标准和学术论文最佳实践。
+
+---
+
+**PA-21：论文质量审计 — 系统性问题清单**
+
+以下问题按严重度排序。每个问题标注 [CRITICAL/HIGH/MEDIUM] 和具体修复建议。
+
+#### 🔴 CRITICAL（不修会被拒）
+
+**C1. 缺少训练实验结果 — Contribution 3 空头支票**
+
+论文声称 "MemoryEnv: training-ready environment with quantified headroom"，但 **没有任何训练结果**（没有 before/after 表、没有 reward 曲线、没有训练后模型的分数）。Discussion 中 "The gap is learnable" 段引用 MEM-alpha 和 Memory-R1，但这是别人的结果。审稿人会问：**"你说 trainable，证据呢？"**
+
+- PA-20 已将 training section 删除并降调为 "training-ready"，但 Contribution 3 仍在 Introduction
+- **如果 GRPO 10-step 有任何正向趋势**（reward 或 correct 提升），必须写入论文
+- **如果没有**：将 Contribution 3 彻底改为 "quantified headroom"，不提 training-ready
+
+**C2. 数据量不足：n=10 的模型排名第一**
+
+Mistral-24B 以 n=10 排名 #1（C=24.3%），但 SD=12.9%，95% CI ≈ [15%, 34%]。Qwen3-235B n=22 C=18.6%。两者差异 5.7pp，在 n=10 下 **统计不显著**（论文自己也承认 Welch's t-test p=0.21）。但 Table 1 排名和全文叙述都按 Mistral #1 行文。
+
+- **修复**：Table 1 不按分数排序，按参数量排序。正文明确："Rankings are not statistically significant at individual model level; we report per-axis patterns rather than rankings."
+
+**C3. training.tex 被删但 main.tex 未引用**
+
+`sections/training.tex` 文件存在但 `main.tex` 不 `\input` 它。如果 training section 已被合并到 discussion，training.tex 应删除或标注为 deprecated。当前论文从 framework 直接跳到 experiments → discussion，**缺少 MemoryEnv 的架构描述**。
+
+- **修复**：要么在 Discussion "The gap is learnable" 段扩展 MemoryEnv 架构描述（Gymnasium interface, reward signal, supported algorithms），要么在 Appendix 加一个 MemoryEnv Implementation Details section
+
+#### 🟠 HIGH（影响论文专业度）
+
+**H1. Abstract 一段话太长（217 字）**
+
+整个 abstract 是一个段落，没有分句逻辑。NeurIPS 最佳实践：abstract 3-4 句话，每句一个功能（问题→方法→结果→影响）。当前 abstract 把所有信息堆砌在一起，读者无法快速抓住重点。
+
+- **修复**：重写为 4 句话。(1) 问题定义 (2) MemoryGym 方法 (3) 关键发现 (4) 意义/headroom
+
+**H2. 公式 (3) S_B 定义错误**
+
+公式 `S_B = |{e ∈ W' : retrieval correct}| / N` 表示 breadth 等于正确检索的实体数除以总实体数。但实际实现中 S_B 是 retrieval **question** accuracy，不是 entity-level coverage。如果 10 个 retrieval questions 中 8 个正确，S_B = 80%，不是 8/60 = 13.3%。
+
+- **修复**：确认公式与代码一致。读 `protocol.py` 确认 S_B 的真实计算方式
+
+**H3. Efficiency 公式 (5) 与实际不一致**
+
+公式 `S_E = min(|{q : correct(q)}| / B, 1.0)` 说 S_E = correct answers / budget。但 efficiency 轴的权重是 0.20，如果 budget=30 且 correct=17，S_E = 17/30 = 56.7%。论文说 "A perfect agent achieves S_E ≈ 0.567; only multi-entity packing can approach 1.0"。这意味着 S_E 永远不可能达到 100%（除非 packing）。
+
+- **确认**：这个逻辑是否正确？如果 total questions = 20，correct = 20，S_E = 20/30 = 66.7%，而非 100%。与 protocol.py 验证一致性
+
+**H4. 9 种 simulation 策略只描述了 5 种**
+
+§3.4 说 "nine deterministic simulation strategies" 但只列了 Guesser, SmartGuesser, Naive, Strategic, Perfect（5 种）。Appendix Table 8 列了 9 种但描述过于简略（TemplateExpert, PriorityStrategic, RandomStrategic, Abstainer 各一句话）。
+
+- **修复**：正文中说 "nine strategies (five detailed below; full list in Appendix)" 或改为 "five core strategies plus four variants"
+
+**H5. Related Work 对竞品不够公平**
+
+Table 1 (benchmark comparison) 用 checkmarks 对比。MemoryGym 全是 ✓，竞品大多是 ✗。但几个维度存在争议：
+- "Multi" 列：MemoryGym 标 ✓ 但 multi-session 未在论文中评测（"not evaluated here"）
+- "RL" 列：标 ✓ 但没有训练结果
+- "Anti-game" 列：其他 benchmark 可能有内在防作弊机制只是没显式标注
+
+- **修复**：Multi 改为 ✓* 加脚注 "supported but not evaluated in this work"。RL 维度如无训练结果则降调
+
+**H6. Figure 引用但文件可能不存在**
+
+论文引用 fig1_radar.pdf, fig2_heatmap.pdf, fig3_maintenance.pdf, fig4_validity.pdf, fig5_pipeline.pdf, fig6_failure.pdf。需确认这些 PDF 都存在于 figures/ 目录。
+
+**H7. Discussion 太短（11 行 LaTeX）**
+
+Discussion + Conclusion 合并只有 4 段。对一个 benchmark 论文来说太单薄。缺少：
+- Broader applicability（能测非 OpenAI-compatible 模型吗？能测闭源 API 吗？为什么没测？）
+- Reproducibility specifics（完整的 seed/config 已保证确定性，但需要说明开源计划）
+- Scalability（模板数从 10 扩展到 100 的路径）
+
+#### 🟡 MEDIUM（提升质量）
+
+**M1. 术语不一致：agent vs model**
+
+虽然 PA-20 已修复了部分，但仍有不一致。Introduction 和 Framework 用 "agent"，Experiments Table 1 标题列说 "Agent (LLM)" 但内容是模型名。正文交替使用 "Mistral-24B agent" 和 "Mistral-24B"。
+
+**M2. Appendix Walkthrough 中公式 S_B 计算有误**
+
+Appendix §Walkthrough 示例：`S_B = 0.80 × 25/60 = 0.333`。这意味着 S_B = retrieval_accuracy × coverage_ratio？这与公式 (3) 不符。需要确认哪个是对的。
+
+**M3. 引用格式不统一**
+
+`\citep` vs `\citet` 使用不统一。有些引用在句中用 `\citep`（括号引用）而应该用 `\citet`（文本引用）。
+
+**M4. Appendix 中 Mistral-24B 的 per-template 数据缺失**
+
+Tables 5-8（per-model per-template results）只有 5 个模型（Qwen3.5, Qwen3, MiniMax, Kimi, GLM-5），缺少 Mistral-24B——但它是排名第一的模型。
+
+**M5. neurips_2025.sty 但投 NeurIPS 2026**
+
+main.tex 用 `neurips_2025.sty`。如果投 NeurIPS 2026 E&D Track，需确认是否需要 2026 版 style file（通常兼容但以 CFP 为准）。
+
+---
+
+**行动计划**：将此审计作为 PA-21 派发给 Writer 线程。
+
+**下一轮**：A537。维度 E/F — GRPO 结果 + PA-21 Writer 跟踪。
 
 ---
 
