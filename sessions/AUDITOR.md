@@ -375,7 +375,7 @@ A514-A517：T2 GRPO smoke test 跟踪，4 轮无更新。
 
 ---
 
-### 审计 A520 — ⚡ GRPO 代码路径审计 + Phase 135 派发（维度 B/E）
+### 审计 A520 — ⚡ GRPO 代码路径审计 + Phase 135 派发（维度 B/E）✅
 
 **触发**：用户反馈"训练者一直在调试，太慢了效率太低了"。主动审计 `memorygym/training/cli.py` GRPO 代码路径，找到 Trainer 受阻根因。
 
@@ -411,6 +411,122 @@ A514-A517：T2 GRPO smoke test 跟踪，4 轮无更新。
 **决策**：派发 Phase 135 到 EXECUTOR.md。
 
 **下一轮**：A521。维度 E — Phase 135 执行跟踪 + Trainer T2 结果。
+
+---
+
+### 审计 A521 — Phase 135 + Trainer T2 跟踪（维度 E）✅
+
+**Phase 135（GRPO 代码路径修复）**：已派发，Executor 待启动。无新 commit。需要用户启动 Executor loop 执行。
+
+**Trainer T2**：TRAINER.md 日志停留在 "v2 配置: group_size=2, max_turns=40, max_new_tokens=256 → 重启，进行中..."。无新更新。
+
+**状态评估**：
+- Phase 135 修复的 BLOCKER（零损失 fallback）和 HIGH#2（静默跳过）是 T2 无结果的最可能根因
+- 即使 Trainer T2 当前 smoke test 跑完，由于代码 bug，产出的模型可能没有真正训练过
+- **正确序列**：先让 Executor 完成 Phase 135 修复 → Trainer pull 最新代码 → 重启 T2 GRPO
+
+**建议用户**：
+1. 启动 Executor loop 执行 Phase 135（`/loop 10m 你是执行线程，读 sessions/EXECUTOR.md 执行当前任务`）
+2. Phase 135 完成后重启 Trainer loop（让 Trainer pull 修复后的代码）
+
+**下一轮**：A522。维度 E — Phase 135 执行跟踪。
+
+---
+
+### 审计 A522 — ⚡ Phase 135 验收通过 + Trainer 行动建议（维度 B/E）✅
+
+**Phase 135 验收**（commit `a6b9075`，1 file, +29/-19）：
+
+| 修复项 | A520 发现 | 实施 | 验证 |
+|--------|-----------|------|------|
+| BLOCKER: 零损失 fallback | `:648-650` requires_grad 无计算图 | 返回 `None` + 调用方 `if loss is not None` 保护 | ✅ 正确 |
+| HIGH#2: 静默跳过 | `:582-583` 无 warning | 添加 `n_skipped` 计数 + print 日志 | ✅ 正确 |
+| HIGH#3: KL 几何均值 | `:624-627` exp(mean_log) | 改为 per-token `log_ratio.sum()/n_tokens` | ✅ 正确 |
+| HIGH#4: loss 归一化 | `:651-652` n_valid==1 不除 | 统一 `if n_valid >= 1: /= n_valid` | ✅ 正确 |
+| HIGH#5: sequence-level PPO | `:633` min(surr1,surr2) | per-token ratio + per-token clipping + masked sum/n_tokens | ✅ 正确（核心修复） |
+| HIGH#6: env 资源泄漏 | `:470` 无 try/finally | `_run_episode` 末尾 try/finally env.close() | ✅ 正确 |
+| MEDIUM#7: empty_cache 性能 | `:585` 内循环 | 已移除 | ✅ 正确 |
+
+**遗留**：版本号未从 0.10.37 递增。训练专用修改，影响小。
+
+**Phase 135 验收通过 ✅**。A520 发现的 1 BLOCKER + 5 HIGH + 1 MEDIUM 全部修复。
+
+**关键变化影响分析**：
+- **per-token ratio clipping** 是最重要的修复。之前 sequence-level ratio 会被长序列稀释，导致 clipping 几乎不触发，advantage signal 极弱。现在 per-token 操作让每个 token 都有有效梯度
+- **None loss 返回** 避免了"假训练"——之前零损失 backward 浪费 GPU 时间且不更新模型
+- **移除 empty_cache** 预期 3-5x 训练速度提升
+
+**Trainer 下一步**：
+1. Trainer 需要 `git pull` 获取 Phase 135 修复
+2. 重启 T2 GRPO smoke test（用 v2 配置：group_size=2, max_turns=40）
+3. 修复后的代码应该能在合理时间内完成 5-step smoke test
+
+**下一轮**：A523。维度 C — 前沿搜索 V44。
+
+---
+
+### 审计 A523 — 前沿搜索 V44（维度 C）✅
+
+**5 个新发现（F198-F202）**：
+
+**F198 — GRPO-λ：eligibility traces 信用分配（ICLR 2026 submitted, arxiv 2510.00194）**
+用 token-level log-probability 实现 eligibility traces，无需 critic model。在 AIME24/Math500 上比 vanilla GRPO +3-4.5pp。
+⭐ **高度相关**：MemoryGym 轨迹长（存储→修正→QA），当前均匀 reward 信号无法区分哪些存储决策重要。GRPO-λ 可为关键存储决策分配更高 credit。
+
+**F199 — HCAPO：长 horizon agent 事后信用分配（2026-03, arxiv 2603.08754）**
+用 LLM 自身作为事后 critic，refine step-level Q-values。在 WebShop +7.7%、ALFWorld +13.8%（vs GRPO, Qwen2.5-7B）。
+⭐ **高度相关**：MemoryGym QA 阶段失败后可回溯分析哪些存储决策有误。比 learned value network 更实用。
+
+**F200 — KLong：超长 horizon agent 训练（2026-02, arxiv 2602.17547）**
+三阶段管线：cold-start SFT → trajectory-splitting SFT（>40K token）→ progressive RL curriculum。106B 超 Kimi K2（1T）+11.28%。
+⭐ **相关**：trajectory-splitting SFT 直接可用于 MemoryGym 长轨迹。progressive RL curriculum（从少量实体开始，逐步增加预算压力）符合 MemoryGym 的 tier 层级设计。
+
+**F201 — Evo-Memory：流式记忆基准（2025-11, Google DeepMind, arxiv 2511.20857）**
+流式任务评测 agent 记忆演化能力，10+ 记忆模块 × 10 数据集。ReMem pipeline（action-think-memory refine）。
+⚠ **竞品**：但缺 MemoryGym 关键差异点（预算压力、修正追踪、RL 训练环境）。可在论文 related work 中定位差异。
+
+**F202 — AgentGym-RL：多轮 RL 框架（2025-09, ICLR 2026 submitted, arxiv 2509.08755）**
+解耦 env/agent/training。ScalingInter-RL curriculum（先 exploit 短 horizon → 逐步 explore 长 horizon）。支持 PPO/GRPO/RLOO/REINFORCE++。Qwen2.5-3B/7B 训练后匹配商业模型。
+⭐ **验证性**：架构与 MemoryGym 的 MemoryEnv + adapters 一致。ScalingInter-RL curriculum 可采用（lite→standard→hard tier 渐进）。
+
+**前沿搜索总结**：
+- **RL 训练方向已确认**：GRPO-λ(F198) + HCAPO(F199) 是 Phase 135 修复后 GRPO 的下一步演进路线
+- **SFT 失败有解**：KLong(F200) 的 trajectory-splitting 可能解决 MemoryGym SFT 退化问题
+- **竞品格局**：Evo-Memory(F201) 是新竞品（DeepMind），但 MemoryGym 差异明确（预算+修正+RL env）
+- **累计前沿发现**：F1-F202
+
+**Trainer 相关**：如 T2 GRPO smoke test 成功，下一步应考虑 GRPO-λ 或 HCAPO 信用分配改进。但这是 Phase 135 后的优化，非阻塞。
+
+**下一轮**：A524。维度 E — Trainer T2 跟踪。
+
+---
+
+### 审计 A524 — Trainer T2 跟踪（维度 E）✅
+
+无新 commit，Trainer 日志无变化。T2 GRPO 仍在旧代码（Phase 135 前）上"进行中"。Trainer 尚未 pull Phase 135 修复。
+
+**注意**：Trainer 当前使用的代码包含 BLOCKER（零损失 fallback），即使 smoke test 跑完也不会产出有效训练结果。只有 pull Phase 135 后重启才有意义。
+
+**下一轮**：A525。维度 B — 微观审计（利用等待期）。
+
+---
+
+### 审计 A525 — Trainer T2 新进展 + Phase 135 通知写入（维度 E）✅
+
+**Trainer T2 新进展**（从日志读取）：
+- T2 GRPO lite tier 完成：reward 0.013→0.088，但 **writes=0 所有 step** — 模型不存储直接答题
+- 根因：lite tier（30 entities, 15 budget）文档量小，全在上下文内，模型不需要 Write 就能答题
+- Trainer 已切换到 standard tier（60 entities, 30 budget）重试，进行中
+
+**关键判断**：
+1. **writes=0 不一定是 Phase 135 BLOCKER 的症状** — 更可能是 lite tier 任务设计问题（文档在上下文内）
+2. **但 BLOCKER 仍然存在** — 即使模型产生了 Write 行为，梯度也可能不流动
+3. **standard tier 是正确方向** — 60 entities 超出 3B 上下文，迫使模型存储
+4. **Trainer 仍在旧代码上** — 必须通知 pull Phase 135
+
+**行动**：已在 TRAINER.md 写入 Phase 135 修复通知，详细列出 7 项修复内容和影响评估，要求 `git pull --rebase origin main`。
+
+**下一轮**：A526。维度 E — Trainer 是否收到通知并 pull 修复。
 
 ---
 

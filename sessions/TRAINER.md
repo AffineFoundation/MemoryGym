@@ -71,45 +71,548 @@
 - **环境级**：GPU 机不可用 → 本地只做代码准备，标记阻塞
 - **方向级**：连续多个任务无进展 → 在 devlog 记录分析，质疑方向本身
 
-## 当前状态（2026-03-12）
+## 进度反馈机制
 
-### GPU 可用（SSH 恢复）
+**每完成一个 Step，在本文件「进度日志」区追加一条记录**。审计线程通过读本文件跟踪进展。
 
-GPU SSH 已恢复。8x A100 均被他人占用，每 GPU 剩余 ~11GB VRAM。
+格式：
+```
+### 进度日志
+- [时间] Step N 完成/失败 — 关键信息（分数、错误、耗时）
+```
 
-### GRPO v4 4-bit 低显存训练实验
+**关键节点必须立即记录**：
+1. Step 0 完成 — GPU 数量、CUDA 版本
+2. Step 2 完成 — final training loss
+3. Step 4 完成 — base 模型各轴分数（B/M/R/E/C）
+4. Step 5 完成 — SFT 模型各轴分数
+5. Step 6 完成 — before/after 对比表
+6. 任何失败 — 错误信息 + 已尝试的解决方案
 
-**目标**：在 ~11GB VRAM 中运行 GRPO 训练，不影响其他用户。
+### 进度日志
 
-**已完成**：
-- bitsandbytes + rank_bm25 已安装到 GPU 机
-- 4-bit NF4 量化加载 Qwen3-4B：模型 ~7.7GB VRAM ✅
-- MarkdownBackend (BM25) 替代 ChromaDB：减少依赖 ✅
-- smoke_rollout.py 4-bit 推理：无 OOM ✅
-- GRPO 2-step 端到端完成（lite tier, group_size=2）：无 OOM ✅
+- [2026-03-14 11:26] Step 0 完成 — 4× H200 (141GB HBM3e/卡), CUDA 12.8, Driver 570.195.03, Python 3.12.3
+- [2026-03-14 11:29] 代码+数据传输完成 — memorygym + 320 SFT 轨迹 (sft_v6_mixed.jsonl)
+- [2026-03-14 11:41] Step 1 完成 — 合并 320 行 SFT 数据
+- [2026-03-14 12:14] Step 2 开始 — Qwen2.5-7B-Instruct, LoRA rank 64, 3 epochs, batch 2×4, lr 2e-5, max_length 8192
+  - 修复：`build_assistant_mask` O(n²) tokenization 瓶颈改为 O(n) token-id 匹配（原 30min+ tokenization 降至 <2min）
+  - 修复：远程 /tmp 挂载 noexec 导致 vLLM triton 编译失败，用 TMPDIR=/root/tmp 绕过
+- [2026-03-14 12:51] Step 2 完成 — SFT 训练完成, checkpoint: runs/sft_qwen7b_v1/checkpoints/final/ (646MB adapter)
+- [2026-03-14 13:17] Step 3 完成 — vLLM server 启动 (base Qwen2.5-7B-Instruct on GPU0, port 8000)
+- [2026-03-14 13:18] Step 4 进行中 — Base 模型评测
+  - 修复：judge 使用 Chutes API 模型名导致 vLLM 404，添加 MEMORYGYM_JUDGE_MODEL 环境变量覆盖
+  - company s0: Score=3/20(15%), B=29%, M=0%, R=0%, E=?, C=10%, 耗时 468s
+  - 批量评测进行中 (17/30 完成: company 10/10, university 7/10, city 0/10)
+  - **Base 完成**: 30/30 runs, Overall C=13.8±8.4 (B=23.0,M=8.4,R=11.9,E=9.2)
+    - company C=13.3%(B=27.7,M=5.6,R=7.4,E=8.7)
+    - university C=11.8%(B=17.2,M=4.9,R=15.0,E=8.0)
+    - city C=16.4%(B=24.0,M=14.7,R=13.4,E=11.0)
+- [2026-03-14] Step 5 进行中 — SFT 模型评测 (LoRA merge + vLLM restart)
+  - LoRA merge 成功，vLLM server 启动成功
+  - **⚠️ SFT 模型分数下降**: 中期(16/30) SFT C=4.1±3.1% vs Base C=13.8±8.4%
+    - company SFT C=3.2% (Base=13.3%), university SFT C=5.6% (Base=11.8%)
+    - writes=30, stored=30, missed=30 → 存了但检索/回答质量差
+    - 可能原因：LoRA merge 损坏 tool_call 格式 / SFT 训练数据格式不匹配
+  - **SFT 完成 (30/30)**: SFT C=4.9±4.6% vs Base C=13.8±8.4% — **SFT 下降了 8.9pp**
+    - company: SFT C=3.2% vs Base C=13.3% (-10.1pp)
+    - university: SFT C=3.4% vs Base C=11.8% (-8.4pp)
+    - city: SFT C=8.3% vs Base C=16.4% (-8.1pp)
+  - **根因分析**: LoRA merge 后存储格式退化，存了 30 entries 但检索回答质量极差
+- [2026-03-15] Step 5b — SFT 方案 B (vLLM --enable-lora, 不 merge)
+  - vLLM 启动成功 (--enable-lora --max-lora-rank 64)
+  - 中期结果 (13/30): company C=5.2% (n=10), university C=3.1% (n=3) — 仍低于 base
+  - **结论**: SFT 训练本身导致退化（不是 merge 问题），数据格式与 Qwen2.5-7B 不兼容
+  - **降级方案**: 记录 Base Qwen2.5-7B 作为 "small model baseline" 写入论文
+- [2026-03-15] Phase T1 结论:
+  - Base Qwen2.5-7B: C=13.8±8.4% (B=23.0,M=8.4,R=11.9,E=9.2) — 30 runs × 3 templates
+  - SFT merged: C=4.9% — 退化 8.9pp
+  - SFT LoRA: C≈5% — 退化 ~9pp
+  - **SFT 在 Qwen2.5-7B 上无效**，需要排查 SFT 数据格式兼容性
+- [2026-03-15] 根因排查:
+  - SFT 数据格式正确（<tool_call> 标签存在，apply_chat_template 正常）
+  - build_assistant_mask 正确（25% assistant tokens，包含 tool_call）
+  - **根因: 过拟合！** 3 epochs loss=0.07（<0.5 阈值），严重过拟合
+  - 重训: 1 epoch, lr=1e-5, loss=0.162（合理）
+  - 1-epoch SFT company (5 seeds): 全部 15% (3/20) — 和 base 13.3% 持平，不退化不提升
+  - **最终结论**:
+    - 3 epochs: 严重过拟合 (loss=0.07), 退化 ~9pp
+    - 1 epoch: 不退化不提升 (loss=0.16), SFT 信号对 7B 模型太弱
+    - **SFT 对 Qwen2.5-7B 无效**，320 trajectories 不足以在 7B 模型上产生可测提升
+    - 论文可用数据: Base Qwen2.5-7B C=13.8% 作为 "small model baseline"
+    - 下一步: 需要 RL (GRPO) 才能产出 before/after 提升
+- [2026-03-15] 排查#4: 试 Qwen2.5-3B-Instruct（更小模型，SFT 效果可能更明显）
+  - 3B 下载 + 1ep SFT 训练完成 (loss=0.158, 4min)
+  - vLLM 启动 (base 3B + sft3b LoRA)
+  - **3B 结果 (company, 5 seeds)**:
+    - Base 3B: accuracy=35.0%, C=28.9% (B=34.5,M=27.7,R=30.4,E=20.0)
+    - SFT 3B: accuracy=28.0% → **退化 -7pp**，与 7B 模式一致
+    - 意外发现: Base 3B (28.9%) >> Base 7B (13.3%)！小模型在 MemoryGym 上更强
+  - **深入排查**: SFT 3B 的 tool_call 格式正确（29 writes, 5 searches），问题不是工具调用失败
+  - SFT "perfect 策略" 的存储方式可能反而不如 base 的自然策略（过度压缩/打包）
+  - **SFT 数据的训练信号方向可能有误**——需要重新设计 SFT 策略
+  - **Base 3B 完整评测完成 (30/30)**:
+    - company C=27.1% (B=33.0,M=18.9,R=34.5,E=19.3)
+    - university C=27.3% (B=34.0,M=17.9,R=35.2,E=19.3)
+    - city C=34.1% (B=42.2,M=25.1,R=41.8,E=23.7)
+    - **Overall C=29.5±11.3%** — 比 7B 的 13.8% 高 15.7pp！
+  - 论文可用数据: Base 3B C=29.5%, Base 7B C=13.8% — 模型尺寸对比
+- [2026-03-15] Phase T2: GRPO on Base 3B（跳过 SFT 前提，直接 RL）
+  - v1 配置: group_size=4, max_turns=100, max_new_tokens=512 → 太慢（67min 还没完成 1 step）
+  - v2 配置: group_size=2, max_turns=40, max_new_tokens=256, 5 steps
+  - **GRPO 完成**: reward 0.013→0.088, correct 1.5→1.5/10, **writes=0 所有 step**
+  - 确认 F67: lite tier 文档在上下文内，模型"不存储直接答题"
+  - GRPO 在 lite tier 上无法驱动 Write 行为——需要 standard tier 或 context 截断
+  - 5 steps 不足以产出显著变化，但根本问题是 reward 信号方向
+- [2026-03-15] GRPO standard tier on 3B（解决 lite tier writes=0 问题）
+  - 配置: standard tier, group_size=2, max_turns=50, 5 steps
+  - 进行中...
 
-**发现**：
-- 4-bit + SFT 适配器 merge 导致工具调用格式丢失（模型输出纯文本而非 tool_call）
-- 根因：LoRA merge 到 4-bit 权重引入舍入误差（peft 已有 warning）
-- 修复：改为保留 SFT 适配器不 merge + 在其上叠加第二个 LoRA（正在测试）
+### ⚠️ 审计线程通知（2026-03-15）— GRPO 代码有严重 bug，必须更新
 
-**结论**：4-bit 训练技术可行但实际不可行。详见 `devlog/grpo-v4-4bit.md`。
-- ✅ 管线端到端无 OOM（~11GB VRAM）
-- ✅ SFT 适配器在 4-bit 下保留工具调用推理（不 merge）
-- ❌ Qwen3 `<think>` 需 1024+ tokens，4-bit 推理慢 2-3x
-- ❌ 单 episode 30-40 分钟（vs bf16 的 7 分钟），不适合快速迭代
+**Phase 135（commit `a6b9075`）修复了 GRPO 训练管线的 1 个 BLOCKER + 5 个 HIGH 级别 bug**。你当前的 GRPO 实验可能在旧代码上运行，结果不可信。
 
-**待做**：
-- [ ] 等 GPU 容量释放，用 bf16 跑正式 GRPO v4 训练
-- [ ] 或在有空闲整卡时运行（需 1 张 A100 全量 80GB）
+**必须立即执行**：
+```bash
+git pull --rebase origin main  # 获取 Phase 135 修复
+```
 
-### 已完成：
-- 本地测试全量通过（22/22 world tests）
-- GRPO v3 代码完全就绪（IPS/KL/DAPO/Clip 实现）
-- `--load-in-4bit` + `--backend markdown` 标志已添加到 grpo_train.py 和 train.py
-- 4-bit 低显存训练实验完成（5 组实验，详见 devlog）
-- F42/F48 turn-level advantage 已实现
-- 10 模板同步完成
+**修复内容**：
+1. **🔴 BLOCKER — 零损失 fallback 阻断梯度流**：当所有 trajectory 的 advantage ≈ 0 被跳过后，旧代码创建 `torch.tensor(0.0, requires_grad=True)` 无计算图张量 → `loss.backward()` 产生零梯度 → **模型完全不训练**。修复后返回 `None`，跳过该 step 的 backward
+2. **per-token ratio clipping**：旧代码在 sequence-level 做 PPO clipping（ratio 被长序列稀释），修复为 per-token GRPO clipping — 每个 token 都有有效梯度
+3. **KL 散度计算修正**：旧代码用几何均值（exp of mean log ratio），修复为正确的 per-token KL
+4. **移除内循环 `torch.cuda.empty_cache()`**：预期 3-5x 训练速度提升
+5. **loss 归一化统一**：n_valid==1 时也做归一化
+6. **MemoryEnv 资源泄漏修复**：env.close() try/finally 保护
+7. **静默跳过 warning**：现在会打印 `[GRPO] X/Y trajectories used (skipped Z with |advantage| < 1e-6)`
+
+**影响评估**：你之前的 T2 结果（writes=0, reward 0.013→0.088）很可能受 BLOCKER 影响——模型参数可能根本没更新。pull 修复后重启 standard tier 实验。
+
+---
+
+## 当前状态（2026-03-14）
+
+### ⚡ 紧急任务：NeurIPS 论文训练实验（4× H200）
+
+**背景**：论文投 NeurIPS 2026 E&D Track（Abstract May 4, Paper May 6）。论文主体已完成（PA-17/18/19），但 **Contribution 3（训练环境）没有训练结果**，被审稿人红队标为 CRITICAL 弱点。现在有 4× H200，必须在最短时间内产出可写入论文的训练实验数据。
+
+**GPU 资源**：4× H200（141GB HBM3e/卡，共 564GB）。连接方式由用户单独告知。
+
+**目标产出**：一张 before/after 对比表，证明 MemoryEnv 训练确实提升记忆管理分数。这张表将直接写入论文 Section 6（Training Environment）。
+
+---
+
+### Phase T1 — SFT 基线实验（最高优先级）
+
+**目标**：用 SFT 微调一个模型，在 MemoryGym 上 before/after 对比，证明训练有效。
+
+---
+
+#### Step 0: 环境准备（~30 min）
+
+```bash
+# 1. 克隆代码
+git clone <repo_url> && cd memorybench-arena
+pip install -e .
+pip install torch transformers peft accelerate datasets
+
+# 2. 验证 GPU
+python -c "import torch; print(torch.cuda.device_count(), 'GPUs'); print(torch.cuda.get_device_name(0))"
+# 期望输出：4 GPUs + NVIDIA H200
+
+# 3. Smoke test（CPU，验证 memorygym 可导入）
+python -m memorygym.training smoke
+
+# 4. 验证 SFT 数据存在
+wc -l data/sft_v6.jsonl data/sft_v6_strategic.jsonl
+# 期望：160 + 160 = 320 行
+```
+
+**如果 Step 0 就失败了**：
+- `pip install -e .` 失败 → 检查 `pyproject.toml` 的 dependencies，手动安装
+- `torch.cuda` 不可用 → 检查 CUDA 版本：`nvidia-smi` 和 `python -c "import torch; print(torch.version.cuda)"`
+- smoke test 失败 → 检查错误信息，通常是缺少某个包
+
+---
+
+#### Step 1: 合并训练数据
+
+```bash
+cat data/sft_v6.jsonl data/sft_v6_strategic.jsonl > data/sft_v6_mixed.jsonl
+wc -l data/sft_v6_mixed.jsonl  # 必须为 320
+```
+
+---
+
+#### Step 2: SFT 训练（~1-2h）
+
+**推荐模型**：`Qwen/Qwen2.5-7B-Instruct`
+
+```bash
+# 单卡即可（7B bf16 ≈ 14GB，H200 141GB 绰绰有余）
+CUDA_VISIBLE_DEVICES=0 python -m memorygym.training sft \
+  --model Qwen/Qwen2.5-7B-Instruct \
+  --data data/sft_v6_mixed.jsonl \
+  --lora --lora-rank 64 \
+  --epochs 3 \
+  --batch-size 2 \
+  --grad-accum 4 \
+  --lr 2e-5 \
+  --max-length 8192 \
+  -o runs/sft_qwen7b_v1
+```
+
+**SFT 完成检查**：
+```bash
+ls runs/sft_qwen7b_v1/checkpoints/final/
+# 必须有 adapter_model.safetensors 和 tokenizer 文件
+```
+
+**SFT 故障处理**：
+
+| 故障 | 症状 | 解决 |
+|------|------|------|
+| 模型下载失败 | `HTTPError` / 超时 | 设 `HF_ENDPOINT=https://hf-mirror.com` 或手动下载到本地后 `--model /path/to/local` |
+| OOM | `CUDA out of memory` | `--batch-size 1 --grad-accum 8`。仍 OOM → `--max-length 4096` |
+| chat template 错误 | `jinja2` 相关错误 | `pip install jinja2`。或换模型 `Qwen/Qwen2.5-3B-Instruct`（更小） |
+| loss 不下降 | loss 稳定在 2-3+ | 训练数据格式可能不匹配。检查下一节"SFT 数据格式验证" |
+| peft 版本问题 | `LoRA` 相关错误 | `pip install peft>=0.11` |
+
+**SFT 数据格式验证**（如果 loss 不下降，先跑这个排查）：
+```bash
+python3 -c "
+import json
+from transformers import AutoTokenizer
+tok = AutoTokenizer.from_pretrained('Qwen/Qwen2.5-7B-Instruct', trust_remote_code=True)
+with open('data/sft_v6_mixed.jsonl') as f:
+    d = json.loads(f.readline())
+text = tok.apply_chat_template(d['messages'], tokenize=False)
+print('Template applied OK, length:', len(text))
+print('First 500 chars:', text[:500])
+# 检查输出是否包含 <tool_call> 格式的工具调用
+"
+```
+
+如果 `apply_chat_template` 报错或输出不含 `<tool_call>`，说明 Qwen2.5 的 chat template 和数据格式不兼容。**降级方案**：换 `Qwen/Qwen2.5-3B-Instruct` 或 `Qwen/Qwen3-4B`。
+
+---
+
+#### Step 3: 启动 vLLM Server（评测必需）
+
+**关键**：`bench.py` 通过 OpenAI-compatible API 调用模型，不支持直接加载本地 checkpoint。必须用 vLLM 提供 API server。
+
+**3a. Base 模型 server**：
+```bash
+pip install vllm
+
+# Terminal 1: 启动 base 模型 server
+CUDA_VISIBLE_DEVICES=0 python -m vllm.entrypoints.openai.api_server \
+  --model Qwen/Qwen2.5-7B-Instruct \
+  --port 8000 \
+  --max-model-len 32768 \
+  --trust-remote-code
+
+# 等待输出 "Uvicorn running on http://0.0.0.0:8000"
+```
+
+**验证 server 可用**：
+```bash
+curl -s http://localhost:8000/v1/models | python3 -m json.tool
+# 应该返回模型列表
+```
+
+**vLLM 故障处理**：
+
+| 故障 | 症状 | 解决 |
+|------|------|------|
+| 安装失败 | pip 编译错误 | `pip install vllm --no-build-isolation` 或用 `pip install sglang[all]` 替代 |
+| OOM 启动时 | `CUDA out of memory` | `--max-model-len 16384` 或 `--gpu-memory-utilization 0.85` |
+| 启动卡住 | 无输出 | 等 2-3 分钟（首次加载模型慢）。如 5+ 分钟无输出 → `Ctrl+C` 检查日志 |
+| `RuntimeError: ... flash_attn` | flash attention 版本不匹配 | `pip install flash-attn --no-build-isolation` 或 `--disable-flash-attn` |
+
+**如果 vLLM 完全无法安装**（降级方案）：
+```bash
+# 方案 B：用 transformers 的 pipeline server
+pip install text-generation-inference  # 或用简单的 Flask wrapper
+
+# 方案 C：用 SGLang
+pip install "sglang[all]"
+python -m sglang.launch_server --model Qwen/Qwen2.5-7B-Instruct --port 8000
+```
+
+---
+
+#### Step 4: Base 模型评测（~1-2h with vLLM）
+
+```bash
+# Terminal 2（server 在 Terminal 1 运行中）：
+# 设置环境变量指向本地 server
+export OPENAI_API_KEY=dummy
+export API_URL=http://localhost:8000/v1
+
+# 10 seeds × 3 templates = 30 runs
+for TMPL in company university city; do
+  for SEED in 0 1 2 3 4 5 6 7 8 9; do
+    python -m memorygym.bench \
+      --model Qwen/Qwen2.5-7B-Instruct \
+      --seed $SEED --template $TMPL --tier standard \
+      --backend markdown \
+      --api-base http://localhost:8000/v1 \
+      -o eval/base_qwen7b_${TMPL}_s${SEED}.json
+  done
+  echo "=== $TMPL done ==="
+done
+```
+
+**注意**：
+- **串行跑**（不要并发）——vLLM server 已处理 batching，并发发请求只会增加 OOM 风险
+- 每个 run 约 5-10 分钟（vLLM 比 API 快），30 runs ≈ 2.5-5h
+- 如果某个 run 报错，跳过继续。最终有 20+ 成功 runs 就够用
+
+**评测故障处理**：
+
+| 故障 | 症状 | 解决 |
+|------|------|------|
+| `Connection refused` | server 没启动或 crash | 检查 Terminal 1，重启 server |
+| `No API key found` | 环境变量没设 | `export OPENAI_API_KEY=dummy` |
+| 模型输出空白 | `content: ""` | vLLM 的 `--max-model-len` 太小 → 升到 32768 |
+| tool_call 解析失败 | `_extract_tool_calls` 返回空 | 模型输出可能不含 `<tool_call>` 标签。先手动测试（见下） |
+| judge 报错 | `RuntimeError: No API key` | 忽略。judge 只处理 0.2% 的 rule-miss 答案，失败时判为错，不影响 before/after 对比 |
+| run 卡住 > 20 min | 推理死循环 | `Ctrl+C` 跳过这个 seed，继续下一个 |
+
+**手动测试 tool_call 输出**（如果评测全是 0 分，先跑这个）：
+```bash
+curl -s http://localhost:8000/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "Qwen/Qwen2.5-7B-Instruct",
+    "messages": [
+      {"role": "system", "content": "You are a memory management agent. Store information using tool calls.\n\nTools:\n<tool_call>{\"name\": \"Write\", \"arguments\": {\"content\": \"info\"}}</tool_call>"},
+      {"role": "user", "content": "Store this: Apple has 164000 employees and $394B revenue."}
+    ],
+    "max_tokens": 512
+  }' | python3 -c "import sys,json; print(json.load(sys.stdin)['choices'][0]['message']['content'])"
+```
+
+如果输出不含 `<tool_call>`，说明模型不会用这种格式。**解决方案**：
+1. 检查是否是 Qwen2.5 而非 Qwen3（Qwen3 可能不支持 `<tool_call>` 格式）
+2. 换模型试 `Qwen/Qwen2.5-14B-Instruct` 或 `Qwen/Qwen2.5-3B-Instruct`
+3. 检查 `agents/stream_agent.py:120` 的 `_extract_tool_calls`，它支持 3 种格式：`<tool_call>` XML、markdown code block、bare JSON。大多数模型至少会用其中一种
+
+---
+
+#### Step 5: SFT 模型评测（~1-2h）
+
+```bash
+# 1. 停止 Terminal 1 的 base server（Ctrl+C）
+# 2. 合并 LoRA adapter 到 base 模型（vLLM 需要完整模型）
+python3 -c "
+from peft import PeftModel
+from transformers import AutoModelForCausalLM, AutoTokenizer
+import torch
+
+base = AutoModelForCausalLM.from_pretrained(
+    'Qwen/Qwen2.5-7B-Instruct', torch_dtype=torch.bfloat16, device_map='cpu')
+model = PeftModel.from_pretrained(base, 'runs/sft_qwen7b_v1/checkpoints/final')
+merged = model.merge_and_unload()
+merged.save_pretrained('runs/sft_qwen7b_v1_merged')
+AutoTokenizer.from_pretrained('Qwen/Qwen2.5-7B-Instruct').save_pretrained('runs/sft_qwen7b_v1_merged')
+print('Merged model saved to runs/sft_qwen7b_v1_merged')
+"
+
+# 3. 启动 SFT 模型 server
+CUDA_VISIBLE_DEVICES=0 python -m vllm.entrypoints.openai.api_server \
+  --model runs/sft_qwen7b_v1_merged \
+  --port 8000 \
+  --max-model-len 32768 \
+  --trust-remote-code
+
+# 4. 评测（同 Step 4，改 output 前缀）
+export OPENAI_API_KEY=dummy
+for TMPL in company university city; do
+  for SEED in 0 1 2 3 4 5 6 7 8 9; do
+    python -m memorygym.bench \
+      --model sft-qwen7b \
+      --seed $SEED --template $TMPL --tier standard \
+      --backend markdown \
+      --api-base http://localhost:8000/v1 \
+      -o eval/sft_qwen7b_${TMPL}_s${SEED}.json
+  done
+  echo "=== $TMPL done ==="
+done
+```
+
+**LoRA merge 故障处理**：
+
+| 故障 | 症状 | 解决 |
+|------|------|------|
+| OOM merge | CPU 内存不足 | `device_map='auto'` 或在 GPU 上 merge |
+| merge 后 tool_call 消失 | SFT 模型不出工具调用 | 已知问题（见历史记录）。不 merge，改用 vLLM 的 `--lora-modules` 参数 |
+
+**如果 merge 导致 tool_call 消失**：
+```bash
+# 方案 B：vLLM 直接加载 LoRA（不 merge）
+CUDA_VISIBLE_DEVICES=0 python -m vllm.entrypoints.openai.api_server \
+  --model Qwen/Qwen2.5-7B-Instruct \
+  --port 8000 \
+  --enable-lora \
+  --lora-modules sft=runs/sft_qwen7b_v1/checkpoints/final \
+  --max-model-len 32768
+
+# 评测时 model 名改为 "sft"
+python -m memorygym.bench --model sft --api-base http://localhost:8000/v1 ...
+```
+
+---
+
+#### Step 6: 汇总结果
+
+```bash
+python3 -c "
+import json, glob
+for prefix in ['base_qwen7b', 'sft_qwen7b']:
+    files = sorted(glob.glob(f'eval/{prefix}_*.json'))
+    scores = {'B': [], 'M': [], 'R': [], 'E': [], 'C': []}
+    for f in files:
+        with open(f) as fh:
+            d = json.load(fh)
+        if not d.get('success'): continue
+        ax = d['extra']['per_axis']
+        scores['B'].append(ax['breadth']*100)
+        scores['M'].append(ax['maintenance']*100)
+        scores['R'].append(ax['reasoning']*100)
+        scores['E'].append(ax['efficiency']*100)
+        scores['C'].append(ax['composite']*100)
+    n = len(scores['C'])
+    print(f'{prefix} (n={n}):')
+    for k in ['B','M','R','E','C']:
+        vals = scores[k]
+        if vals:
+            avg = sum(vals)/len(vals)
+            std = (sum((v-avg)**2 for v in vals)/len(vals))**0.5
+            print(f'  {k}: {avg:.1f} +/- {std:.1f}')
+    print()
+"
+```
+
+**解读结果**：
+- SFT composite > base composite（任何提升都是好结果）
+- 特别关注 Breadth 和 Maintenance 轴的提升
+- 如果 SFT 反而下降了 → 见"SFT 无提升排查"
+
+---
+
+### SFT 无提升排查（如果 SFT 分数 ≤ base）
+
+**这是最可能遇到的问题。** 按顺序排查：
+
+1. **SFT 模型是否在出 tool_call？**
+   ```bash
+   # 检查 eval JSON 的 conversation 字段
+   python3 -c "
+   import json
+   with open('eval/sft_qwen7b_company_s0.json') as f:
+       d = json.load(f)
+   conv = d['extra']['conversation']
+   tool_calls = sum(1 for m in conv if m.get('role')=='user' and m.get('content','').startswith('['))
+   writes = d['extra'].get('writes_used', 0)
+   print(f'Tool call responses: {tool_calls}, Writes used: {writes}')
+   "
+   ```
+   - 如果 writes=0 → tool_call 格式不兼容，回到 Step 3 检查
+
+2. **SFT 模型存了什么？**
+   ```bash
+   python3 -c "
+   import json
+   with open('eval/sft_qwen7b_company_s0.json') as f:
+       d = json.load(f)
+   print(f'stored_entities: {d[\"extra\"][\"stored_entities\"]}')
+   print(f'missed_entities: {d[\"extra\"][\"missed_entities\"]}')
+   print(f'writes_used: {d[\"extra\"][\"writes_used\"]}')
+   "
+   ```
+
+3. **训练 loss 最终值？**
+   - 如果 final loss > 1.5 → 训练不充分，增加 epochs 到 5 或 lr 到 5e-5
+   - 如果 final loss < 0.5 → 可能过拟合，减少 epochs 到 1
+
+4. **换更大/更小模型**：
+   - Qwen2.5-7B 不行 → 试 `Qwen/Qwen2.5-14B-Instruct`（14B 可能工具调用更强）
+   - 或试 `Qwen/Qwen2.5-3B-Instruct`（更小但训练更快，SFT 提升可能更明显）
+
+5. **最终降级方案**：如果所有 SFT 实验都无提升，至少记录 base Qwen2.5-7B 的分数——这本身就是一个新数据点（论文当前没有 7B 模型的数据），可以写入论文作为 "small model baseline"。
+
+---
+
+### Phase T2 — GRPO 强化学习（如果 T1 完成且有时间）
+
+**前提**：T1 SFT checkpoint 可用且 SFT 有提升。
+
+```bash
+CUDA_VISIBLE_DEVICES=0 python -m memorygym.training grpo \
+  --model Qwen/Qwen2.5-7B-Instruct \
+  --adapter runs/sft_qwen7b_v1/checkpoints/final \
+  --steps 30 \
+  --group-size 4 \
+  --groups-per-step 2 \
+  --tier lite \
+  --lr 1e-5 \
+  --temperature 0.7 \
+  --lora-rank 16 \
+  -o runs/grpo_qwen7b_v1
+```
+
+GRPO 每 step 约 30 min（4 episodes × ~7 min），30 steps ≈ 15h。**如果时间紧**：
+- 减到 `--steps 10`（~5h），足够看趋势
+- 或 `--tier lite`（更短 episodes）
+
+评测同 Step 5，但用 GRPO checkpoint。
+
+---
+
+### 结果记录模板
+
+完成后，将结果记录到 `devlog/training_results.md`：
+
+```markdown
+# Training Results for NeurIPS Paper
+
+## Config
+- Base model: Qwen2.5-7B-Instruct
+- SFT data: 320 trajectories (160 perfect + 160 strategic)
+- SFT: LoRA rank 64, 3 epochs, lr 2e-5, max_length 8192
+- Eval: standard tier, 10 seeds × 3 templates (company/university/city)
+- Backend: markdown
+- Judge: rule-based only (no API judge)
+
+## Results
+
+| Model | N | S_B | S_M | S_R | S_E | S_C |
+|-------|---|-----|-----|-----|-----|-----|
+| Base Qwen2.5-7B | ? | ? | ? | ? | ? | ? |
+| + SFT | ? | ? | ? | ? | ? | ? |
+| + GRPO (optional) | ? | ? | ? | ? | ? | ? |
+
+## Key Findings
+- [填写]
+```
+
+---
+
+### 优先级与时间分配
+
+```
+T1 SFT 实验 >>>>>>>> T2 GRPO
+```
+
+- T1 的 before/after 对比是论文的**最低需求**
+- T2 是锦上添花
+- 如果 T1 用了 12+ 小时，**不要跑 T2**，把 T1 结果记录好就行
+- 如果 T1 SFT 无提升，排查+重试比跑 T2 更重要
+
+### 历史记录（归档）
+
+4-bit 低显存实验已完成（2026-03-12），技术可行但速度太慢。详见 `devlog/grpo-v4-4bit.md`。现在有 4× H200，直接用 bf16。
 
 ## 提示词自优化
 
@@ -1294,6 +1797,92 @@ GRPO 在 on-policy/off-policy 下的理论保证。off-policy + clipped surrogat
 #### F176 — SE-Search：Self-Evolving Search Agent + Dense Reward（审计线程前沿搜索 V34/A361）⭐
 
 [arXiv:2603.03293] 三组件：memory purification（清理无关记忆）、atomic query training、dense reward（细粒度 reward 信号）。核心方向与 MemoryGym 的 shaped reward 对齐——用 dense reward 替代 sparse 终端 reward。相关性中等，更偏搜索场景。
+
+---
+
+#### F177 — AMA-Bench：长时程 agentic 记忆基准（审计线程前沿搜索 V35/A374）⭐ — 竞品
+
+[arXiv:2602.22769, Feb 2026] 评估 LLM agent 在真实 agentic 场景的长时程记忆。与现有 dialogue-centric 基准不同，AMA-Bench 关注 machine-generated 交互流（agent-environment interaction）。提出 AMA-Agent（因果图 + tool-augmented retrieval），57.22% 准确率超基线 11.16pp。**与 MemoryGym 定位互补**：AMA-Bench 测 retrieval 不测 storage triage，MemoryGym 测完整链条（信息摄入→存储决策→检索→更新→推理）。论文中可引用作对比。
+
+#### F178 — MIRA：Memory-Integrated RL Agent（审计线程前沿搜索 V35/A374）⭐⭐
+
+[arXiv:2602.17930, ICLR 2026] 将 LLM 指导 amortize 到持久化 memory graph 中，设计 utility signal 软调整 advantage estimation。训练推进后 utility 自然衰减，保留标准收敛保证。**对 MemoryGym 训练的启示**：(1) memory graph 作为训练中间产物可提供 dense reward signal；(2) utility decay 可避免 LLM supervisor 过拟合；(3) 在 sparse reward 环境（如 MemoryGym）尤其有效。
+
+#### F179 — MemRL：Runtime RL on Episodic Memory（审计线程前沿搜索 V35/A374）⭐
+
+[arXiv:2601.03192, Jan 2026] Self-evolving agents，运行时 RL + episodic memory。agent 在任务执行中积累 episode 经验，用 RL 优化 memory 的读写策略。方向与 MemoryGym 的 MemoryEnv 高度一致——都把记忆操作作为可学习的 action space。
+
+#### F180 — AMemGym v2：Interactive Memory Evaluation（审计线程前沿搜索 V35/A374）⭐ — 竞品
+
+[arXiv:2603.01966, Mar 2026] AMemGym 更新版，structured data sampling 预定义用户画像和状态演进轨迹，支持 on-policy 评估和优化。**与 MemoryGym 比较**：AMemGym 聚焦对话式个性化记忆，MemoryGym 聚焦信息过载+预算约束+更新追踪。互为不同维度的竞品。
+
+#### F181 — Anatomy of Agentic Memory：分类法+系统局限分析（审计线程前沿搜索 V35/A374）
+
+[arXiv:2602.19320, Feb 2026] Survey 性质，对 agentic memory 的评估和系统局限进行分类和实证分析。可作为论文 related work 引用来源。
+
+#### F182 — A-MEM：Zettelkasten-inspired Agentic Memory（审计线程前沿搜索 V36/A384）⭐⭐ — 记忆组织
+
+[arXiv:2502.12110, NeurIPS 2025] Xu et al. (Rutgers). LLM 自主组织记忆为互联知识网络，动态索引+链接+记忆进化。新记忆到达时自动更新关联旧记忆。6 个基础模型上超越 SOTA。直接对应 MemoryGym 的 breadth+maintenance 两轴，验证存储组织策略的重要性。
+
+#### F183 — Agent-R1：端到端多轮 RL 训练 LLM Agents（审计线程前沿搜索 V36/A384）⭐⭐ — 训练框架
+
+[arXiv:2511.14460, Nov 2025] Xi et al. (Renmin Univ). 开源模块化框架，支持 PPO/GRPO/REINFORCE++。多轮交互式 agent 的 MDP 形式化。GRPO 训练的 agent 超越商业模型。与 MemoryGym 的 GRPO v3 训练 pipeline 高度互补，可作为训练后端或论文对比。
+
+#### F184 — Agent-Omit：自适应思维和观察省略的 Agentic RL（审计线程前沿搜索 V36/A384）⭐ — 效率训练
+
+[arXiv:2602.04284, Feb 2026] Zhong et al. (HKUST). 训练 LLM agent 自适应跳过冗余思维和观察（冷启动 SFT + 双采样 RL）。Agent-Omit-8B 匹配 7 个前沿模型但更高效。直接对应 MemoryGym 效率轴（20% 权重），自适应省略概念映射到预算约束下的存储决策。
+
+#### F185 — AgentGym-RL：ScalingInter-RL 多轮长期决策（审计线程前沿搜索 V36/A384）⭐ — 训练课程
+
+[arXiv:2509.08755, ICLR 2026 under review] Xi et al. (Renmin Univ). 统一多轮 RL 框架 + ScalingInter-RL 课程（从利用到探索）。解耦架构（环境/agent/训练模块），支持 27 种任务。Qwen2.5-7B 超越 o3/Gemini-2.5-Pro。课程学习方法可解决 MemoryGym 训练中记忆操作的稀疏延迟奖励问题。
+
+#### F186 — MemAgents Workshop @ ICLR 2026（审计线程前沿搜索 V36/A384）— 生态信号
+
+[ICLR 2026 Workshop, Apr 27, Rio de Janeiro] "Memory for LLM-Based Agentic Systems" 专题研讨会，覆盖架构/RL/评估/神经科学。MemoryGym 作为评测+训练平台与此 workshop 主题高度契合。接收论文应关注。
+
+#### F187 — Memo：Memory-Efficient Embodied Agents via RL（审计线程前沿搜索 V37/A391）⭐ — 架构参考
+
+[arXiv:2510.19732, NeurIPS 2025 Spotlight] 基于 transformer 的 RL 架构，通过周期性 summarization tokens 压缩历史经验到记忆缓冲区。在 grid-world 和室内导航任务中超越长上下文 baseline，且推理时泛化到更长上下文。与 MemoryGym 差异：Memo 面向 embodied/visual 任务，MemoryGym 面向文本记忆管理。summarization token 思路可能启发 MemoryEnv 的 observation 压缩。
+
+#### F188 — CloneMem：AI Clone 长期记忆评测（审计线程前沿搜索 V37/A391）⭐ — 竞品
+
+[arXiv:2601.07023, Jan 2026] 评测 AI Clone 长期记忆，输入为日记/社交媒体/邮件等非对话数字痕迹（1-3 年跨度）。关注个人经历追踪、情感变化、观点演变。与 MemoryGym 差异：CloneMem 面向个性化/情感理解，MemoryGym 面向结构化实体记忆管理+预算约束。互补而非竞争。
+
+#### F189 — RealMem：真实项目场景记忆评测（审计线程前沿搜索 V37/A391）⭐⭐ — 竞品
+
+[arXiv:2601.06966, Jan 2026] 首个基于真实项目场景的记忆评测，2000+ 跨会话对话 × 11 场景。关注长期项目状态管理和动态上下文依赖。发现现有记忆系统在项目状态追踪上严重不足。与 MemoryGym 比较：RealMem 测跨会话项目记忆，MemoryGym 测单会话内信息过载下的存储决策。RealMem 缺少预算约束和 RL 训练环境。论文 related work 应引用。
+
+#### F190 — KnowMe-Bench：个人理解评测（审计线程前沿搜索 V37/A391）— 间接相关
+
+[arXiv:2601.04745, Jan 2026] 将叙事重构为闪回感知的时间锚定流，评测事实回忆、主观状态归因、原则级推理。RAG 系统主要提升事实准确度，时间推理和高阶推断仍有错误。与 MemoryGym 关系弱（面向个人理解而非实体记忆管理），但时间锚定评测方法可参考。
+
+#### F191 — SUPO：Summarization-augmented Policy Optimization（审计线程前沿搜索 V38/A396）⭐⭐ — 训练方法
+
+[arXiv:2510.06727, ICLR 2026 under review] ByteDance/Stanford/CMU。核心：多轮 RL 中周期性 LLM 摘要压缩工具调用历史，保持紧凑上下文的同时训练 agent 超越固定上下文窗口限制。形式化 summarization-augmented MDP，推导端到端策略梯度同时优化工具使用和摘要策略。BrowseComp-Plus +14.0% 绝对精度，60% 准确率（基线远低）。**与 MemoryGym 关系**：MemoryEnv 训练中 context overflow 是真实瓶颈（standard tier 60 实体 × narrative 文档），SUPO 的摘要压缩 + 端到端训练方法可直接用于解决 MemoryEnv 长 episode 训练问题。
+
+#### F192 — MemoryRewardBench：奖励模型记忆管理评测（审计线程前沿搜索 V39/A401）⭐⭐ — 评测/训练
+
+[arXiv:2601.11969, Jan 2026] 首个专门评测奖励模型对长期记忆管理质量判断的 benchmark。10 种设置，最长 128K context。核心发现：即使 Llama 3.3-70B 在 128K+ 也会退化；语义标签（A-Mem 风格）可提升 RM 准确率 10-15%。**与 MemoryGym 关系**：RL 训练中奖励信号质量是关键，MRB 的发现（语义标签提升 RM 准确率）可改进 MemoryEnv 的 reward shaping。
+
+#### F193 — Hindsight：具有事后反思的 Agent 记忆系统（审计线程前沿搜索 V39/A401）⭐ — 系统
+
+[arXiv:2512.12818, Dec 2025] Agent 记忆系统，通过事后反思机制学习和优化记忆性能。LongMemEval 91.4%、LoCoMo 89.6%。非 benchmark 而是系统方案，但其高分表明当前 benchmark 区分度可能不足。**与 MemoryGym 关系**：验证 MemoryGym 设计方向——budget 约束 + correction tracking 提供了 Hindsight 类系统无法绕过的挑战维度。
+
+#### F194 — LongMemEval：长期交互记忆评测（审计线程前沿搜索 V39/A401）⭐ — 竞品 benchmark
+
+[arXiv:2410.10813, ICLR 2025] 500 curated Qs，5 competencies（信息抽取、多会话推理、时间推理、知识更新、abstention），115K-1.5M token。GPT-4o 也有 30-60% 性能下降。**与 MemoryGym 关系**：竞品，但无 budget 约束、无 4 轴评分、无 world template 结构。论文 related work 应引用。
+
+#### F195 — StructMemEval：结构化记忆组织评测（审计线程前沿搜索 V40/A411）⭐ — 竞品 benchmark
+
+[arXiv:2602.11243, Feb 2026] 首个测试 LLM 结构化记忆组织能力的 benchmark（transaction ledgers, to-do lists, trees）。发现 LLM 在无显式提示时难以正确组织记忆结构；两种失败模式：无组织 vs 虚构组织。**与 MemoryGym 关系**：LOW 风险。StructMemEval 仅测结构类型选择（窄焦点），MemoryGym 测完整 7 阶段链条（信息摄入→存储决策→组织→检索→变更→推理→元认知）。正交而非竞争。
+
+#### F196 — MemoryBench：持续学习记忆评测（审计线程前沿搜索 V41/A427）⭐ — 竞品 benchmark
+
+[arXiv:2510.17281, Oct 2025] 评测 LLM 系统从用户反馈中持续学习的记忆能力。区分 declarative vs procedural 知识，多域多语种。发现现有记忆系统无法有效利用 procedural 知识。**与 MemoryGym 关系**：LOW 风险。MemoryBench 测跨 session 持续学习（用户反馈驱动），MemoryGym 测单 session 信息过载管理（budget + update tracking）。互补定位。论文 related work 可引用。
+
+#### F197 — MemOS：AI 记忆操作系统 + OpenClaw 插件（审计线程前沿搜索 V41/A427）⭐⭐ — 基础设施
+
+[arXiv:2507.03724, Jul 2025; v2.0 Dec 2025; OpenClaw Plugin Mar 2026] MemTensor 开源记忆 OS。核心抽象 MemCube（统一 plaintext/activation/parameter 记忆），三层架构（API/调度/存储）。v2.0 支持多模态记忆、工具记忆、企业优化。**与 MemoryGym 关系**：**生态机遇**。MemOS OpenClaw 插件（Mar 8, 2026）与 MemoryGym 的 OpenClaw 兼容接口天然对接——MemOS 可作为 MemoryGym 的第三个后端。中期关注。
 
 ---
 
