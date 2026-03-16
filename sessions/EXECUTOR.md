@@ -1,199 +1,199 @@
-# EXECUTOR — 执行线程
+# EXECUTOR — Execution Thread
 
-> 启动方式：`/loop 10m 你是执行线程，读 sessions/EXECUTOR.md 执行当前任务`
+> Startup: `/loop 10m You are the execution thread, read sessions/EXECUTOR.md and execute the current task`
 >
-> 理解意图、设计方案、写代码、跑测试、提交。
+> Understand intent, design solutions, write code, run tests, commit.
 
-## 每次 /loop
+## Each /loop
 
 ```
-1. git pull --rebase origin main（同步训练者和其他开发者的变更）
-2. 读本文件，理解「当前任务」的真实意图
-3. 系统性思考：任务要解决什么问题？为什么这样做？有没有更好的方案？
-4. 设计方案 → 写代码 → 跑测试
-5. 代码变更 → python -m pytest tests/ -q -m "not slow"（快速测试 ~60s；提交前跑全量 python -m pytest tests/ -q）
-6. 评分/问题变更 → python -m memorygym.bench --seeds 3 --validate
-7. 任务完成 → 移入「已完成」，提升下一待办
-8. Phase 完成 → git add + git commit + git push origin main（**禁止** Co-Authored-By、Generated-by 等元数据行）
-9. 待办空 → 等待新任务写入，不做其他事
+1. git pull --rebase origin main (sync changes from trainer and other developers)
+2. Read this file, understand the true intent of the "current task"
+3. Think systematically: What problem does the task solve? Why this approach? Is there a better solution?
+4. Design solution → write code → run tests
+5. Code changes → python -m pytest tests/ -q -m "not slow" (fast tests ~60s; run full suite before commit: python -m pytest tests/ -q)
+6. Scoring/question changes → python -m memorygym.bench --seeds 3 --validate
+7. Task complete → move to "Completed", promote next backlog item
+8. Phase complete → git add + git commit + git push origin main (**no** Co-Authored-By, Generated-by, or other metadata lines)
+9. Backlog empty → wait for new tasks to be written, do nothing else
 ```
 
-**协作规则**：训练者是另一个独立开发者，会推送代码到同一个远程仓库。每次开发前必须 `git pull --rebase`，提交后必须 `git push`。如果 pull 有冲突，**在理解双方变更意图的基础上解决**，不要盲目接受任何一方。
+**Collaboration rules**: The trainer is another independent developer who pushes code to the same remote repository. You must `git pull --rebase` before every development session, and `git push` after every commit. If pull has conflicts, **resolve them based on understanding both sides' intent**, do not blindly accept either side.
 
-## 思考规范
+## Thinking Standards
 
-**理解意图**：每个任务都有表面需求和深层意图。审计线程写入的任务描述是起点而非终点——你必须理解问题的根因和解决方向，在此基础上设计最优方案。
+**Understand intent**: Every task has surface requirements and deeper intent. The task description written by the audit thread is a starting point, not an endpoint — you must understand the root cause of the problem and the direction of the solution, then design the optimal approach on that basis.
 
-**独立判断**：如果你在实施中发现任务描述的方案不是最优解，应该采用更好的方案并在 devlog 中说明理由。你是工程师，不是翻译机。
+**Independent judgment**: If during implementation you discover that the approach described in the task is not optimal, you should adopt the better approach and explain your reasoning in the devlog. You are an engineer, not a translator.
 
-**全局视角**：改动任何代码前，先理解它在整个系统中的角色。读相关模块、理解调用链、考虑副作用。
+**Global perspective**: Before modifying any code, first understand its role in the entire system. Read related modules, understand the call chain, consider side effects.
 
-## 执行规范
+## Execution Standards
 
-**代码任务**：理解意图 → 设计方案 → 改代码 → 跑测试 → 通过才算完成。
+**Code tasks**: Understand intent → design solution → modify code → run tests → only complete when tests pass.
 
-**eval 任务**：结果自动保存 `eval/`。API 故障（503/429/timeout）→ 重命名为 `*.503_error.json`，不计入数据表。只有 `success: true` 才是有效数据。一次 loop 只跑一个 eval 任务。
+**Eval tasks**: Results are automatically saved to `eval/`. API failures (503/429/timeout) → rename to `*.503_error.json`, do not include in data tables. Only `success: true` counts as valid data. Run only one eval task per loop.
 
-**完成判定**：有明确产出（eval JSON / 测试通过 / 文档更新）才算完成。
+**Completion criteria**: A task is only complete when there is a concrete deliverable (eval JSON / tests passing / documentation updated).
 
-**闭环验证**：评分/问题/agent 逻辑变更后，必须跑 eval 验证效果。不能只改代码就宣布完成。
+**Closed-loop verification**: After any scoring/question/agent logic change, you must run eval to verify the effect. You cannot just change code and declare it complete.
 
-**提交粒度**：一个 Phase 一个 commit。提交时更新 `memorygym/__init__.py` 的 `__version__`（patch 递增）。
+**Commit granularity**: One commit per Phase. Update `memorygym/__init__.py` `__version__` when committing (patch increment).
 
-**文档同步**：Phase 完成时检查 CLAUDE.md 是否与代码一致。如有漂移，立即修正。
+**Documentation sync**: When a Phase is complete, check whether CLAUDE.md is consistent with the code. If there is drift, fix it immediately.
 
-## 卡住时
+## When Stuck
 
-- **任务级**：当前方案不通 → 换方案或拆解子任务
-- **方向级**：连续多个任务无进展 → devlog 记录分析，更新 ROADMAP.md §4
+- **Task-level**: Current approach doesn't work → try a different approach or break into subtasks
+- **Direction-level**: Multiple consecutive tasks with no progress → record analysis in devlog, update ROADMAP.md §4
 
-## 新 session 引导
+## New Session Guide
 
-1. 读本文件了解当前任务
-2. 读 CLAUDE.md 了解北极星
-3. 上下文不足时读 `docs/ROADMAP.md` §0 和最近的 `devlog/`
+1. Read this file to understand the current task
+2. Read CLAUDE.md to understand the north star
+3. When context is insufficient, read `docs/ROADMAP.md` §0 and recent `devlog/`
 
 ---
 
-## 当前任务
+## Current Task
 
-### Phase 135 — GRPO 代码路径修复（training/cli.py 1 BLOCKER + 5 HIGH）
+### Phase 135 — GRPO Code Path Fixes (training/cli.py 1 BLOCKER + 5 HIGH)
 
-**依据**：审计 A520 发现 `training/cli.py` GRPO 实现存在 1 个 BLOCKER 和 5 个 HIGH 级别 bug，解释了 Trainer GRPO smoke test 无法产出结果的原因。这些 bug 阻塞了 NeurIPS 论文训练实验数据的产出。
+**Basis**: Audit A520 found 1 BLOCKER and 5 HIGH severity bugs in the `training/cli.py` GRPO implementation, explaining why the Trainer's GRPO smoke test could not produce results. These bugs block the production of NeurIPS paper training experiment data.
 
-**意图**：修复 GRPO 训练管线中的梯度流、损失计算、资源管理问题，使 RL 训练能正常进行。
+**Intent**: Fix gradient flow, loss computation, and resource management issues in the GRPO training pipeline to enable normal RL training.
 
-#### Step 1 — 修复零损失 fallback（BLOCKER）
+#### Step 1 — Fix zero-loss fallback (BLOCKER)
 
-**文件**：`memorygym/training/cli.py:648-650`
+**File**: `memorygym/training/cli.py:648-650`
 
-**问题**：当所有 trajectory 的 advantage ≈ 0 被跳过后，`total_loss = torch.tensor(0.0, requires_grad=True)` 创建无计算图的张量。`loss.backward()` 产生零梯度，模型不训练。
+**Problem**: When all trajectories have advantage ≈ 0 and are skipped, `total_loss = torch.tensor(0.0, requires_grad=True)` creates a tensor with no computation graph. `loss.backward()` produces zero gradients, and the model does not train.
 
-**修复**：返回一个明确标记（如 `None`），让调用方跳过该 step 的 `backward()` + `optimizer.step()`。或者用 `0 * model_param.sum()` 创建连接到模型的零损失（但这也不好，浪费计算）。推荐返回 `None` 并在调用方处理。同时添加 warning 日志：`"GRPO step skipped: all trajectories filtered (advantage ≈ 0)"`。
+**Fix**: Return an explicit marker (e.g., `None`) so the caller skips `backward()` + `optimizer.step()` for that step. Alternatively, use `0 * model_param.sum()` to create a zero loss connected to the model (but this is also suboptimal, wasting computation). Recommended: return `None` and handle it at the call site. Also add a warning log: `"GRPO step skipped: all trajectories filtered (advantage ≈ 0)"`.
 
-#### Step 2 — 为静默跳过添加 warning（HIGH）
+#### Step 2 — Add warning for silent skipping (HIGH)
 
-**文件**：`memorygym/training/cli.py:582-583`
+**File**: `memorygym/training/cli.py:582-583`
 
-**问题**：`if abs(advantage) < 1e-6: continue` 无任何日志。大量 trajectory 可能被静默跳过，Trainer 看不到原因。
+**Problem**: `if abs(advantage) < 1e-6: continue` has no logging. A large number of trajectories may be silently skipped, and the Trainer cannot see the reason.
 
-**修复**：添加 `logger.warning("Skipping trajectory with near-zero advantage: %.6f", advantage)`。在函数末尾统计跳过数量并 warning：`"GRPO loss: %d/%d trajectories used (skipped %d with |advantage| < 1e-6)"` 。
+**Fix**: Add `logger.warning("Skipping trajectory with near-zero advantage: %.6f", advantage)`. At the end of the function, report skip counts with a warning: `"GRPO loss: %d/%d trajectories used (skipped %d with |advantage| < 1e-6)"`.
 
-#### Step 3 — 修复 KL 散度计算（HIGH）
+#### Step 3 — Fix KL divergence computation (HIGH)
 
-**文件**：`memorygym/training/cli.py:624-627`
+**File**: `memorygym/training/cli.py:624-627`
 
-**问题**：`ratio = torch.exp(mean_log_ratio)` 在 sequence-level 做 exp，等价于几何均值。然后用这个 ratio 做 clipping，相当于对整个序列的"平均 ratio"做 PPO clipping，而非 per-token 操作。
+**Problem**: `ratio = torch.exp(mean_log_ratio)` computes exp at sequence-level, equivalent to the geometric mean. Then using this ratio for clipping amounts to PPO clipping on the "average ratio" of the entire sequence, rather than a per-token operation.
 
-**修复方案（二选一，推荐 A）**：
-- **A（per-token ratio, 更接近 GRPO）**：`ratio = torch.exp(log_ratio)` per-token，clipping 在 per-token 上做，然后 `pg_loss = -(torch.min(surr1, surr2) * mask).sum() / n_tokens`
-- **B（保持 sequence-level 但修正 KL）**：KL penalty 直接用 `mean_log_ratio`（已是 E[log(π/π_ref)]），不需要再 exp
+**Fix (choose one, A recommended)**:
+- **A (per-token ratio, closer to GRPO)**: `ratio = torch.exp(log_ratio)` per-token, clipping done per-token, then `pg_loss = -(torch.min(surr1, surr2) * mask).sum() / n_tokens`
+- **B (keep sequence-level but fix KL)**: KL penalty uses `mean_log_ratio` directly (which is already E[log(π/π_ref)]), no need for additional exp
 
-注意：如果选 A，需要同时修改 cli.py:629-633 的 clipping 逻辑为 per-token。
+Note: If choosing A, you also need to modify the clipping logic at cli.py:629-633 to be per-token.
 
-#### Step 4 — 修复 loss 归一化一致性（HIGH）
+#### Step 4 — Fix loss normalization consistency (HIGH)
 
-**文件**：`memorygym/training/cli.py:651-652`
+**File**: `memorygym/training/cli.py:651-652`
 
-**问题**：`n_valid > 1` 时 `total_loss / n_valid`，但 `n_valid == 1` 时不除。
+**Problem**: When `n_valid > 1`, `total_loss / n_valid`, but when `n_valid == 1`, no division is performed.
 
-**修复**：统一为 `total_loss / n_valid`（当 n_valid >= 1 时）。
+**Fix**: Unify to `total_loss / n_valid` (when n_valid >= 1).
 
-#### Step 5 — 移除内循环 empty_cache + MemoryEnv 资源泄漏（HIGH + MEDIUM）
+#### Step 5 — Remove inner-loop empty_cache + MemoryEnv resource leak (HIGH + MEDIUM)
 
-**文件**：`memorygym/training/cli.py:585, 470`
+**File**: `memorygym/training/cli.py:585, 470`
 
-**修复 1**：移除 `torch.cuda.empty_cache()`（:585），或移到外层 step 循环。内循环调用导致 3-5x 性能下降。
+**Fix 1**: Remove `torch.cuda.empty_cache()` (:585), or move it to the outer step loop. Calling it in the inner loop causes 3-5x performance degradation.
 
-**修复 2**：`_run_episode`（:470）中 `env = MemoryEnv(...)` 后加 `try/finally: env.close()`，防止异常时 ChromaDB 资源泄漏。
+**Fix 2**: In `_run_episode` (:470), after `env = MemoryEnv(...)`, add `try/finally: env.close()` to prevent ChromaDB resource leaks on exceptions.
 
-#### 验证标准
+#### Verification Criteria
 
-1. `python -m pytest tests/ -q -m "not slow"` — 全部通过
-2. `python -m pytest tests/test_training*.py -q` — 训练相关测试通过
-3. 手动验证：`_compute_grpo_loss` 在 advantage 全为 0 时返回 `None`（非 requires_grad=True 的零张量）
-4. 手动验证：`_compute_grpo_loss` 日志输出跳过 trajectory 的 warning
-5. 版本号 patch 递增
+1. `python -m pytest tests/ -q -m "not slow"` — all pass
+2. `python -m pytest tests/test_training*.py -q` — training-related tests pass
+3. Manual verification: `_compute_grpo_loss` returns `None` when all advantages are 0 (not a requires_grad=True zero tensor)
+4. Manual verification: `_compute_grpo_loss` log output shows warning for skipped trajectories
+5. Version number patch increment
 
 ---
 
 ## Backlog
 
-- **legacy 工具名清理**：移除 _KNOWN_TOOLS 中的 memory_store/memory_forget/memory_get/memory_list（等 v3 评测基线稳定后）
+- **Legacy tool name cleanup**: Remove memory_store/memory_forget/memory_get/memory_list from _KNOWN_TOOLS (wait until v3 eval baseline is stable)
 
-## 已完成
+## Completed
 
-### Phase 132 — validators.py regex 修复：leading-dot decimals（v0.10.35） ✅
-### Phase 131 — 训练 CLI help + API 错误友好化（v0.10.34） ✅
-### Phase 130 — Agent Runner 鲁棒性修复（empty choices guard + edit refund guard, v0.10.33） ✅
-### Phase 134 — 训练模块 + bench.py 鲁棒性修复（env.py 越界 + adapters info 初始化 + bench.py except + client try/finally） ✅
-### Phase 129 — 资源泄漏修复（OpenAI clients close + bench.py try/finally + MarkdownBackend __del__） ✅
-### Phase 128 — LEADERBOARD/README 刷新（173 evals）+ pyproject.toml 版本同步 ✅
-### Phase 127 — test_worlds.py 补齐 4 缺失模板测试覆盖（6→10 模板） ✅
-### Phase 126 — Inspect AI correction Edit 免费 + 提示词同步（两路径行为一致） ✅
-### Phase 125 — task_id 稳定映射（TEMPLATE_REGISTRY + _parse_task_id 重写） ✅
-### Phase 124 — 并发 & Long-Run 资源泄漏修复（MarkdownBackend/ChromaDB/bench.py close） ✅
-### Phase 123 — LEADERBOARD.md 刷新（150 evals, 10 模板，Qwen3-235B #1） ✅
-### Phase 122 — counterfactual validator 路由修复 + cross_domain dead code 清理 ✅
-### Phase 121 — eval_salt 约束一致性修复（enforce_constraints 钩子，10 模板全覆盖） ✅
-### Phase 120 — agentteam C1 约束修复（success+error ∈ [85,110] 违反率 40%→0%） ✅
-### Phase 119 — README 文档同步（10 模板 + Training quickstart + CLAUDE.md 同步） ✅
-### Phase 118 — agentteam 世界模板（第 10 个模板，23 attrs，6 constraints，correction_rate=0.15） ✅
-### Phase 117 — project 世界模板 + 117-fix 质量修复（第 9 个模板，23 attrs，4 constraints） ✅
-### Phase 116 — 战略文档同步（ROADMAP.md + STATUS_REPORT.md，Phase 94-114 补全） ✅
-### Phase 114 — README 排行榜数据同步（123 evals, Composite 列） ✅
-### Phase 113 — stdout 评分表 axis scores 一致 + smart_guesser<=5% + trajectory post-judge ✅
-### Phase 112 — Correction Edit 免预算 + 消息增强（maintenance 轴修复） ✅
-### Phase 111 — LEADERBOARD 刷新 (121 evals) + stream_agent context overflow 优雅 abstain ✅
-### Phase 110 — validators.py 推理题型路由补全（8 个未路由题型） ✅
-### Phase 109 — LEADERBOARD.md 4 轴补全 + leaderboard.py Reasoning/Efficiency 列 ✅
-### Phase 108 — CLI UX 打磨（表格对齐/API 前置检查/choices 显示/HF 噪音） ✅
-### Phase 107 — 文档同步：README/LEADERBOARD/pyproject.toml/EVALUATOR ✅
-### Phase 106 — relationship_hop/chain validator dispatch + GT 格式化解析 ✅
-### Phase 104 — SFT 轨迹 correction 时序修复 + Edit 覆盖提升 ✅
-### Phase 102 — Correction 追踪误报修复 ✅
-### Phase 101 — university + codebase 加入 OFFICIAL_TEMPLATES ✅
-### Phase 100 — SFT 轨迹 _compact_document 使用原始值修复 ✅
-### Phase 99 — generate_stream ingest 文档渲染时序修复 ✅
-### Phase 98 — Correction 引导消息增强 ✅
-### Phase 97 — Codebase 世界模板（第 8 个领域） ✅
-### Phase 96 — University 模板 Constraint 4 逻辑修复 ✅
-### Phase 94 — 死代码清理 ✅
-### Phase 88 — docs/ROADMAP.md 同步更新 ✅
-### Phase 93 — CLI UX 修复：README tier 默认值 + help 补全 ✅
-### Phase 91 — 问题措辞泄漏修复（temporal_trend + comparison） ✅
-### Phase 92 — RL reward 对齐 4 轴评分 + Edit shaped reward ✅
-### Phase 89+90 — SFT 轨迹 budget 超支 + json.dumps ✅
-### Phase 87 — SFT 轨迹连续 user 消息合并 ✅
-### Phase 86 — test_path_consistency 扩展 + flaky test 修复 ✅
-### Phase 85 — eval_task.py 默认值 + pyproject.toml 版本同步 ✅
-### Phase 84 — Inspect AI 工具名不匹配修复 ✅
-### Phase 83 — MarkdownBackend recall 基准测试 ✅
-### Phase 81+82 — 训练基础設施修复 ✅
-### Phase 79+80 — 数据质量修复 ✅
-### Phase 78 — 推理题型全覆盖测试 ✅
-### Phase 77 — events.py contradiction 丢失 bug + 中流问题权重不一致 ✅
-### Phase 76 — 3 路径一致性自动化测试 ✅
-### Phase 75 — Inspect AI 路径 bug 修复 ✅
-### Phase 74 — 系统提示词 Correction 策略泄漏修复 ✅
-### Phase 73 — Version bug + Leaderboard composite 排名修复 ✅
-### Phase 72 — Simulation 轴分数不变量验证 ✅
-### Phase 71 — 事件格式策略提示移除 ✅
-### Phase 70 — ChromaDB Edit fallback 静默失败修复 ✅
-### Phase 69 — MarkdownBackend temporal decay 搜索 ✅
-### Phase 68 — RNG 对齐 + env.py 漂移修复 ✅
-### Phase 67 — MemoryEnv 资源泄漏修复 ✅
-### Phase 65 — training/env.py Edit 路径与 eval 对齐 ✅
-### Phase 64 — eval_task.py 工具接口同步 ✅
-### Phase 63 — training/env.py 工具行为与 eval 对齐 ✅
-### Phase 62 — MarkdownBackend 接入 bench.py + training env ✅
-### Phase 61 — stream_agent.py 拆分 ✅
-### Phase 60 — Phase 59 遗留 bug 修复 ✅
-### Phase 59 — 工具接口 OpenClaw 化 ✅
-### Phase 58 — 移除 mem0 后端 ✅
-### Phase 57 — 系统提示词中立化 ✅
-### Phase 53-56 — RL 训练冒烟 + 导入风格 + 静默异常 + 测试精简 ✅
-### Phase 51 — MemoryEnv process-based reward 增强 ✅
-### Phase 50 — verl_adapter 私有 API 修复 + 适配器健壮性 ✅
-### Phase 49 — Inspect AI 完善 + 关键模块测试补全 ✅
-### Phase 3-48 — 基础系统 → 评测迭代 → 模板增强 → RL 训练 ✅
+### Phase 132 — validators.py regex fix: leading-dot decimals (v0.10.35) ✅
+### Phase 131 — Training CLI help + API error friendliness (v0.10.34) ✅
+### Phase 130 — Agent Runner robustness fixes (empty choices guard + edit refund guard, v0.10.33) ✅
+### Phase 134 — Training module + bench.py robustness fixes (env.py out-of-bounds + adapters info init + bench.py except + client try/finally) ✅
+### Phase 129 — Resource leak fixes (OpenAI clients close + bench.py try/finally + MarkdownBackend __del__) ✅
+### Phase 128 — LEADERBOARD/README refresh (173 evals) + pyproject.toml version sync ✅
+### Phase 127 — test_worlds.py fill in 4 missing template test coverage (6→10 templates) ✅
+### Phase 126 — Inspect AI correction Edit free + prompt sync (consistent behavior across both paths) ✅
+### Phase 125 — task_id stable mapping (TEMPLATE_REGISTRY + _parse_task_id rewrite) ✅
+### Phase 124 — Concurrency & long-run resource leak fixes (MarkdownBackend/ChromaDB/bench.py close) ✅
+### Phase 123 — LEADERBOARD.md refresh (150 evals, 10 templates, Qwen3-235B #1) ✅
+### Phase 122 — Counterfactual validator routing fix + cross_domain dead code cleanup ✅
+### Phase 121 — eval_salt constraint consistency fix (enforce_constraints hook, full 10-template coverage) ✅
+### Phase 120 — agentteam C1 constraint fix (success+error ∈ [85,110] violation rate 40%→0%) ✅
+### Phase 119 — README documentation sync (10 templates + Training quickstart + CLAUDE.md sync) ✅
+### Phase 118 — agentteam world template (10th template, 23 attrs, 6 constraints, correction_rate=0.15) ✅
+### Phase 117 — project world template + 117-fix quality fixes (9th template, 23 attrs, 4 constraints) ✅
+### Phase 116 — Strategic documentation sync (ROADMAP.md + STATUS_REPORT.md, Phase 94-114 backfill) ✅
+### Phase 114 — README leaderboard data sync (123 evals, Composite column) ✅
+### Phase 113 — stdout score table axis scores consistency + smart_guesser<=5% + trajectory post-judge ✅
+### Phase 112 — Correction Edit budget-free + message enhancement (maintenance axis fix) ✅
+### Phase 111 — LEADERBOARD refresh (121 evals) + stream_agent context overflow graceful abstain ✅
+### Phase 110 — validators.py comprehension question type routing completion (8 unrouted question types) ✅
+### Phase 109 — LEADERBOARD.md 4-axis completion + leaderboard.py Reasoning/Efficiency columns ✅
+### Phase 108 — CLI UX polish (table alignment/API pre-check/choices display/HF noise) ✅
+### Phase 107 — Documentation sync: README/LEADERBOARD/pyproject.toml/EVALUATOR ✅
+### Phase 106 — relationship_hop/chain validator dispatch + GT formatting parse ✅
+### Phase 104 — SFT trajectory correction timing fix + Edit coverage improvement ✅
+### Phase 102 — Correction tracking false positive fix ✅
+### Phase 101 — university + codebase added to OFFICIAL_TEMPLATES ✅
+### Phase 100 — SFT trajectory _compact_document use original values fix ✅
+### Phase 99 — generate_stream ingest document rendering timing fix ✅
+### Phase 98 — Correction guidance message enhancement ✅
+### Phase 97 — Codebase world template (8th domain) ✅
+### Phase 96 — University template Constraint 4 logic fix ✅
+### Phase 94 — Dead code cleanup ✅
+### Phase 88 — docs/ROADMAP.md sync update ✅
+### Phase 93 — CLI UX fix: README tier defaults + help completion ✅
+### Phase 91 — Question wording leakage fix (temporal_trend + comparison) ✅
+### Phase 92 — RL reward aligned with 4-axis scoring + Edit shaped reward ✅
+### Phase 89+90 — SFT trajectory budget overrun + json.dumps ✅
+### Phase 87 — SFT trajectory consecutive user message merging ✅
+### Phase 86 — test_path_consistency expansion + flaky test fix ✅
+### Phase 85 — eval_task.py defaults + pyproject.toml version sync ✅
+### Phase 84 — Inspect AI tool name mismatch fix ✅
+### Phase 83 — MarkdownBackend recall benchmark ✅
+### Phase 81+82 — Training infrastructure fixes ✅
+### Phase 79+80 — Data quality fixes ✅
+### Phase 78 — Comprehension question type full coverage testing ✅
+### Phase 77 — events.py contradiction loss bug + mid-stream question weight inconsistency ✅
+### Phase 76 — 3-path consistency automated testing ✅
+### Phase 75 — Inspect AI path bug fix ✅
+### Phase 74 — System prompt correction strategy leakage fix ✅
+### Phase 73 — Version bug + Leaderboard composite ranking fix ✅
+### Phase 72 — Simulation axis score invariant verification ✅
+### Phase 71 — Event format strategy hint removal ✅
+### Phase 70 — ChromaDB Edit fallback silent failure fix ✅
+### Phase 69 — MarkdownBackend temporal decay search ✅
+### Phase 68 — RNG alignment + env.py drift fix ✅
+### Phase 67 — MemoryEnv resource leak fix ✅
+### Phase 65 — training/env.py Edit path aligned with eval ✅
+### Phase 64 — eval_task.py tool interface sync ✅
+### Phase 63 — training/env.py tool behavior aligned with eval ✅
+### Phase 62 — MarkdownBackend integrated into bench.py + training env ✅
+### Phase 61 — stream_agent.py split ✅
+### Phase 60 — Phase 59 remaining bug fixes ✅
+### Phase 59 — Tool interface OpenClaw migration ✅
+### Phase 58 — Remove mem0 backend ✅
+### Phase 57 — System prompt neutralization ✅
+### Phase 53-56 — RL training smoke test + import style + silent exceptions + test streamlining ✅
+### Phase 51 — MemoryEnv process-based reward enhancement ✅
+### Phase 50 — verl_adapter private API fix + adapter robustness ✅
+### Phase 49 — Inspect AI improvements + critical module test completion ✅
+### Phase 3-48 — Base system → eval iteration → template enhancement → RL training ✅

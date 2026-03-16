@@ -1,149 +1,149 @@
 # MemoryGym
 
-构建一个**真实、不可作弊、有训练价值**的 LLM 记忆管理评测与训练平台。
+Build a **realistic, cheat-proof, training-valuable** LLM memory management evaluation and training platform.
 
-核心约束（不可违反，任何代码变更都必须同时满足）：
+Core constraints (inviolable — any code change must satisfy all simultaneously):
 
-1. **不可作弊**：任何背题、背模式、钻漏洞的策略都不能获得高分
-2. **所见即所得**：评分反映真实能力，不存在取巧路径
-3. **场景真实**：接近真实 agent 记忆场景（信息过载 + 预算有限 + 过时信息需更新）
-4. **可训练**：不仅是评测工具，还是 RL 训练环境（MemoryEnv）
-5. **确定性**：同一 seed → 完全相同的场景和评分
+1. **Cheat-proof**: No strategy based on memorizing questions, patterns, or exploiting loopholes can achieve a high score
+2. **WYSIWYG**: Scores reflect true capability — no shortcut paths exist
+3. **Realistic scenarios**: Close to real agent memory scenarios (information overload + limited budget + outdated information needing updates)
+4. **Trainable**: Not just an evaluation tool, but also an RL training environment (MemoryEnv)
+5. **Deterministic**: Same seed → identical scenario and scoring
 
-**核心流程**: seed → WorldTemplate → 生成实体 → 渲染文档 → agent 在预算内存储 → 修正事件改变世界状态 → 自适应提问 → 4 轴评分。
+**Core pipeline**: seed → WorldTemplate → generate entities → render documents → agent stores within budget → correction events change world state → adaptive questioning → 4-axis scoring.
 
-## 设计原则
+## Design Principles
 
-### 评分有效性
+### Scoring Validity
 
-评分必须只反映真实记忆管理能力。任何不理解内容、不做真实存储决策的策略都不能得高分。
+Scores must only reflect true memory management capability. Any strategy that doesn't understand content or make genuine storage decisions must not achieve a high score.
 
-通过 9 种 simulation 策略验证：每次变更评分或问题逻辑后，必须满足 perfect=100%, guesser=0%, smart_guesser<=5%, abstainer<15%, strategic>naive+10%。
+Validated via 9 simulation strategies: after every change to scoring or question logic, must satisfy perfect=100%, guesser=0%, smart_guesser<=5%, abstainer<15%, strategic>naive+10%.
 
-### 记忆能力定义
+### Memory Capability Definition
 
-本系统评测和训练的"记忆能力"是一个综合能力，包含完整的链条：
+The "memory capability" evaluated and trained by this system is a composite ability, encompassing the full chain:
 
-**信息摄入 → 存储决策 → 存储组织 → 检索定位 → 变更追踪 → 记忆推理 → 元认知**
+**Information Intake → Storage Decisions → Storage Organization → Retrieval & Locating → Change Tracking → Memory Reasoning → Metacognition**
 
-- **信息摄入**：从非结构化文档中提取关键信息
-- **存储决策**：在预算限制下决定什么值得记、记多少、记多详细
-- **存储组织**：选择存储格式和粒度，使信息既紧凑又可检索
-- **检索定位**：用正确的查询策略找到已存储的信息
-- **变更追踪**：当信息更新时正确更新已有记忆
-- **记忆推理**：从存储的数据中计算和推导答案
-- **元认知**：准确判断自己知道什么、不知道什么
+- **Information Intake**: Extracting key information from unstructured documents
+- **Storage Decisions**: Deciding what's worth remembering, how much, and at what granularity under budget constraints
+- **Storage Organization**: Choosing storage format and granularity to make information both compact and retrievable
+- **Retrieval & Locating**: Using correct query strategies to find stored information
+- **Change Tracking**: Correctly updating existing memories when information changes
+- **Memory Reasoning**: Computing and deriving answers from stored data
+- **Metacognition**: Accurately judging what one knows and doesn't know
 
-评测设计和难度调整必须服务于这条完整链条，不能退化为只测其中某一环。
+Evaluation design and difficulty tuning must serve this complete chain — it must not degrade to testing only one link.
 
-### 训练价值约束
+### Training Value Constraint
 
-评测机制下训练得到的能力必须有现实迁移价值。任何评测设计变更和难度调整都必须通过此检验：
+Capabilities trained under the evaluation mechanism must have real-world transfer value. Any evaluation design change or difficulty adjustment must pass this test:
 
-- **有迁移价值**：链条中每一环的真实能力提升
-- **无迁移价值**：适应特定基础设施特性、利用评测系统漏洞取巧
-- **难度原则**：合理的难度让训练后的模型能持续进步；不合理的难度即使训练得分也无现实意义。基础设施质量不应成为评测瓶颈
-- **提示词中立**：系统提示词应描述任务和工具，不应规定存储策略。存储策略本身是被测能力的一部分
+- **Has transfer value**: Genuine capability improvement in each link of the chain
+- **No transfer value**: Adapting to specific infrastructure characteristics, exploiting evaluation system loopholes
+- **Difficulty principle**: Reasonable difficulty enables continued progress after training; unreasonable difficulty yields scores with no real-world significance. Infrastructure quality should not become the evaluation bottleneck
+- **Prompt neutrality**: System prompts should describe tasks and tools, not prescribe storage strategies. Storage strategy itself is part of the capability being tested
 
-### 真实评估
+### Authentic Evaluation
 
-- **无 fallback**：数据缺失或计算失败必须抛异常，禁止 `or 0` / `or "N/A"` / `except: return default`
-- **GT 来自世界状态**：ground truth 从修正后的实体计算，无外部数据
-- **确定性验证**：simulation 用规则匹配，真实 eval 用多模型 LLM judge
+- **No fallback**: Missing data or computation failures must raise exceptions — `or 0` / `or "N/A"` / `except: return default` are forbidden
+- **GT from world state**: Ground truth is computed from corrected entities, no external data
+- **Deterministic verification**: Simulations use rule matching; real evals use multi-model LLM judges
 
-## 开发规则
+## Development Rules
 
-1. **奥卡姆剃刀**：最少代码解决问题，不做过早抽象
-2. **根因修复**：不打补丁，追溯到根因修复
-3. **文件大小**：单个 `.py` 文件 ≤ 1000 行
-4. **无 Fallback**：不允许静默错误掩盖，数据缺失必须显式抛出
-5. **导入风格**：`memorygym/` 内用相对导入，跨包用绝对导入
-6. **提交**：描述 why 不是 what。**禁止** Co-Authored-By、Generated-by 等元数据行。**只在阶段性完成当前开发任务才能提交**。用 `git add <具体文件>`，不用 `git add -A`
-7. **先测试后提交**：新逻辑 → 先加测试
-8. **版本号**：每次 Phase 提交时更新 `memorygym/__init__.py` 的 `__version__`（patch 递增，如 0.4.0→0.4.1）。eval JSON extra 已自动包含版本号，用于区分不同迭代的评测数据
+1. **Occam's Razor**: Minimum code to solve the problem — no premature abstraction
+2. **Root cause fix**: No patching — trace back to root cause and fix there
+3. **File size**: Single `.py` file ≤ 1000 lines
+4. **No Fallback**: Silent error masking is not allowed — missing data must be explicitly raised
+5. **Import style**: Relative imports within `memorygym/`, absolute imports across packages
+6. **Commits**: Describe why, not what. **Prohibit** Co-Authored-By, Generated-by, and other metadata lines. **Only commit when the current development task reaches a milestone**. Use `git add <specific files>`, not `git add -A`
+7. **Test before commit**: New logic → add tests first
+8. **Version number**: Update `memorygym/__init__.py` `__version__` with each Phase commit (patch increment, e.g., 0.4.0→0.4.1). Eval JSON extra automatically includes the version number to distinguish evaluation data across iterations
 
-## 常用命令
+## Common Commands
 
 ```bash
-python -m pytest tests/ -q -m "not slow"      # 快速测试（389 tests, ~60s）
-python -m pytest tests/ -q                    # 全量测试（438 tests, ~7min）
-python tests/test_worlds.py                    # 世界模板测试（快速迭代）
-python -m memorygym.bench --seeds 10 --validate  # Simulation 不变量检查
-python -m memorygym.bench --model xxxxxx --seed 42 --template company  # 真实评测
-python -m memorygym.training data --seeds 5 --templates company       # SFT 训练数据生成
+python -m pytest tests/ -q -m "not slow"      # Fast tests (389 tests, ~60s)
+python -m pytest tests/ -q                    # Full test suite (438 tests, ~7min)
+python tests/test_worlds.py                    # World template tests (fast iteration)
+python -m memorygym.bench --seeds 10 --validate  # Simulation invariant check
+python -m memorygym.bench --model xxxxxx --seed 42 --template company  # Real evaluation
+python -m memorygym.training data --seeds 5 --templates company       # SFT training data generation
 ```
 
-每次代码变更必须通过 `python tests/test_worlds.py`。
+Every code change must pass `python tests/test_worlds.py`.
 
-## 评测系统
+## Evaluation System
 
-**4 轴评分**（预算压力：实体数远超写入预算，必须选择性存储）：
+**4-axis scoring** (budget pressure: entity count far exceeds write budget — selective storage is required):
 
-| 轴 | 问题类型 | 测什么 | 占比 |
-|----|---------|--------|------|
-| 存储广度 | retrieval | 你存了这个实体吗？ | 30% |
-| 记忆维护 | update | 你更新了修正后的值吗？ | 25% |
-| 推理能力 | comprehension (20 types) | 你能从存储数据计算吗？ | 25% |
-| 效率 | — | 正确数/预算 | 20% |
+| Axis | Question Type | What It Tests | Weight |
+|------|--------------|---------------|--------|
+| Storage Breadth | retrieval | Did you store this entity? | 30% |
+| Memory Maintenance | update | Did you update the corrected value? | 25% |
+| Reasoning | comprehension (20 types) | Can you compute from stored data? | 25% |
+| Efficiency | — | Correct answers / budget | 20% |
 
-**可选模型**（Chutes 平台，按评测价值排序）：
-- `Qwen/Qwen3.5-397B-A17B-TEE` — 最强开源，397B MoE
+**Available models** (Chutes platform, sorted by evaluation value):
+- `Qwen/Qwen3.5-397B-A17B-TEE` — Strongest open-source, 397B MoE
 - `Qwen/Qwen3-235B-A22B-Instruct-2507-TEE`
-- `MiniMaxAI/MiniMax-M2.5-TEE` — 第三家厂商，SWE-bench 80%+
-- `moonshotai/Kimi-K2.5-TEE` — Moonshot 多模态
-- `zai-org/GLM-5-TEE` — 智谱旗舰
+- `MiniMaxAI/MiniMax-M2.5-TEE` — Third vendor, SWE-bench 80%+
+- `moonshotai/Kimi-K2.5-TEE` — Moonshot multimodal
+- `zai-org/GLM-5-TEE` — Zhipu flagship
 
-**真实评测**：`bench.py --model <name>` 或 `inspect eval eval_task.py`，使用真实 LLM + 真实后端。
+**Real evaluation**: `bench.py --model <name>` or `inspect eval eval_task.py`, using real LLM + real backend.
 
-**Simulation**（`simulation.py`）：系统自测，非评估。9 种确定性策略验证评分不变量。
+**Simulation** (`simulation.py`): System self-test, not evaluation. 9 deterministic strategies to verify scoring invariants.
 
-**记忆接口**：OpenClaw 兼容（Write/Edit/Read/memory_search）。后端：ChromaDB（向量存储）+ MarkdownBackend（MEMORY.md 文件 + 混合搜索）。
+**Memory interface**: OpenClaw compatible (Write/Edit/Read/memory_search). Backends: ChromaDB (vector store) + MarkdownBackend (MEMORY.md file + hybrid search).
 
-## 架构
+## Architecture
 
-详细架构见 `docs/ROADMAP.md` §2。核心模块：
+Detailed architecture in `docs/ROADMAP.md` §2. Core modules:
 
-- `worlds/` — 10 个领域模板（company/research/city/hospital/sport/movie/university/codebase/project/agentteam），每模板 21-23 属性（6 种 dtype），20 种推理题型 + 评分器 + Inspect AI 集成
-- `evaluation/` — 答案验证 + LLM judge
-- `memory/` — 预算管理 + 后端（ChromaDB/MarkdownBackend）
-- `agents/stream_agent.py` — 真实 LLM agent runner
-- `simulation.py` — 9 种策略系统自测
-- `bench.py` — CLI 入口
-- `protocol.py` — 评估协议（tier 定义、评分函数、JSON schema）
-- `training/` — 独立训练模块（长期演进方向）
-  - 多框架支持（verl / slime）、多方式（SFT / RL）
-  - 目标：易用性（快速启动、自动调参、远程训练）、高效（快速收敛、低成本、数据收集便捷）、自我迭代（CLI 可视化、反馈闭环、持续改进）
-- `training/env.py` — MemoryEnv（RL 环境）+ SFT 轨迹生成
-- `adapters/` — RL 框架适配层（verl + slime）
+- `worlds/` — 10 domain templates (company/research/city/hospital/sport/movie/university/codebase/project/agentteam), each with 21-23 attributes (6 dtypes), 20 reasoning question types + scorers + Inspect AI integration
+- `evaluation/` — Answer validation + LLM judge
+- `memory/` — Budget management + backends (ChromaDB/MarkdownBackend)
+- `agents/stream_agent.py` — Real LLM agent runner
+- `simulation.py` — 9-strategy system self-test
+- `bench.py` — CLI entry point
+- `protocol.py` — Evaluation protocol (tier definitions, scoring functions, JSON schema)
+- `training/` — Independent training module (long-term evolution direction)
+  - Multi-framework support (verl / slime), multi-approach (SFT / RL)
+  - Goals: Ease of use (quick start, auto-tuning, remote training), efficiency (fast convergence, low cost, convenient data collection), self-iteration (CLI visualization, feedback loops, continuous improvement)
+- `training/env.py` — MemoryEnv (RL environment) + SFT trajectory generation
+- `adapters/` — RL framework adapter layer (verl + slime)
 
-## 死胡同
+## Dead Ends
 
-| 方案 | 失败原因 |
-|------|----------|
-| 固定问题池 + 固定答案 | 可记忆 |
-| 小实体集 (< 100) | 可枚举 |
-| 结构化 needle | 可分类跳过 |
-| WikiText 做 filler | perplexity 不可控 |
-| 不同措辞区分题型 | 措辞攻击 |
-| 先读完再答（纯 RAG） | 测检索不测记忆管理 |
-| 只问最大值 | "总选最大的"攻击 |
-| 问题随存储变化 | agent 通过选择性存储操纵问题 |
+| Approach | Why It Failed |
+|----------|--------------|
+| Fixed question pool + fixed answers | Can be memorized |
+| Small entity set (< 100) | Can be enumerated |
+| Structured needle | Can be classified and skipped |
+| WikiText as filler | Perplexity uncontrollable |
+| Different wording to distinguish question types | Wording attack |
+| Read everything then answer (pure RAG) | Tests retrieval, not memory management |
+| Only ask for maximum values | "Always pick the largest" attack |
+| Questions change based on storage | Agent manipulates questions via selective storage |
 
-## 自治开发
+## Autonomous Development
 
-`/loop` 时读 `sessions/` 目录下对应的线程文件。
+When running `/loop`, read the corresponding thread file in the `sessions/` directory.
 
-线程文件：
-- `sessions/EXECUTOR.md` — 执行线程（写代码、跑测试、提交）
-- `sessions/AUDITOR.md` — 审计线程（调度中枢，审计、设计、方向决策）
-- `sessions/EVALUATOR.md` — 评测线程（跑模型评测、收集数据）
-- `sessions/TRAINER.md` — 训练线程（RL 训练闭环开发与验证，独立推送代码）
-- `sessions/WRITER.md` — 论文线程（学术论文写作，独立仓库 `../memorygym-paper/`）
+Thread files:
+- `sessions/EXECUTOR.md` — Execution thread (write code, run tests, commit)
+- `sessions/AUDITOR.md` — Audit thread (dispatch hub — auditing, design, direction decisions)
+- `sessions/EVALUATOR.md` — Evaluation thread (run model evaluations, collect data)
+- `sessions/TRAINER.md` — Training thread (RL training loop development and verification, independent code push)
+- `sessions/WRITER.md` — Paper thread (academic paper writing, independent repo `../memorygym-paper/`)
 
-信息流向：
-- 审计线程 → 执行线程：通过 EXECUTOR.md 待办区派发 Phase 任务
-- 审计线程 → 评测线程：通过 EVALUATOR.md 任务队列派发评测批次
-- 审计线程 → 论文线程：通过 WRITER.md 反馈区提供审查意见和数据需求
-- 训练线程 → 审计线程：通过 TRAINER.md §战略反馈区 共享实验发现和设计建议
-- 论文线程 → 审计线程：通过 WRITER.md §数据需求区 请求补充实验
-- 训练线程独立推送代码到远程，审计线程在 rebase 后审查变更
+Information flow:
+- Audit thread → Execution thread: Dispatches Phase tasks via the TODO section in EXECUTOR.md
+- Audit thread → Evaluation thread: Dispatches evaluation batches via the task queue in EVALUATOR.md
+- Audit thread → Paper thread: Provides review feedback and data requests via the feedback section in WRITER.md
+- Training thread → Audit thread: Shares experiment findings and design suggestions via the §Strategic Feedback section in TRAINER.md
+- Paper thread → Audit thread: Requests supplementary experiments via the §Data Requests section in WRITER.md
+- Training thread pushes code to remote independently; audit thread reviews changes after rebase
