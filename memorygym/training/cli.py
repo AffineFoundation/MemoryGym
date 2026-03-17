@@ -404,7 +404,8 @@ def cmd_grpo(args: argparse.Namespace) -> int:
         log_entries.append(entry)
 
         if is_main:
-            print(f"  → loss={loss.item():.4f} kl={mean_kl:.4f} "
+            loss_val = loss.item() if loss is not None else 0.0
+            print(f"  → loss={loss_val:.4f} kl={mean_kl:.4f} "
                   f"mean_r={mean_r:.3f} max_r={max_r:.3f} "
                   f"correct={mean_c:.1f} time={elapsed:.0f}s\n",
                   flush=True)

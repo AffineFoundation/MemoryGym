@@ -4,20 +4,25 @@
 
 | Rank | Model                                    | Composite | Avg Score | Evals | Templates              |
 | ---- | ---------------------------------------- | --------- | --------- | ----- | ---------------------- |
-| 1    | Qwen/Qwen3-235B-A22B-Instruct-2507-TEE   |   18.6%   |   21.1%   |    22 | agentteam, city, codebase, company, hospital, movie, project, research, sport, university |
-| 2    | Qwen/Qwen3.5-397B-A17B-TEE               |   18.3%   |   31.3%   |    81 | agentteam, city, codebase, company, hospital, movie, project, research, sport, university |
-| 3    | MiniMaxAI/MiniMax-M2.5-TEE               |   16.5%   |   23.6%   |    22 | agentteam, city, codebase, company, hospital, movie, project, research, sport, university |
-| 4    | moonshotai/Kimi-K2.5-TEE                 |   14.6%   |   25.8%   |    27 | agentteam, city, codebase, company, hospital, movie, project, research, sport, university |
-| 5    | zai-org/GLM-5-TEE                        |   10.9%   |   21.9%   |    21 | agentteam, city, codebase, company, hospital, movie, project, research, sport, university |
+| 1    | chutesai/Mistral-Small-3.2-24B-Instruct-2506 |   24.3%   |   35.0%   |    10 | city, company, hospital, movie, research, sport, university |
+| 2    | Qwen/Qwen3-235B-A22B-Instruct-2507-TEE   |   18.6%   |   21.1%   |    22 | agentteam, city, codebase, company, hospital, movie, project, research, sport, university |
+| 3    | Qwen/Qwen3.5-397B-A17B-TEE               |   18.3%   |   31.3%   |    81 | agentteam, city, codebase, company, hospital, movie, project, research, sport, university |
+| 4    | MiniMaxAI/MiniMax-M2.5-TEE               |   17.2%   |   23.6%   |    24 | agentteam, city, codebase, company, hospital, movie, project, research, sport, university |
+| 5    | moonshotai/Kimi-K2.5-TEE                 |   14.5%   |   25.8%   |    28 | agentteam, city, codebase, company, hospital, movie, project, research, sport, university |
+| 6    | zai-org/GLM-5-TEE                        |   11.0%   |   21.9%   |    22 | agentteam, city, codebase, company, hospital, movie, project, research, sport, university |
+| 7    | openai/gpt-oss-120b-TEE                  |    1.8%   |    3.7%   |     9 | company, research, university |
+| 8    | deepseek-ai/DeepSeek-V3.2-TEE           |    0.0%   |    0.0%   |     3 | company, research, university |
 
 ## Detailed Results
 
 | Model                                    | Template | Seed | Tier | Composite | Breadth | Maint. | Reasoning | Efficiency | Traj |
 | ---------------------------------------- | -------- | ---- | ---- | --------- | ------- | ------ | --------- | ---------- | ---- |
 | MiniMaxAI/MiniMax-M2.5-TEE               | company  |    2 | standard |   54%     | 60%     | 100%   | 22%       | 27%        | yes  |
+| chutesai/Mistral-Small-3.2-24B-Instruct-2506 | movie |    1 | standard |   50%     | 75%     | 33%    | 50%       | 33%        | yes  |
 | Qwen/Qwen3-235B-A22B-Instruct-2507-TEE   | project  |    0 | standard |   49%     | 100%    | 33%    | 22%       | 27%        | yes  |
 | Qwen/Qwen3.5-397B-A17B-TEE               | company  |    9 | standard |   48%     | 60%     | 75%    | 25%       | 27%        | yes  |
 | Qwen/Qwen3.5-397B-A17B-TEE               | university |    0 | standard |   46%     | 57%     | 33%    | 57%       | 30%        | yes  |
+| chutesai/Mistral-Small-3.2-24B-Instruct-2506 | university |    1 | standard |   39%     | 62%     | 40%    | 20%       | 27%        | yes  |
 | MiniMaxAI/MiniMax-M2.5-TEE               | project  |    0 | standard |   45%     | 60%     | 67%    | 22%       | 23%        | yes  |
 | Qwen/Qwen3.5-397B-A17B-TEE               | movie    |    0 | standard |   43%     | 57%     | 50%    | 33%       | 27%        | yes  |
 | Qwen/Qwen3.5-397B-A17B-TEE               | sport    |   10 | standard |   43%     | 50%     | 40%    | 50%       | 27%        | yes  |
@@ -33,6 +38,8 @@
 | Qwen/Qwen3.5-397B-A17B-TEE               | research |    5 | standard |   32%     | 50%     | 25%    | 25%       | 20%        | yes  |
 | moonshotai/Kimi-K2.5-TEE                 | movie    |    2 | standard |   31%     | 11%     | 87%    | 14%       | 13%        | yes  |
 | Qwen/Qwen3.5-397B-A17B-TEE               | hospital |    0 | standard |   31%     | 44%     | 20%    | 33%       | 20%        | yes  |
+| chutesai/Mistral-Small-3.2-24B-Instruct-2506 | hospital |    1 | standard |   29%     | 71%     | 12%    | 0%        | 20%        | yes  |
+| chutesai/Mistral-Small-3.2-24B-Instruct-2506 | company |    3 | standard |   29%     | 57%     | 33%    | 0%        | 17%        | yes  |
 | MiniMaxAI/MiniMax-M2.5-TEE               | codebase |    0 | standard |   29%     | 40%     | 33%    | 22%       | 17%        | yes  |
 | Qwen/Qwen3.5-397B-A17B-TEE               | sport    |    1 | lite |   29%     | 0%      | 67%    | 33%       | 20%        | yes  |
 | Qwen/Qwen3-235B-A22B-Instruct-2507-TEE   | university |    0 | standard |   28%     | 57%     | 0%     | 29%       | 20%        | yes  |
@@ -56,6 +63,7 @@
 | Qwen/Qwen3.5-397B-A17B-TEE               | city     |    8 | standard |   23%     | 25%     | 0%     | 50%       | 17%        | yes  |
 | Qwen/Qwen3.5-397B-A17B-TEE               | university |    3 | standard |   23%     | 50%     | 0%     | 20%       | 13%        | yes  |
 | zai-org/GLM-5-TEE                        | codebase |    0 | standard |   23%     | 20%     | 33%    | 22%       | 13%        | yes  |
+| chutesai/Mistral-Small-3.2-24B-Instruct-2506 | city |    1 | standard |   22%     | 62%     | 0%     | 0%        | 17%        | yes  |
 | Qwen/Qwen3-235B-A22B-Instruct-2507-TEE   | university |    2 | standard |   22%     | 33%     | 0%     | 33%       | 17%        | yes  |
 | moonshotai/Kimi-K2.5-TEE                 | company  |    0 | standard |   22%     | 29%     | 25%    | 17%       | 13%        | yes  |
 | MiniMaxAI/MiniMax-M2.5-TEE               | company  |    1 | standard |   21%     | 0%      | 32%    | 43%       | 13%        | yes  |
@@ -63,6 +71,7 @@
 | MiniMaxAI/MiniMax-M2.5-TEE               | agentteam |    1 | standard |   21%     | 0%      | 75%    | 0%        | 10%        | yes  |
 | MiniMaxAI/MiniMax-M2.5-TEE               | sport    |    0 | standard |   21%     | 0%      | 75%    | 0%        | 10%        | yes  |
 | zai-org/GLM-5-TEE                        | hospital |    2 | standard |   21%     | 43%     | 0%     | 20%       | 13%        | yes  |
+| chutesai/Mistral-Small-3.2-24B-Instruct-2506 | research |    1 | standard |   20%     | 57%     | 0%     | 0%        | 13%        | yes  |
 | moonshotai/Kimi-K2.5-TEE                 | project  |    0 | standard |   20%     | 40%     | 0%     | 22%       | 13%        | yes  |
 | Qwen/Qwen3-235B-A22B-Instruct-2507-TEE   | agentteam |    1 | standard |   20%     | 60%     | 0%     | 0%        | 10%        | yes  |
 | Qwen/Qwen3-235B-A22B-Instruct-2507-TEE   | hospital |    1 | standard |   20%     | 57%     | 0%     | 0%        | 13%        | yes  |
@@ -90,12 +99,15 @@
 | Qwen/Qwen3-235B-A22B-Instruct-2507-TEE   | agentteam |    0 | standard |   17%     | 50%     | 0%     | 0%        | 10%        | yes  |
 | Qwen/Qwen3-235B-A22B-Instruct-2507-TEE   | codebase |    0 | standard |   17%     | 20%     | 0%     | 33%       | 13%        | yes  |
 | Qwen/Qwen3.5-397B-A17B-TEE               | hospital |    9 | standard |   17%     | 17%     | 0%     | 40%       | 10%        | yes  |
+| chutesai/Mistral-Small-3.2-24B-Instruct-2506 | research |    3 | standard |   17%     | 40%     | 0%     | 12%       | 10%        | yes  |
+| chutesai/Mistral-Small-3.2-24B-Instruct-2506 | university |    3 | standard |   17%     | 17%     | 0%     | 40%       | 10%        | yes  |
 | Qwen/Qwen3.5-397B-A17B-TEE               | university |    2 | standard |   17%     | 33%     | 0%     | 17%       | 13%        | yes  |
 | Qwen/Qwen3.5-397B-A17B-TEE               | sport    |    5 | standard |   17%     | 29%     | 0%     | 25%       | 10%        | yes  |
 | moonshotai/Kimi-K2.5-TEE                 | project  |    1 | standard |   17%     | 40%     | 0%     | 11%       | 10%        | yes  |
 | zai-org/GLM-5-TEE                        | company  |    2 | standard |   17%     | 40%     | 0%     | 11%       | 10%        | yes  |
 | zai-org/GLM-5-TEE                        | project  |    0 | standard |   17%     | 40%     | 0%     | 11%       | 10%        | yes  |
 | MiniMaxAI/MiniMax-M2.5-TEE               | agentteam |    0 | standard |   17%     | 0%      | 33%    | 25%       | 10%        | yes  |
+| chutesai/Mistral-Small-3.2-24B-Instruct-2506 | company |    1 | standard |   16%     | 33%     | 0%     | 14%       | 10%        | yes  |
 | Qwen/Qwen3-235B-A22B-Instruct-2507-TEE   | codebase |    2 | standard |   16%     | 40%     | 0%     | 10%       | 10%        | yes  |
 | Qwen/Qwen3.5-397B-A17B-TEE               | research |    3 | standard |   16%     | 20%     | 20%    | 12%       | 10%        | yes  |
 | zai-org/GLM-5-TEE                        | research |    1 | standard |   16%     | 14%     | 24%    | 14%       | 10%        | yes  |
@@ -160,6 +172,7 @@
 | moonshotai/Kimi-K2.5-TEE                 | agentteam |    1 | standard |    7%     | 20%     | 0%     | 0%        | 3%         | yes  |
 | Qwen/Qwen3.5-397B-A17B-TEE               | research |   10 | standard |    6%     | 17%     | 0%     | 0%        | 3%         | yes  |
 | zai-org/GLM-5-TEE                        | research |    2 | standard |    6%     | 17%     | 0%     | 0%        | 3%         | yes  |
+| chutesai/Mistral-Small-3.2-24B-Instruct-2506 | sport |    1 | standard |    5%     | 0%      | 0%     | 17%       | 3%         | yes  |
 | MiniMaxAI/MiniMax-M2.5-TEE               | research |    1 | standard |    5%     | 14%     | 0%     | 0%        | 3%         | yes  |
 | Qwen/Qwen3.5-397B-A17B-TEE               | movie    |    3 | standard |    5%     | 14%     | 0%     | 0%        | 3%         | yes  |
 | moonshotai/Kimi-K2.5-TEE                 | sport    |   10 | standard |    5%     | 0%      | 0%     | 17%       | 3%         | yes  |
@@ -187,5 +200,17 @@
 | zai-org/GLM-5-TEE                        | movie    |    0 | standard |    0%     | 0%      | 0%     | 0%        | 0%         | yes  |
 | zai-org/GLM-5-TEE                        | project  |    1 | standard |    0%     | 0%      | 0%     | 0%        | 0%         | yes  |
 | zai-org/GLM-5-TEE                        | university |    0 | standard |    0%     | 0%      | 0%     | 0%        | 0%         | yes  |
+| openai/gpt-oss-120b-TEE                  | company  |    1 | standard |    4%     | 0%      | 0%     | 14%       | 3%         | yes  |
+| openai/gpt-oss-120b-TEE                  | research |    1 | standard |    4%     | 0%      | 0%     | 14%       | 3%         | yes  |
+| openai/gpt-oss-120b-TEE                  | research |    3 | standard |    4%     | 0%      | 0%     | 12%       | 3%         | yes  |
+| openai/gpt-oss-120b-TEE                  | university |    1 | standard |    2%     | 0%      | 0%     | 0%        | 3%         | yes  |
+| openai/gpt-oss-120b-TEE                  | research |    2 | standard |    2%     | 0%      | 0%     | 0%        | 3%         | yes  |
+| openai/gpt-oss-120b-TEE                  | company  |    2 | standard |    0%     | 0%      | 0%     | 0%        | 0%         | yes  |
+| openai/gpt-oss-120b-TEE                  | company  |    3 | standard |    0%     | 0%      | 0%     | 0%        | 0%         | yes  |
+| openai/gpt-oss-120b-TEE                  | university |    2 | standard |    0%     | 0%      | 0%     | 0%        | 0%         | yes  |
+| openai/gpt-oss-120b-TEE                  | university |    3 | standard |    0%     | 0%      | 0%     | 0%        | 0%         | yes  |
+| deepseek-ai/DeepSeek-V3.2-TEE           | company  |    1 | standard |    0%     | 0%      | 0%     | 0%        | 0%         | yes  |
+| deepseek-ai/DeepSeek-V3.2-TEE           | research |    1 | standard |    0%     | 0%      | 0%     | 0%        | 0%         | yes  |
+| deepseek-ai/DeepSeek-V3.2-TEE           | university |    1 | standard |    0%     | 0%      | 0%     | 0%        | 0%         | yes  |
 
-*Generated from 173 evaluations across 5 models. Last updated: 2026-03-13 09:40 UTC.*
+*Generated from 199 evaluations across 8 models. Last updated: 2026-03-14.*

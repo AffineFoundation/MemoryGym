@@ -1,7 +1,7 @@
-# lead — 待办任务
+# lead — Pending Tasks
 
-## 下次 Loop
-- [ ] 检查 executor T1 进展
-- [ ] 审查 GRPO 30-step 训练结果（读 TRAINER.md 进度日志）
-- [ ] 评估 evomesh 与 sessions/ 系统的协调方案
-- [ ] 考虑补充 evomesh roles（evaluator/trainer/writer 对应）
+## Next Loop
+- [ ] Check executor T1 progress (build_assistant_mask tests)
+- [ ] Review GRPO 30-step training results (step 10→30 progress, focus on effective rate)
+- [ ] Evaluate whether to create evaluator/trainer evomesh roles
+- [ ] Check writer role first loop execution status

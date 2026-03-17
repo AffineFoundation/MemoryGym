@@ -46,21 +46,251 @@ python -m memorygym.bench --model <MODEL> --seed <SEED> --template <TEMPLATE> [-
 ## Available Models
 
 Sorted by evaluation value (Chutes platform, base_url does not need to be specified, code handles it automatically):
-- `Qwen/Qwen3.5-397B-A17B-TEE` — Strongest open-source, 397B MoE
-- `Qwen/Qwen3-235B-A22B-Instruct-2507-TEE` — Second strongest
-- `moonshotai/Kimi-K2.5-TEE` — Model with the most data
-- `MiniMaxAI/MiniMax-M2.5-TEE`
-- `zai-org/GLM-5-TEE`
+
+**Evaluated models**:
+- `Qwen/Qwen3.5-397B-A17B-TEE` — Strongest open-source, 397B MoE (81 evals)
+- `Qwen/Qwen3-235B-A22B-Instruct-2507-TEE` — Second strongest (22 evals)
+- `moonshotai/Kimi-K2.5-TEE` — Model with the most data (27 evals)
+- `MiniMaxAI/MiniMax-M2.5-TEE` (22 evals)
+- `zai-org/GLM-5-TEE` (21 evals)
+
+**New models (Batch 40)**:
+- `deepseek-ai/DeepSeek-V3.2-TEE` — 671B MoE, top-tier open-source
+- `openai/gpt-oss-120b-TEE` — OpenAI's first open-source, 120B MoE
+- `chutesai/Mistral-Small-3.2-24B-Instruct-2506` — Mistral 24B small model baseline
 
 ## Available Templates
 
-company, research, city, hospital, sport, movie, university, codebase (8 total, each with 21-23 attributes)
+company, research, city, hospital, sport, movie, university, codebase, project, agentteam (10 total, each with 21-23 attributes)
 
 ---
 
 ## Current Task
 
-### Batch 34 — Post-Phase 112 Coverage Completion (8 templates × multiple models)
+### Batch 40 — Non-Chinese Open-Source Model Baseline Evaluation (A371 Audit)
+
+**Goal**: Evaluate non-Chinese open-source models on the Chutes platform, expand leaderboard diversity, and add cross-ecosystem data for the paper.
+
+**Priority 3 models**:
+1. `deepseek-ai/DeepSeek-V3.2-TEE` — 671B MoE, one of the strongest open-source models
+2. `openai/gpt-oss-120b-TEE` — OpenAI's first open-source model, 120B MoE
+3. `chutesai/Mistral-Small-3.2-24B-Instruct-2506` — European Mistral, 24B small model baseline
+
+**Task matrix** (3 models x 3 seeds x 3 templates = 27 evals):
+
+**Seed 1 complete results (audit A379 update)**:
+
+| # | Model | Seed | Template | Status | Comp | B | M | R | E | Writes |
+|---|-------|------|----------|--------|------|---|---|---|---|--------|
+| 1 | DeepSeek-V3.2-TEE | 1 | company | ✅ | **0.0%** | 0% | 0% | 0% | 0% | 1/30 |
+| 2 | DeepSeek-V3.2-TEE | 1 | research | ❌ .tmp | — | — | — | — | — | — |
+| 3 | DeepSeek-V3.2-TEE | 1 | university | ❌ .tmp | — | — | — | — | — | — |
+| 10 | gpt-oss-120b-TEE | 1 | company | ✅ | 4.2% | 0% | 0% | 14% | 3% | 1/30 |
+| 11 | gpt-oss-120b-TEE | 1 | research | ✅ | 4.2% | 0% | 0% | 14% | 3% | 13/30 |
+| 12 | gpt-oss-120b-TEE | 1 | university | ✅ | 2.2% | 0% | 6% | 0% | 3% | 10/30 |
+| 19 | Mistral-Small-3.2-24B | 1 | company | ✅ | 15.6% | 33% | 0% | 14% | 10% | 30/30 |
+| 20 | Mistral-Small-3.2-24B | 1 | research | ✅ | 19.8% | 57% | 0% | 0% | 13% | 30/30 |
+| 21 | Mistral-Small-3.2-24B | 1 | university | ✅ | **39.1%** | 63% | 40% | 20% | 27% | 30/30 |
+
+**Per-model seed 1 averages**:
+- **Mistral-Small-24B: avg 24.8%** (3 evals) — if confirmed consistent, will become leaderboard #1 (exceeding Qwen3-235B 18.6%)
+- **gpt-oss-120b: avg 3.5%** (3 evals) — 0% breadth, tool calling barely works
+- **DeepSeek-V3.2: avg 0.0%** (1 eval) — completely unusable (1 write / 0% all axes)
+
+**Key findings**:
+- Company template completed (previous .tmp files now have results)
+- **Mistral-Small good consistency**: company 15.6%, research 19.8%, university 39.1% — fully utilized budget
+- DeepSeek/gpt-oss same root cause: barely execute Write operations (1-13 writes), extremely low tool format parsing rate
+
+**Seed 2+3 + DeepSeek completion results (evaluation thread actual completions)**:
+
+Note: Audit A380 labeled seed 2 as "503", but seed 2 and 3 both completed successfully (exit 0) with extremely low scores. DeepSeek s1 all completed.
+
+| Model | Seed | Template | Comp | B | M | R | E | Stored |
+|-------|------|----------|------|---|---|---|---|--------|
+| DeepSeek-V3.2 | 1 | research | 0% | 0% | 0% | 0% | 0% | 1 |
+| DeepSeek-V3.2 | 1 | university | 0% | 0% | 0% | 0% | 0% | 1 |
+| Mistral-Small | 2 | company | 0% | 0% | 0% | 0% | 0% | 18 |
+| Mistral-Small | 2 | research | 0% | 0% | 0% | 0% | 0% | 23 |
+| Mistral-Small | 2 | university | 0% | 0% | 0% | 0% | 0% | 26 |
+| Mistral-Small | 3 | company | **29%** | 57% | 33% | 0% | 17% | 33 |
+| Mistral-Small | 3 | research | 17% | 40% | 0% | 12% | 10% | 34 |
+| Mistral-Small | 3 | university | 17% | 17% | 0% | 40% | 10% | 35 |
+| gpt-oss-120b | 2 | company | 0% | 0% | 0% | 0% | 0% | 3 |
+| gpt-oss-120b | 2 | research | 2% | 0% | 6% | 0% | 3% | 5 |
+| gpt-oss-120b | 2 | university | 0% | 0% | 0% | 0% | 0% | 13 |
+| gpt-oss-120b | 3 | company | 0% | 0% | 0% | 0% | 0% | 1 |
+| gpt-oss-120b | 3 | research | 4% | 0% | 0% | 12% | 3% | 11 |
+| gpt-oss-120b | 3 | university | 0% | 0% | 0% | 0% | 0% | 2 |
+
+**All-model 3-seed averages**:
+- **Mistral-Small 24B: avg 15.4%** (9 evals) — seed 1 strong (25%), seed 2 collapsed (0%), seed 3 moderate (21%). High variance
+- **gpt-oss-120b: avg 1.5%** (9 evals) — nearly unusable
+- **DeepSeek-V3.2: avg 0.0%** (3 evals) — completely unusable, skipped seed 2+3
+
+**Mistral extended template results (4/4 completed)**:
+
+| Model | Seed | Template | Comp | B | M | R | E | Stored |
+|-------|------|----------|------|---|---|---|---|--------|
+| Mistral-Small | 1 | movie | **50%** | 75% | 33% | 50% | 33% | 30 |
+| Mistral-Small | 1 | hospital | 29% | 71% | 12% | 0% | 20% | 31 |
+| Mistral-Small | 1 | city | 22% | 62% | 0% | 0% | 17% | 34 |
+| Mistral-Small | 1 | sport | 5% | 0% | 0% | 17% | 3% | 32 |
+
+**Batch 40 complete summary**:
+- **Mistral-Small movie s1 = 50%**: New all-time high! 24B model surpasses all 200B+ models
+- **Mistral-Small 7 template avg (seed 1)**: 26.3% — leaderboard #1 candidate
+- **Mistral high variance**: seed 1 avg 26.3%, seed 2 avg 0%, seed 3 avg 21%
+- **gpt-oss-120b**: avg 1.5% — tool calling barely works
+- **DeepSeek-V3.2**: avg 0% — completely unusable (extremely slow + no storage)
+
+---
+
+### Batch 39 ✅ — Coverage Gap Filling (A355 Audit, 4/4 completed)
+
+**Results (4/4 completed, all v0.10.32)**:
+
+| Model | Template | Comp | B | M | R | E | Stored |
+|-------|----------|------|---|---|---|---|--------|
+| MiniMax | movie s2 | **31%** | 12% | **100%** | 0% | 10% | 60 |
+| MiniMax | codebase s2 | 20% | 40% | 0% | 20% | 13% | 31 |
+| GLM-5 | city s2 | 14% | 25% | 0% | 17% | 10% | 34 |
+| Kimi | codebase s2 | 10% | 20% | 0% | 10% | 7% | 31 |
+
+**Batch 39 summary**:
+- **MiniMax movie s2 M=100%**: Perfect maintenance, but B=12% limited composite
+- **Coverage gaps filled**: 4 model x template combinations now all have >=2 evals
+
+### Batch 38 ✅ — Coverage Equalization (A276 Audit, 12/12 completed)
+
+**Results (12/12 completed, all v0.10.29)**:
+
+| Model | Template | Comp | B | M | R | E | Stored |
+|-------|----------|------|---|---|---|---|--------|
+| GLM-5 | hospital s1 | **22%** | 25% | 13% | 33% | 13% | 28 |
+| MiniMax | agentteam s1 | 21% | 0% | **75%** | 0% | 10% | 56 |
+| Qwen3-235B | agentteam s1 | 20% | 60% | 0% | 0% | 10% | 35 |
+| GLM-5 | movie s1 | 18% | 38% | 0% | 17% | 13% | 33 |
+| Kimi | project s1 | 17% | 40% | 0% | 11% | 10% | 33 |
+| Qwen3-235B | project s1 | 14% | 20% | 0% | 22% | 10% | 35 |
+| GLM-5 | codebase s1 | 13% | 14% | 0% | 25% | 10% | 36 |
+| Kimi | agentteam s1 | 7% | 20% | 0% | 0% | 3% | 34 |
+| GLM-5 | sport s1 | 5% | 0% | 0% | 17% | 3% | 35 |
+| GLM-5 | agentteam s1 | 3% | 0% | 0% | 11% | 3% | 32 |
+| MiniMax | project s1 | 0% | 0% | 0% | 0% | 0% | 58 |
+| GLM-5 | project s1 | 0% | 0% | 0% | 0% | 0% | 38 |
+
+**Batch 38 summary**:
+- **Mean composite**: 11.7%
+- **GLM-5 6 evals**: hospital (22%) best, movie (18%) second, project (0%) worst. Mean 10.2%
+- **MiniMax M=75%**: agentteam s1 extremely strong maintenance, but B=0% limits composite to only 21%
+- **Project template difficult**: GLM-5 (0%), MiniMax (0%) completely failed; Kimi (17%), Qwen3-235B (14%) barely passed
+- **Packing trap**: MiniMax stored=56/58 but B=0%, GLM-5 project stored=38 also B=0%
+- **New template coverage**: agentteam 5 models x 2+ seeds, project 5 models x 2+ seeds — equalization target met
+
+---
+
+### Batch 37 ✅ — Post-Phase 121+122 Fix Verification (A267 Audit, 12/12 completed)
+
+**Results (12/12 completed, all v0.10.26)**:
+
+| Model | Template | Comp | B | M | R | E | Stored |
+|-------|----------|------|---|---|---|---|--------|
+| Qwen3.5 | sport s10 | **43%** | 50% | 40% | 50% | 27% | 36 |
+| Qwen3.5 | movie s10 | 26% | 29% | 33% | 25% | 17% | 34 |
+| Qwen3-235B | movie s10 | 25% | 29% | 0% | 50% | 20% | 34 |
+| Qwen3.5 | hospital s10 | 19% | 12% | 50% | 0% | 13% | 35 |
+| GLM-5 | company s10 | 19% | 33% | 0% | 25% | 13% | 35 |
+| Qwen3.5 | company s10 | 15% | 33% | 0% | 12% | 10% | 36 |
+| Qwen3-235B | company s10 | 15% | 33% | 0% | 12% | 10% | 36 |
+| Qwen3.5 | city s10 | 12% | 33% | 0% | 0% | 10% | 36 |
+| MiniMax | city s10 | 8% | 22% | 0% | 0% | 7% | 54 |
+| Qwen3.5 | research s10 | 6% | 17% | 0% | 0% | 3% | 35 |
+| Kimi | sport s10 | 5% | 0% | 0% | 17% | 3% | 34 |
+| Kimi | company s10 | 4% | 0% | 0% | 12% | 3% | 34 |
+
+**Batch 37 summary**:
+- **Mean composite**: 16.4% (vs Batch 35 pre-121 mean ~10%)
+- **Phase 121+122 impact**: composite +6.4pp average improvement
+- **Qwen3.5 sport s10 = 43%**: One of the new high scores (B=50%, M=40%, R=50%)
+- **M>0%**: 4/12 (33%) — Qwen3.5 hospital (50%), sport (40%), movie (33%); Qwen3-235B movie not maintained
+- **B improvement**: Mean B=24%, significant improvement over pre-121 mean ~10%
+- **Kimi poor performance**: sport 5%, company 4% — B=0% causes cascading failure
+- **MiniMax packing**: city stored=54 (still overpacking, breadth only 22%)
+
+---
+
+### Batch 36 ✅ — New Template Initial Evaluation: project + agentteam (A237 Audit, 12/12 completed)
+
+> Batch 35 completed (12/12), moved to completed section. This task promoted to current by audit thread A258.
+
+**Background**: Phase 117-118 added project and agentteam templates, added to OFFICIAL_TEMPLATES, but zero evaluation data. Need to establish baseline data.
+
+**Priority 1 — 3 models x 2 templates (6 evals, required)**:
+```bash
+# Qwen3.5 (strongest model, baseline benchmark)
+python -m memorygym.bench --model Qwen/Qwen3.5-397B-A17B-TEE --seed 0 --template project
+python -m memorygym.bench --model Qwen/Qwen3.5-397B-A17B-TEE --seed 0 --template agentteam
+
+# Kimi (model with most data, comparison reference)
+python -m memorygym.bench --model moonshotai/Kimi-K2.5-TEE --seed 0 --template project
+python -m memorygym.bench --model moonshotai/Kimi-K2.5-TEE --seed 0 --template agentteam
+
+# Qwen3-235B (second strongest, diversity)
+python -m memorygym.bench --model Qwen/Qwen3-235B-A22B-Instruct-2507-TEE --seed 0 --template project
+python -m memorygym.bench --model Qwen/Qwen3-235B-A22B-Instruct-2507-TEE --seed 0 --template agentteam
+```
+
+**Priority 2 — Remaining 2 models + seed diversity (6 evals, optional)**:
+```bash
+# MiniMax + GLM-5
+python -m memorygym.bench --model MiniMaxAI/MiniMax-M2.5-TEE --seed 0 --template project
+python -m memorygym.bench --model MiniMaxAI/MiniMax-M2.5-TEE --seed 0 --template agentteam
+python -m memorygym.bench --model zai-org/GLM-5-TEE --seed 0 --template project
+python -m memorygym.bench --model zai-org/GLM-5-TEE --seed 0 --template agentteam
+
+# Additional seed verification
+python -m memorygym.bench --model Qwen/Qwen3.5-397B-A17B-TEE --seed 1 --template project
+python -m memorygym.bench --model Qwen/Qwen3.5-397B-A17B-TEE --seed 1 --template agentteam
+```
+
+**Completion criteria**: At least 6 new evals (P1), ideally 12 (including P2). All success:true, v>=0.10.23.
+
+**Concurrency note**: Different models can run fully concurrently. project and agentteam on the same model can also run concurrently (different templates do not interfere).
+
+**Results (12/12 completed, all v0.10.23)**:
+
+| Model | Template | Comp | B | M | R | E | Stored |
+|-------|----------|------|---|---|---|---|--------|
+| Qwen3-235B | project s0 | **49%** | **100%** | 33% | 22% | 27% | 36 |
+| MiniMax | project s0 | **45%** | 60% | **67%** | 22% | 23% | 40 |
+| Qwen3.5 | agentteam s0 | **34%** | 67% | 0% | 38% | 23% | 36 |
+| Qwen3.5 | project s0 | **27%** | 60% | 0% | 22% | 17% | 36 |
+| Kimi | agentteam s0 | **25%** | 50% | 0% | 25% | 17% | 36 |
+| Kimi | project s0 | **20%** | 40% | 0% | 22% | 13% | 36 |
+| GLM-5 | project s0 | **17%** | 40% | 0% | 11% | 10% | 24 |
+| Qwen3-235B | agentteam s0 | **17%** | 50% | 0% | 0% | 10% | 36 |
+| MiniMax | agentteam s0 | **17%** | 0% | 33% | 25% | 10% | 57 |
+| Qwen3.5 | agentteam s1 | **17%** | 20% | 25% | 11% | 10% | 46 |
+| Qwen3.5 | project s1 | **7%** | 0% | 0% | 22% | 7% | 35 |
+| GLM-5 | agentteam s0 | **4%** | 0% | 0% | 12% | 3% | 38 |
+
+**Batch 36 summary**:
+- **New all-time highs**: Qwen3-235B project s0 = **49%** (B=100%!!), MiniMax project s0 = **45%** (M=67%)
+- **Project template stronger than agentteam**: project mean 27.5% vs agentteam 19.0%
+- **Project B=100%**: Qwen3-235B achieved perfect breadth for the first time
+- **M>0%**: 4/12 (33%) — MiniMax project (67%), Qwen3-235B project (33%), MiniMax agentteam (33%), Qwen3.5 agentteam s1 (25%)
+- **MiniMax packing**: project stored=40, agentteam stored=57 (extreme multi-entity packing)
+
+---
+
+### Batch 35 ✅ — Post-112 Coverage Gap Completion: GLM-5 + MiniMax + Qwen3-235B (A226 Audit, 12/12 completed)
+
+Results: MiniMax research s2 27% (M=67%), GLM-5 hospital 21%, Qwen3-235B sport 19%, GLM-5 university 18%, MiniMax university 18%, GLM-5 company 17%, Qwen3-235B codebase 16%, Qwen3-235B city 9%, Qwen3-235B movie 9%, MiniMax sport 7%, GLM-5 research 6%, MiniMax city 0%. M>0% only 2/12 (17%).
+
+---
+
+### Batch 34 — Post-Phase 112 Coverage Completion (8 templates x multiple models) ✅ Completed
 
 **Background** (A213 audit): Phase 112 (correction Edit budget-free) is the highest-impact change in project history, but only 8/123 evals are post-Phase 112 (v>=0.10.15). 4 templates have zero post-112 data. LEADERBOARD rankings mainly reflect old version performance.
 

@@ -10,17 +10,21 @@ from __future__ import annotations
 
 import re
 
-# Hardcoded judge model list: cheap, fast models on Chutes API.
-# Tried in order; each gets 1 retry before moving to next.
-JUDGE_MODELS = [
-    "Qwen/Qwen3-32B",
-    "Qwen/Qwen3-235B-A22B-Instruct-2507-TEE",
-    "unsloth/gemma-3-27b-it",
-    "openai/gpt-oss-120b-TEE",
-    "moonshotai/Kimi-K2.5-TEE",
-    "MiniMaxAI/MiniMax-M2.5-TEE",
-    "zai-org/GLM-5-TEE",
-]
+# Judge model list: uses env override or defaults to Chutes API models.
+# MEMORYGYM_JUDGE_MODEL env var overrides the list (for local vLLM eval).
+import os as _os
+_JUDGE_MODEL_OVERRIDE = _os.environ.get("MEMORYGYM_JUDGE_MODEL")
+JUDGE_MODELS = (
+    [_JUDGE_MODEL_OVERRIDE] if _JUDGE_MODEL_OVERRIDE else [
+        "Qwen/Qwen3-32B",
+        "Qwen/Qwen3-235B-A22B-Instruct-2507-TEE",
+        "unsloth/gemma-3-27b-it",
+        "openai/gpt-oss-120b-TEE",
+        "moonshotai/Kimi-K2.5-TEE",
+        "MiniMaxAI/MiniMax-M2.5-TEE",
+        "zai-org/GLM-5-TEE",
+    ]
+)
 
 # Total timeout for all judge attempts (seconds).
 # After this, raise RuntimeError instead of retrying forever.

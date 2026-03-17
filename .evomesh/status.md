@@ -1,43 +1,44 @@
-# memorybench-arena — 项目现况
+# memorybench-arena — Project Status
 
-> Lead 每个 Loop 更新。最后更新: 2026-03-15 Loop #1
+> Lead updates every Loop. Last updated: 2026-03-15 Loop #2
 
-## 整体状态: 🟢 正常运行
+## Overall Status: 🟢 Running Normally
 
-版本: v0.10.37 | Phase 135 完成 | 测试: 439+ pass | Simulation: ALL PASS
+Version: v0.10.37 | Phase 135 complete | Tests: 439+ pass | Simulation: ALL PASS
 
-## 各线程状态
+## Thread Status
 
-| 线程 | 状态 | 当前任务 | 备注 |
-|------|------|----------|------|
-| EXECUTOR | 🟡 空闲 | 待派发 | Phase 135 完成，等待新任务 |
-| EVALUATOR | 🟢 运行 | 持续评测 | 199 次成功评测 |
-| TRAINER | 🟢 运行 | GRPO 30-step 长训练 | 4×H200, ~15h |
-| WRITER | 🟢 运行 | 论文打磨 PA-23+ | NeurIPS E&D |
-| AUDITOR | 🟢 运行 | 持续审计 | A536 完成 |
+| Thread | Status | Current Task | Notes |
+|--------|--------|--------------|-------|
+| EXECUTOR | 🟡 Idle | T1: build_assistant_mask tests | Pending start |
+| EVALUATOR | 🟢 Running | Continuous evaluation | 199 successful evaluations |
+| TRAINER | 🟡 Slow | GRPO 30-step (10/30, 3 effective) | max_reward 0.307 |
+| WRITER | 🟢 Running | Paper polishing SA-50 complete | NeurIPS E&D |
+| AUDITOR | 🟢 Running | Continuous auditing | A536 complete |
 
-## evomesh 角色状态
+## evomesh Role Status
 
-| 角色 | 状态 | 当前任务 |
-|------|------|----------|
-| lead | 🟢 首次 Loop | 建立 blueprint + status |
-| executor | 🟡 空闲 | 待分配任务 |
+| Role | Status | Current Task |
+|------|--------|--------------|
+| lead | 🟢 Loop #2 | Full role review + status update |
+| executor | 🟡 Idle | T1: build_assistant_mask tests, T2: commit training code |
+| writer | 🟢 Initialized | Migration from sessions/WRITER.md complete, autonomous review queue ready |
 
-## 未提交变更
+## Uncommitted Changes
 
-11 个文件有本地修改（sessions 更新 + 训练代码改进 + LEADERBOARD 刷新）。
-关键代码变更：
-- `llm_judge.py`: 支持 MEMORYGYM_JUDGE_MODEL 环境变量覆盖
-- `training/common.py`: build_assistant_mask 改用 token-id O(n) 扫描
-- `training/cli.py`: GRPO loss=None 时的日志修复
+11 files have local modifications + writer role new files (uncommitted).
+Key code changes:
+- `llm_judge.py`: supports MEMORYGYM_JUDGE_MODEL env var override
+- `training/common.py`: build_assistant_mask switched to token-id O(n) scan
+- `training/cli.py`: GRPO loss=None logging fix
 
-## 关键数据
+## Key Data
 
-- 模型排名: Mistral-Small-24B(24.3%) > Qwen3-235B(18.6%) > Qwen3.5-397B(18.3%)
-- Maintenance 瓶颈: 13.5% 均值, 67% evals 为零
-- 训练: GRPO 10-step 验证通过, 30-step 进行中
-- 论文: PA-23 完成, 剩余 3 项非阻塞
+- Model ranking: Mistral-Small-24B(24.3%) > Qwen3-235B(18.6%) > Qwen3.5-397B(18.3%)
+- Maintenance bottleneck: 13.5% mean, 67% evals are zero
+- Training: GRPO 30-step in progress (step 10/30), only 30% steps produce effective gradients
+- Paper: SA-1~SA-50 autonomous review complete, PA-26 complete
 
-## 阻塞项
+## Blockers
 
-无硬性阻塞。训练线程独占 GPU 资源。
+No hard blockers. Training thread has exclusive GPU resources. GRPO effective rate low (30%) needs attention.

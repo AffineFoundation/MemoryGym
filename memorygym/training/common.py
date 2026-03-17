@@ -52,6 +52,7 @@ def build_assistant_mask(tokenizer, input_ids, full_text: str | None = None):
 
     Only assistant turns contribute to loss — system/user tokens are masked.
     Works with Qwen-style chat templates (<|im_start|>assistant).
+    Uses token-id matching instead of repeated re-tokenization for O(n).
     """
     import torch
 
@@ -61,33 +62,43 @@ def build_assistant_mask(tokenizer, input_ids, full_text: str | None = None):
 
     marker_start = "<|im_start|>assistant"
     marker_end = "<|im_end|>"
+
+    # Try token-id based approach (fast O(n) scan)
+    start_ids = tokenizer.encode(marker_start, add_special_tokens=False)
+    end_ids = tokenizer.encode(marker_end, add_special_tokens=False)
+    ids = input_ids.tolist()
+    n = len(ids)
+
+    def find_subseq(seq, subseq, start=0):
+        slen = len(subseq)
+        for i in range(start, len(seq) - slen + 1):
+            if seq[i:i + slen] == subseq:
+                return i
+        return -1
+
     pos = 0
-    spans = []
-    while True:
-        start = full_text.find(marker_start, pos)
+    found_any = False
+    while pos < n:
+        start = find_subseq(ids, start_ids, pos)
         if start == -1:
             break
-        content_start = full_text.find("\n", start) + 1
-        end = full_text.find(marker_end, content_start)
+        # Content starts after marker + newline token
+        content_start = start + len(start_ids)
+        # Skip newline token if present
+        if content_start < n and tokenizer.decode(
+                [ids[content_start]]).strip() == "":
+            content_start += 1
+        end = find_subseq(ids, end_ids, content_start)
         if end == -1:
-            end = len(full_text)
-        end += len(marker_end)
-        spans.append((content_start, end))
-        pos = end
+            tok_end = n
+        else:
+            tok_end = end + len(end_ids)
+        labels[content_start:tok_end] = input_ids[content_start:tok_end]
+        found_any = True
+        pos = tok_end
 
-    if not spans:
+    if not found_any:
         return input_ids.clone()  # Fallback: train all
-
-    for char_start, char_end in spans:
-        prefix_toks = tokenizer(
-            full_text[:char_start], add_special_tokens=False,
-            return_tensors="pt")["input_ids"]
-        tok_start = prefix_toks.shape[1]
-        prefix_plus = tokenizer(
-            full_text[:char_end], add_special_tokens=False,
-            return_tensors="pt")["input_ids"]
-        tok_end = min(prefix_plus.shape[1], len(input_ids))
-        labels[tok_start:tok_end] = input_ids[tok_start:tok_end]
 
     return labels
 

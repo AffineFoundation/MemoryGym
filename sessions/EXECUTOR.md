@@ -57,7 +57,11 @@
 
 ## Current Task
 
-### Phase 135 — GRPO Code Path Fixes (training/cli.py 1 BLOCKER + 5 HIGH)
+(Awaiting new task dispatch from audit thread)
+
+---
+
+~~### Phase 135 — GRPO Code Path Fixes (training/cli.py 1 BLOCKER + 5 HIGH)~~
 
 **Basis**: Audit A520 found 1 BLOCKER and 5 HIGH severity bugs in the `training/cli.py` GRPO implementation, explaining why the Trainer's GRPO smoke test could not produce results. These bugs block the production of NeurIPS paper training experiment data.
 
@@ -123,6 +127,7 @@ Note: If choosing A, you also need to modify the clipping logic at cli.py:629-63
 
 ## Completed
 
+### Phase 135 — GRPO Code Path Fixes (per-token ratio + None loss + env.close + warning logs) ✅
 ### Phase 132 — validators.py regex fix: leading-dot decimals (v0.10.35) ✅
 ### Phase 131 — Training CLI help + API error friendliness (v0.10.34) ✅
 ### Phase 130 — Agent Runner robustness fixes (empty choices guard + edit refund guard, v0.10.33) ✅

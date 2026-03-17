@@ -21,6 +21,7 @@ chromadb_data/
 .vscode/
 *.swp
 *.swo
+*.evomesh
 
 # OS
 .DS_Store
@@ -43,3 +44,5 @@ data/
 logs/
 results*.json
 validation_report*.json
+
+.evomesh/runtime/
