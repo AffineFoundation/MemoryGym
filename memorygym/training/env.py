@@ -606,6 +606,8 @@ class MemoryEnv:
                 content = str(content)
             if len(content) > 2000:
                 info["error"] = "Content exceeds 2000 character limit"
+                if shaped:
+                    reward = -0.05
             elif self._writes_used >= self.write_budget:
                 info["error"] = "Budget exhausted"
                 if shaped:
@@ -743,7 +745,7 @@ class MemoryEnv:
             answer = args.get("answer", "")
             if current_event is None:
                 info["error"] = "No current event to answer"
-                return self._make_obs(), reward, True, info
+                return "Episode complete.", reward, True, info
             event = current_event
             if event["type"] == "question":
                 gt = str(event["answer"])
@@ -757,8 +759,14 @@ class MemoryEnv:
                     is_correct)
                 if is_correct:
                     self._correct_count += 1
-            # Advance after answering
-            self._event_idx += 1
+                # Only advance after answering a question
+                self._event_idx += 1
+            else:
+                # submit_answer during non-question: ignore, don't advance
+                info["error"] = (f"submit_answer called during "
+                                 f"{event['type']} event, ignored")
+                if shaped:
+                    reward = -0.05
 
         elif tool == "next":
             # Reset correction tracking when advancing past a correction event
