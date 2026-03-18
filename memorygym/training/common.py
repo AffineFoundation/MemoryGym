@@ -103,6 +103,75 @@ def build_assistant_mask(tokenizer, input_ids, full_text: str | None = None):
     return labels
 
 
+def count_assistant_turns(tokenizer, input_ids) -> int:
+    """Count the number of assistant turns in a tokenized sequence.
+
+    Used by turn-level GRPO to map turn_rewards to token spans.
+    """
+    marker_ids = tokenizer.encode("<|im_start|>assistant",
+                                  add_special_tokens=False)
+    ids = input_ids.tolist()
+    count = 0
+    pos = 0
+    mlen = len(marker_ids)
+    while pos <= len(ids) - mlen:
+        if ids[pos:pos + mlen] == marker_ids:
+            count += 1
+            pos += mlen
+        else:
+            pos += 1
+    return count
+
+
+def build_turn_advantage_weights(tokenizer, input_ids, turn_advantages):
+    """Build per-token advantage weights from per-turn advantages.
+
+    Returns a tensor of shape (seq_len,) where each assistant token gets
+    the advantage of its corresponding turn. Non-assistant tokens get 0.
+
+    Args:
+        tokenizer: HF tokenizer
+        input_ids: 1D tensor of token ids
+        turn_advantages: list of float, one per assistant turn
+
+    Returns:
+        Tensor of per-token advantages (shape matches input_ids)
+    """
+    import torch
+
+    weights = torch.zeros_like(input_ids, dtype=torch.float32)
+    marker_start = tokenizer.encode("<|im_start|>assistant",
+                                    add_special_tokens=False)
+    marker_end = tokenizer.encode("<|im_end|>", add_special_tokens=False)
+    ids = input_ids.tolist()
+    n = len(ids)
+
+    def find_subseq(seq, subseq, start=0):
+        slen = len(subseq)
+        for i in range(start, len(seq) - slen + 1):
+            if seq[i:i + slen] == subseq:
+                return i
+        return -1
+
+    pos = 0
+    turn_idx = 0
+    while pos < n and turn_idx < len(turn_advantages):
+        start = find_subseq(ids, marker_start, pos)
+        if start == -1:
+            break
+        content_start = start + len(marker_start)
+        if content_start < n and tokenizer.decode(
+                [ids[content_start]]).strip() == "":
+            content_start += 1
+        end = find_subseq(ids, marker_end, content_start)
+        tok_end = end + len(marker_end) if end != -1 else n
+        weights[content_start:tok_end] = turn_advantages[turn_idx]
+        turn_idx += 1
+        pos = tok_end
+
+    return weights
+
+
 def load_model(
     model_path: str,
     adapter_path: str | None = None,

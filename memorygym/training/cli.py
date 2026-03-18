@@ -349,17 +349,6 @@ def cmd_grpo(args: argparse.Namespace) -> int:
                           f"r={reward:.3f} correct={c}/{t} "
                           f"writes={w}", flush=True)
 
-            # Turn-level: mix episode outcome with shaped turn rewards
-            if getattr(args, 'turn_level', False):
-                mixed_rewards = []
-                for r, s in zip(group_rewards, group_stats):
-                    tr = s.get("turn_rewards", [])
-                    shaped_sum = sum(tr) if tr else 0.0
-                    # 50/50 mix: outcome reward + shaped reward sum
-                    mixed = 0.5 * r + 0.5 * shaped_sum
-                    mixed_rewards.append(mixed)
-                group_rewards = mixed_rewards
-
             # GRPO advantages
             mean_r = sum(group_rewards) / len(group_rewards)
             std_r = (sum((r - mean_r) ** 2 for r in group_rewards)
@@ -379,10 +368,24 @@ def cmd_grpo(args: argparse.Namespace) -> int:
             else:
                 ips_weights = [1.0] * len(group_rewards)
 
-            for msgs, r, w in zip(group_messages, group_rewards,
-                                   ips_weights):
+            for msgs, r, w, stats in zip(group_messages, group_rewards,
+                                          ips_weights, group_stats):
                 adv = (r - mean_r) / (std_r + eps) * w
-                all_trajectories.append((msgs, adv))
+                # Turn-level: per-turn advantage weights from shaped rewards
+                turn_advs = None
+                if getattr(args, 'turn_level', False):
+                    tr = stats.get("turn_rewards", [])
+                    if tr and any(abs(x) > 1e-8 for x in tr):
+                        # Scale turn rewards into per-turn advantages:
+                        # base = episode advantage, modulated by turn reward
+                        tr_mean = sum(tr) / len(tr)
+                        tr_std = (sum((x - tr_mean)**2 for x in tr)
+                                  / len(tr)) ** 0.5 + eps
+                        turn_advs = [
+                            adv * (1.0 + (x - tr_mean) / tr_std)
+                            for x in tr
+                        ]
+                all_trajectories.append((msgs, adv, turn_advs))
 
         # Training phase
         model.train()
@@ -598,7 +601,8 @@ def _compute_grpo_loss(model, tokenizer, trajectories, max_length,
     """
     import torch
     import torch.nn.functional as F
-    from .common import build_assistant_mask, apply_chat_template
+    from .common import (build_assistant_mask, apply_chat_template,
+                          build_turn_advantage_weights)
 
     chat_kwargs = chat_kwargs or {}
     total_loss = None
@@ -611,7 +615,9 @@ def _compute_grpo_loss(model, tokenizer, trajectories, max_length,
     clip_upper = (1.0 + clip_higher) if clip_higher > 0 else (1.0 + clip_eps)
     clip_lower = 1.0 - clip_eps
 
-    for messages, advantage in trajectories:
+    for traj in trajectories:
+        messages, advantage = traj[0], traj[1]
+        turn_advs = traj[2] if len(traj) > 2 else None
         if abs(advantage) < 1e-6:
             n_skipped += 1
             continue
@@ -659,8 +665,21 @@ def _compute_grpo_loss(model, tokenizer, trajectories, max_length,
 
             # Per-token clipped surrogate objective (GRPO style)
             clipped_ratio = torch.clamp(ratio, clip_lower, clip_upper)
-            surr1 = ratio * advantage
-            surr2 = clipped_ratio * advantage
+
+            # Turn-level: per-token advantage from turn rewards
+            if turn_advs is not None:
+                adv_weights = build_turn_advantage_weights(
+                    tokenizer, input_ids.squeeze(0), turn_advs
+                )[1:].unsqueeze(0).to(model.device)  # shift by 1 to align
+                # Where no turn advantage mapped, fall back to scalar
+                no_turn = (adv_weights == 0) & (mask > 0)
+                adv_weights[no_turn] = advantage
+                token_adv = adv_weights
+            else:
+                token_adv = advantage
+
+            surr1 = ratio * token_adv
+            surr2 = clipped_ratio * token_adv
             pg_loss = -(torch.min(surr1, surr2) * mask).sum() / n_tokens
 
             # KL penalty: Schulman k3 estimator (r - 1) - log(r), always >= 0
@@ -700,7 +719,8 @@ def _save_episode_samples(episodes_dir, step, trajectories, rewards):
     best_idx = rewards.index(max(rewards))
     worst_idx = rewards.index(min(rewards))
     for label, idx in [("best", best_idx), ("worst", worst_idx)]:
-        msgs, adv = trajectories[idx]
+        traj = trajectories[idx]
+        msgs, adv = traj[0], traj[1]
         data = {
             "step": step,
             "label": label,

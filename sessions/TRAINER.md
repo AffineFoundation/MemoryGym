@@ -197,7 +197,14 @@ Format:
   - turn-level advantage: 50/50 mix episode outcome + cumulative shaped rewards
   - Per-turn shaped reward collection (turn_rewards in stats)
   - GPU SSH blocked (permission denied) — v4a experiment ready but cannot execute
-  - Next: retry GPU when available, or explore Training-Free GRPO (F28) as GPU-free alternative
+- [2026-03-18] Loop 2: Fixed KL divergence → Schulman k3 (commit 4f25263)
+  - Was mean log ratio (can be negative), now (r-1)-log(r) (always >= 0)
+  - Also fixed scripts/grpo_train.py sequence-level ratio → per-token
+- [2026-03-18] Loop 3: True turn-level GRPO (MT-GRPO/F48 inspired)
+  - `build_turn_advantage_weights()` maps per-turn advantages to token spans
+  - Per-turn advantage = episode_adv * (1 + normalized_turn_reward)
+  - High-reward Write turns get amplified gradients, wasted actions dampened
+  - GPU still blocked — 3 loops of code prep complete, ready for experiment
 
 ### Warning: Audit thread notification (2026-03-15) — GRPO code has serious bugs, must update
 
