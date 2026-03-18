@@ -192,6 +192,12 @@ Format:
   - Effective loss steps: 3/10 (step 4,7,9-10), rest advantage=0 skipped
   - max_reward: 0.307 (step 10), correct fluctuates 0.2-3.2
   - Training continues to step 20/30
+- [2026-03-18] Trainer thread Loop 1: Wired up --rollout-max-tokens and --turn-level CLI args (commit 334f83c)
+  - rollout_max_tokens was hardcoded, now configurable (default 16384, v4a uses 6144)
+  - turn-level advantage: 50/50 mix episode outcome + cumulative shaped rewards
+  - Per-turn shaped reward collection (turn_rewards in stats)
+  - GPU SSH blocked (permission denied) — v4a experiment ready but cannot execute
+  - Next: retry GPU when available, or explore Training-Free GRPO (F28) as GPU-free alternative
 
 ### Warning: Audit thread notification (2026-03-15) — GRPO code has serious bugs, must update
 
