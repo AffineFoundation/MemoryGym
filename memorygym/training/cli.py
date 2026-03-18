@@ -296,6 +296,8 @@ def cmd_grpo(args: argparse.Namespace) -> int:
             clip_desc += f", DAPO clip-higher={args.clip_higher}"
         print(f"  Clipping: {clip_desc}")
         print(f"  IPS: {args.ips}, KL: {args.kl_coeff}")
+        print(f"  Turn-level: {args.turn_level}, "
+              f"Rollout max tokens: {args.rollout_max_tokens}")
         print(f"  Output: {run_dir}")
         print(f"{'=' * 60}\n")
 
@@ -319,6 +321,7 @@ def cmd_grpo(args: argparse.Namespace) -> int:
             seed = rng.randint(0, 100000)
             group_rewards = []
             group_messages = []
+            group_stats = []
 
             for s_id in range(args.group_size):
                 temp = args.temperature + (s_id - 1) * 0.1
@@ -330,9 +333,11 @@ def cmd_grpo(args: argparse.Namespace) -> int:
                     max_new_tokens=args.max_new_tokens,
                     temperature=temp,
                     chat_kwargs=chat_kwargs,
+                    rollout_max_tokens=args.rollout_max_tokens,
                 )
                 group_rewards.append(reward)
                 group_messages.append(messages)
+                group_stats.append(stats)
                 step_rewards.append(reward)
                 step_stats.append(stats)
 
@@ -343,6 +348,17 @@ def cmd_grpo(args: argparse.Namespace) -> int:
                     print(f"  G{g_idx}S{s_id} {template}(s={seed}): "
                           f"r={reward:.3f} correct={c}/{t} "
                           f"writes={w}", flush=True)
+
+            # Turn-level: mix episode outcome with shaped turn rewards
+            if getattr(args, 'turn_level', False):
+                mixed_rewards = []
+                for r, s in zip(group_rewards, group_stats):
+                    tr = s.get("turn_rewards", [])
+                    shaped_sum = sum(tr) if tr else 0.0
+                    # 50/50 mix: outcome reward + shaped reward sum
+                    mixed = 0.5 * r + 0.5 * shaped_sum
+                    mixed_rewards.append(mixed)
+                group_rewards = mixed_rewards
 
             # GRPO advantages
             mean_r = sum(group_rewards) / len(group_rewards)
@@ -460,7 +476,8 @@ def cmd_grpo(args: argparse.Namespace) -> int:
 
 def _run_episode(model, tokenizer, template, tier, seed,
                  max_turns=100, max_new_tokens=512,
-                 temperature=0.7, chat_kwargs=None):
+                 temperature=0.7, chat_kwargs=None,
+                 rollout_max_tokens=16384, backend_type="chromadb"):
     """Run a single MemoryEnv episode with the model."""
     import torch
     from .common import strip_think, strip_special_tokens
@@ -469,7 +486,8 @@ def _run_episode(model, tokenizer, template, tier, seed,
         format_tool_result, get_system_prompt, parse_tool_calls,
     )
 
-    env = MemoryEnv(template, tier=tier, seed=seed, reward_mode="shaped")
+    env = MemoryEnv(template, tier=tier, seed=seed, reward_mode="shaped",
+                    backend_type=backend_type)
     obs = env.reset(seed=seed)
     system_prompt = get_system_prompt(env.write_budget)
     context = [
@@ -484,6 +502,7 @@ def _run_episode(model, tokenizer, template, tier, seed,
     last_event_idx = -1
     turns_on_event = 0
     max_turns_per_event = 5  # Auto-advance if stuck
+    turn_rewards = []  # Per-turn shaped rewards for turn-level advantage
 
     while not done and turn < max_turns:
         if len(context) > 24:
@@ -517,7 +536,7 @@ def _run_episode(model, tokenizer, template, tier, seed,
             **chat_kwargs)
         inputs = tokenizer(
             input_text, return_tensors="pt",
-            truncation=True, max_length=16384).to(model.device)
+            truncation=True, max_length=rollout_max_tokens).to(model.device)
 
         with torch.no_grad():
             outputs = model.generate(
@@ -530,16 +549,21 @@ def _run_episode(model, tokenizer, template, tier, seed,
         context.append({"role": "assistant", "content": model_text})
 
         tool_calls = parse_tool_calls(model_text)
+
+        turn_reward = 0.0
         if not tool_calls:
-            _, _, done, info = env.step({"tool": "next"})
+            _, step_r, done, info = env.step({"tool": "next"})
+            turn_reward += step_r
             if done:
+                turn_rewards.append(turn_reward)
                 break
             next_obs = env._format_event(env._stream[env._event_idx])
             context.append({"role": "user", "content": next_obs})
         else:
             parts = []
             for action in tool_calls:
-                obs_text, _, done, info = env.step(action)
+                obs_text, step_r, done, info = env.step(action)
+                turn_reward += step_r
                 parts.append(format_tool_result(action, info))
                 if done:
                     break
@@ -547,12 +571,14 @@ def _run_episode(model, tokenizer, template, tier, seed,
             if not done:
                 feedback += "\n\n" + obs_text
             context.append({"role": "user", "content": feedback})
+        turn_rewards.append(turn_reward)
 
         turn += 1
 
     try:
         reward = env.get_verifiable_reward()
         stats = info.get("episode_stats", {}) if info else {}
+        stats["turn_rewards"] = turn_rewards
         return context, reward, stats
     finally:
         env.close()
@@ -811,6 +837,10 @@ def main():
                          help="PPO/GRPO clip epsilon")
     p_grpo.add_argument("--clip-higher", type=float, default=0.0,
                          help="DAPO Clip-Higher asymmetric upper clip")
+    p_grpo.add_argument("--rollout-max-tokens", type=int, default=16384,
+                         help="Max token length for rollout context truncation")
+    p_grpo.add_argument("--turn-level", action="store_true",
+                         help="Use turn-level advantage (mix episode + shaped reward)")
 
     # -- smoke --
     sub.add_parser("smoke", help="Quick pipeline validation (no GPU)")
