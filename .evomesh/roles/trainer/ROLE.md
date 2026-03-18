@@ -30,10 +30,11 @@
 
 ## Current Training Status
 
-- GRPO 30-step in progress (step 10/30, 30% effective gradients)
-- max_reward: 0.307
+- GRPO v4a code complete (CLI args, turn-level GRPO, KL k3, env fixes) — awaiting GPU
+- GRPO 30-step (old code): step 10/30, 30% effective gradients, max_reward 0.307
 - SFT route abandoned (7B/3B both degraded ~9pp)
 - Small model priority: 3B baseline (C=29.5%) > 7B (C=13.8%)
+- SFT data: 320 trajectories (v6), quality verified — problem is SFT signal too weak, not data
 
 ## Domain Knowledge
 
@@ -42,4 +43,7 @@
 
 ## Project-Specific Rules
 
-(Populated through self-evolution)
+- When GPU is blocked: do code-level improvements (reward logic, loss computation, CLI wiring) — don't idle
+- Verify syntax with `python3 -c "import ast; ast.parse(...)"` when pytest unavailable
+- Turn-level advantage is critical for multi-turn RL: token-level GRPO dilutes gradient signal across long tool call sequences
+- Always check both `cli.py` AND `scripts/grpo_train.py` for parallel bugs
