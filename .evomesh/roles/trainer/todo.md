@@ -1,17 +1,23 @@
 # trainer — Tasks
 
-## P0 — GRPO v4a Experiment
+## P0 — GRPO v4a Experiment (BLOCKED: GPU SSH)
 
-1. ~~Read sessions/TRAINER.md~~ ✅
-2. ~~Wire up --rollout-max-tokens and --turn-level~~ ✅
-3. ~~Fix KL → Schulman k3~~ ✅
-4. ~~True turn-level GRPO~~ ✅
-5. ~~Audit env.py reward edge cases~~ ✅
-6. SSH to GPU, run GRPO v4a 3-step experiment (BLOCKED: GPU SSH)
-7. Record results to devlog/
+All code prep done (5 commits across loops 1-4). Waiting for GPU access.
 
-## P1 — Idle Work
+Experiment command:
+```
+python -m memorygym.training grpo \
+  --model Qwen/Qwen2.5-3B-Instruct \
+  --tier standard --rollout-max-tokens 6144 \
+  --ips --kl-coeff 0.05 --turn-level \
+  --steps 3 --group-size 2 --groups-per-step 1 \
+  -o runs/grpo_v4a_3step
+```
 
-- Self-evolution audit of ROLE.md (every 10 loops)
-- SFT data quality review (data/sft_v6*.jsonl)
-- Explore Training-Free GRPO (F28) feasibility
+## No remaining local tasks
+
+All idle work exhausted:
+- ~~SFT data quality review~~ ✅ (data is good, SFT signal too weak)
+- ~~ROLE.md self-evolution~~ ✅
+- ~~F28 Training-Free GRPO~~ assessed, not suitable for paper (prompt not weights)
+- Entering light mode until GPU access or new inbox

@@ -1,18 +1,20 @@
 # Short-term Memory
 
-## Done (Loop 5, 2026-03-18)
-- SFT data quality review: 320 trajectories, well-structured (avg 970 chars/Write, 6 entities/Write, 100% search-before-edit)
-- Data quality not the bottleneck — SFT signal too weak for 7B/3B, confirms RL is correct path
-- Self-evolution audit: updated ROLE.md with current status + 4 project-specific rules learned from loops 1-4
+## Done (Loop 6, 2026-03-18)
+- F28 (Training-Free GRPO) feasibility assessment:
+  - ~28K tokens per trajectory, few-shot would push context to 130K+
+  - ~$10 for 40-eval optimization run — cost is reasonable
+  - **Verdict: not suitable for paper** — optimizes prompt not weights, paper needs model training results
+  - Useful as prompt engineering tool, but not a GPU substitute for NeurIPS claims
+- All P1 idle work exhausted
 
-## Done (Loops 1-4)
-- CLI args, KL k3 fix, turn-level GRPO, env.py edge case fixes — all committed+pushed
+## Done (Loops 1-5)
+- CLI args, KL k3 fix, turn-level GRPO, env.py fixes, SFT data review, ROLE.md audit
 
 ## Blockers
-- **GPU SSH blocked**: permission denied — all code prep done, experiment ready
-- **No pytest locally**: pip install blocked
+- **GPU SSH blocked**: permission denied — all code prep done
 
 ## Status
-- 5 loops complete, 4 code commits pushed
-- Next meaningful work requires GPU access
-- Approaching idle threshold (3× idle → light mode per CLAUDE.md)
+- 6 loops complete, no remaining local work
+- **Entering light mode** (3× idle threshold reached: loops 5, 6 are idle)
+- Light mode: inbox + memory/metrics only, no git commit/push
