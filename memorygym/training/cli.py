@@ -663,9 +663,10 @@ def _compute_grpo_loss(model, tokenizer, trajectories, max_length,
             surr2 = clipped_ratio * advantage
             pg_loss = -(torch.min(surr1, surr2) * mask).sum() / n_tokens
 
-            # KL penalty (mean per-token log ratio)
+            # KL penalty: Schulman k3 estimator (r - 1) - log(r), always >= 0
             if use_kl:
-                kl = log_ratio.sum() / n_tokens
+                per_token_kl = ((ratio - 1) - log_ratio) * mask
+                kl = per_token_kl.sum() / n_tokens
                 pg_loss = pg_loss + kl_coeff * kl
                 total_kl += kl.item()
         else:

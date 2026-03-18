@@ -299,21 +299,20 @@ def compute_grpo_loss(
                 ref_token_log_probs = ref_log_probs.gather(
                     2, shift_labels.clamp(min=0).unsqueeze(-1)).squeeze(-1)
 
-            # Ratio = exp(log_policy - log_ref) per token
+            # Per-token ratio = exp(log_policy - log_ref)
             log_ratio = (token_log_probs - ref_token_log_probs) * mask
-            # Mean ratio across assistant tokens for stable clipping
-            mean_log_ratio = log_ratio.sum() / n_tokens
-            ratio = torch.exp(mean_log_ratio)
+            ratio = torch.exp(log_ratio)
 
-            # Clipped surrogate objective (PPO/GRPO style)
+            # Per-token clipped surrogate objective (GRPO style)
             clipped_ratio = torch.clamp(ratio, clip_lower, clip_upper)
             surr1 = ratio * advantage
             surr2 = clipped_ratio * advantage
-            pg_loss = -torch.min(surr1, surr2)
+            pg_loss = -(torch.min(surr1, surr2) * mask).sum() / n_tokens
 
-            # KL penalty
+            # KL penalty: Schulman k3 estimator (r - 1) - log(r), always >= 0
             if use_kl:
-                kl = mean_log_ratio  # KL ≈ E[log π - log π_ref]
+                per_token_kl = ((ratio - 1) - log_ratio) * mask
+                kl = per_token_kl.sum() / n_tokens
                 pg_loss = pg_loss + kl_coeff * kl
                 total_kl += kl.item()
         else:
