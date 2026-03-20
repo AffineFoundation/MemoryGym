@@ -577,6 +577,14 @@ class MemoryEnv:
             return "No events in stream."
         return self._format_event(self._stream[0])
 
+    def _edit_correction_reward(self, new_text: str,
+                                current_event: dict) -> float:
+        """Compute shaped reward for Edit during a correction event."""
+        corr_new = str(current_event.get("new_val", ""))
+        if corr_new in new_text:
+            return 0.6 if self._correction_searched else 0.5
+        return 0.1
+
     def step(
         self, action: dict[str, Any],
     ) -> tuple[str, float, bool, dict[str, Any]]:
@@ -678,14 +686,8 @@ class MemoryEnv:
                         info["remaining"] = (self.write_budget
                                              - self._writes_used)
                         if shaped and is_correction:
-                            # F41: multiplicative — correct value is required
-                            corr_new = str(current_event.get("new_val", ""))
-                            if corr_new in new_text:
-                                # Correct value: full reward, bonus if searched
-                                reward = 0.6 if self._correction_searched else 0.5
-                            else:
-                                # Wrong value: value_factor=0 → reward near zero
-                                reward = 0.1
+                            reward = self._edit_correction_reward(
+                                new_text, current_event)
                 else:
                     # Fallback for ChromaDB: search + forget + store
                     results = self._backend.search(old_text, top_k=1)
@@ -700,11 +702,8 @@ class MemoryEnv:
                         info["remaining"] = (self.write_budget
                                              - self._writes_used)
                         if shaped and is_correction:
-                            corr_new = str(current_event.get("new_val", ""))
-                            if corr_new in new_text:
-                                reward = 0.6 if self._correction_searched else 0.5
-                            else:
-                                reward = 0.1
+                            reward = self._edit_correction_reward(
+                                new_text, current_event)
                     else:
                         if not is_correction:
                             self._writes_used -= 1  # Refund on miss

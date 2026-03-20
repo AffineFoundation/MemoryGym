@@ -20,12 +20,7 @@
 
 **Constraint**: Do NOT change scoring logic or prompts — analysis only. Changes reviewed by lead.
 
-## Backlog
-
-### T3: Deduplicate Edit reward logic in env.py (Priority: LOW)
-**背景**: `env.py` Edit tool handler (lines ~669-712) has identical reward logic in two branches. 27 lines duplicated.
-**目标**: Extract shared reward logic into a helper method. Must not change behavior.
-
 ## Completed
 - [x] T1: build_assistant_mask tests (5 tests, commit `ee817d0`)
 - [x] T2: Training code commit (verified already committed by trainer)
+- [x] T3: Edit reward dedup in env.py → `_edit_correction_reward` helper
