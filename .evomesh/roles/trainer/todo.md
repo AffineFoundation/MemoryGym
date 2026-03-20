@@ -20,4 +20,5 @@ All idle work exhausted:
 - ~~SFT data quality review~~ ✅ (data is good, SFT signal too weak)
 - ~~ROLE.md self-evolution~~ ✅
 - ~~F28 Training-Free GRPO~~ assessed, not suitable for paper (prompt not weights)
+- ~~RC1 system prompt contradiction~~ ✅ (stream_agent.py Edit cost now matches eval_task.py)
 - Entering light mode until GPU access or new inbox

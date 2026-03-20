@@ -14,7 +14,13 @@
 ## Blockers
 - **GPU SSH blocked**: permission denied — all code prep done
 
+## Done (Loop 14, 2026-03-20)
+- Fixed RC1 system prompt contradiction in stream_agent.py (Edit "costs 1 write" → "free during correction events")
+  - Executor's T4 analysis identified this as HIGH impact root cause for M=0 in 67% of evals
+  - eval_task.py already had the fix; stream_agent.py (used by bench.py + training env) did not
+  - Now both prompts consistently communicate that Edits are free during corrections
+
 ## Status
-- 6 loops complete, no remaining local work
-- **Entering light mode** (3× idle threshold reached: loops 5, 6 are idle)
-- Light mode: inbox + memory/metrics only, no git commit/push
+- 14 loops, exited light mode this loop (code change made)
+- GPU still blocked
+- Next action: commit prompt fix, then resume light mode until GPU access or new inbox

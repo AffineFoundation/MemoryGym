@@ -50,7 +50,7 @@ Call tools by outputting JSON blocks:
 **Write** — Append to your memory file (costs 1 write, budget: {budget}):
 <tool_call>{{"name": "Write", "arguments": {{"content": "info to store"}}}}</tool_call>
 
-**Edit** — Update existing content in your memory file when data changes (costs 1 write). Use old_text/new_text to replace outdated values:
+**Edit** — Update existing content in your memory file when data changes (costs 1 write; free during correction events). Use old_text/new_text to replace outdated values:
 <tool_call>{{"name": "Edit", "arguments": {{"old_text": "text to find", "new_text": "replacement text"}}}}</tool_call>
 
 **Read** — Read your memory file (free):
@@ -64,7 +64,7 @@ Call tools by outputting JSON blocks:
 
 ## Memory Budget
 - You have limited write operations — plan your usage carefully
-- Each Write or Edit counts against your budget
+- Each Write costs 1 write; Edit also costs 1 write except during correction events (free)
 
 ## Answering Questions
 - Search by entity name, then submit_answer with the value
