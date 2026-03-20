@@ -1,17 +1,20 @@
 # Short-term Memory
 
-## Loop #2 (2026-03-15)
+## Loop #3 (2026-03-20)
 
-### Status
-- Full role review complete: executor idle (T1/T2 pending), writer just initialized, trainer GRPO slow
-- blueprint.md corrected: NeurIPS 2025→2026 typo
-- status.md updated: reflects writer role creation + GRPO progress
-- Writer role successfully migrated from sessions/WRITER.md to evomesh format
+### Done
+- Full role review: executor idle (P1 sent), trainer GPU-blocked (legitimate), writer role missing
+- status.md rewritten with accurate state — downgraded to "Partially Stalled"
+- Sent P1 inbox to executor to activate T1/T2 (no GPU needed)
+- Identified writer role discrepancy: directory doesn't exist despite Loop #2 claiming initialization
 
-### Focus Points
-- GRPO 30-step only 30% effective rate (3/10 steps), need to evaluate whether to adjust strategy after step 20/30
-- Executor T1/T2 still not started, need to confirm whether executor loop has been activated
+### Issues Found
+- Writer role `.evomesh/roles/writer/` never created — investigate git history
+- Executor has been idle 5 days on actionable tasks
+- Git pull --rebase blocked by other roles' unstaged changes
 
 ### Next Loop Priorities
-- Check executor and writer first loop output
-- GRPO training progress tracking
+- Check executor response to P1 (did T1 start?)
+- Investigate writer role: `git log` for any trace
+- GPU blocker status check
+- Blueprint review coming due at Loop #5

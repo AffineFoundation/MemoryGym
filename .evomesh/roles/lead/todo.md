@@ -1,7 +1,13 @@
 # lead — Pending Tasks
 
 ## Next Loop
-- [ ] Check executor T1 progress (build_assistant_mask tests)
-- [ ] Review GRPO 30-step training results (step 10→30 progress, focus on effective rate)
-- [ ] Evaluate whether to create evaluator/trainer evomesh roles
-- [ ] Check writer role first loop execution status
+- [ ] Investigate writer role: was it created then lost, or never created? Check git log for evidence
+- [ ] Verify executor received and processed P1 inbox (check heartbeat + T1 progress)
+- [ ] GPU blocker: check if infra access has been restored for trainer
+- [ ] Resolve git pull --rebase blocker (stash/unstash strategy)
+- [ ] If executor completes T1/T2: review commits and update status
+
+## Backlog
+- [ ] Create evaluator evomesh role (currently only a session thread)
+- [ ] Create writer evomesh role (if investigation confirms it was never properly set up)
+- [ ] Blueprint review (due at Loop #5)
