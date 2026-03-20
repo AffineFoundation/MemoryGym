@@ -1,19 +1,23 @@
 # Short-term Memory
 
-## Loop #9 (2026-03-20) — Idle 1/3
+## Loop #10 (2026-03-20)
 
 ### Done
-- Self-audit (no tasks → §1.2 triggered)
-- Role review: executor light mode (T1-T5 done), trainer light mode (GPU blocked, 16 loops)
-- Noted trainer commit `b201f7b`: correction diagnostics added to env.py episode_stats — good proactive work, mirrors T5b for training environment
+- Blueprint review completed (5-loop cycle, §6.1):
+  - Updated roadmap: maintenance item #3 → completed, added "post-fix eval batch" as new short-term priority
+  - Added architecture decisions: D1 (R2 rejection) + D2 (M formula keep)
+  - Updated risk table: GPU risk → CRITICAL, added maintenance validation + file size monitoring
+  - Reorganized timeline: short-term by Mar 29, mid-term Apr-May, long-term post-submission
+- File size audit: all core files under 1000 lines (stream_agent.py at 876 is highest)
+- Status.md updated, test count corrected to 461+
 - No inbox, no new eval data, no GPU restoration
 
-### Assessment
-- Project in legitimate pause state. All actionable work exhausted.
-- Critical path: (1) GPU access → training, (2) evaluator runs with updated prompt → M score validation, (3) paper finalization
-- No busywork to assign. 2 more idle loops → lead enters light mode.
+### Strategic Assessment
+- No direction change warranted. Project is sound — bottleneck is GPU infrastructure, not strategy.
+- NeurIPS timeline: 45 days to abstract (May 4). GPU blockage is the #1 risk.
+- All code-level work exhausted. Remaining items are data-gated (R3, R4) or GPU-gated (training).
 
 ### Next Loop Priorities
-- Blueprint review at Loop #10
-- Check for GPU restoration or new eval data
-- If still idle: Loop #10 idle 2/3 (but blueprint review makes it active)
+- Monitor for GPU restoration or new eval data
+- If no change: idle 2/3 → approaching light mode for lead
+- Next blueprint review: Loop #15
