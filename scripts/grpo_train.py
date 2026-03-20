@@ -47,7 +47,7 @@ from memorygym.adapters._common import (
     parse_tool_calls,
 )
 from memorygym.training import MemoryEnv
-from memorygym.training.common import strip_think
+from memorygym.training.common import strip_think, build_turn_advantage_weights
 
 
 def strip_special_tokens(text: str) -> str:
@@ -198,7 +198,7 @@ def run_episode(
 def compute_grpo_loss(
     model,
     tokenizer,
-    trajectories: list[tuple[list[dict], float]],
+    trajectories: list[tuple],  # (messages, advantage) or (messages, advantage, turn_advs)
     max_length: int,
     chat_kwargs: dict | None = None,
     kl_coeff: float = 0.05,
@@ -238,7 +238,12 @@ def compute_grpo_loss(
     clip_upper = (1.0 + clip_higher) if clip_higher > 0 else (1.0 + clip_eps)
     clip_lower = 1.0 - clip_eps
 
-    for messages, advantage in trajectories:
+    for traj in trajectories:
+        if len(traj) == 3:
+            messages, advantage, turn_advs = traj
+        else:
+            messages, advantage = traj
+            turn_advs = None
         if abs(advantage) < 1e-6:
             continue  # Skip zero-advantage trajectories
 
@@ -305,8 +310,20 @@ def compute_grpo_loss(
 
             # Per-token clipped surrogate objective (GRPO style)
             clipped_ratio = torch.clamp(ratio, clip_lower, clip_upper)
-            surr1 = ratio * advantage
-            surr2 = clipped_ratio * advantage
+
+            # Turn-level: per-token advantage from turn rewards
+            if turn_advs is not None:
+                adv_weights = build_turn_advantage_weights(
+                    tokenizer, input_ids.squeeze(0), turn_advs
+                )[1:].unsqueeze(0).to(model.device)  # shift by 1 to align
+                no_turn = (adv_weights == 0) & (mask > 0)
+                adv_weights[no_turn] = advantage
+                token_adv = adv_weights
+            else:
+                token_adv = advantage
+
+            surr1 = ratio * token_adv
+            surr2 = clipped_ratio * token_adv
             pg_loss = -(torch.min(surr1, surr2) * mask).sum() / n_tokens
 
             # KL penalty: Schulman k3 estimator (r - 1) - log(r), always >= 0
@@ -677,34 +694,27 @@ def main():
             else:
                 ips_weights = [1.0] * len(group_rewards)
 
-            # Collect shaped reward totals for turn-level mixing
-            group_shaped = []
+            # Collect per-turn rewards for turn-level advantage
+            group_turn_rewards = []
             for si in step_stats[-len(group_rewards):]:
-                tr = si.get("turn_rewards", [])
-                group_shaped.append(sum(tr) if tr else 0.0)
+                group_turn_rewards.append(si.get("turn_rewards", []))
 
-            if args.turn_level and any(s != 0 for s in group_shaped):
-                # Mix episode composite with shaped reward total
-                shaped_mean = sum(group_shaped) / len(group_shaped)
-                shaped_std = (sum((s - shaped_mean)**2
-                              for s in group_shaped)
-                              / len(group_shaped)) ** 0.5
-            else:
-                shaped_mean = shaped_std = 0.0
-
-            for messages, reward, w, shaped_total in zip(
+            for messages, reward, w, tr in zip(
                     group_messages, group_rewards,
-                    ips_weights, group_shaped):
-                ep_adv = (reward - mean_r) / (std_r + eps)
-                if args.turn_level and shaped_std > eps:
-                    # 50/50 mix of episode and shaped advantages
-                    shaped_adv = (shaped_total - shaped_mean) / (
-                        shaped_std + eps)
-                    advantage = 0.5 * ep_adv + 0.5 * shaped_adv
-                else:
-                    advantage = ep_adv
-                advantage *= w
-                all_trajectories.append((messages, advantage))
+                    ips_weights, group_turn_rewards):
+                adv = (reward - mean_r) / (std_r + eps) * w
+                # Turn-level: per-turn advantage weights from shaped rewards
+                turn_advs = None
+                if args.turn_level and tr and any(
+                        abs(x) > 1e-8 for x in tr):
+                    tr_mean = sum(tr) / len(tr)
+                    tr_std = (sum((x - tr_mean)**2 for x in tr)
+                              / len(tr)) ** 0.5 + eps
+                    turn_advs = [
+                        adv * (1.0 + (x - tr_mean) / tr_std)
+                        for x in tr
+                    ]
+                all_trajectories.append((messages, adv, turn_advs))
 
         # Phase 2: Training (with grad)
         torch.cuda.empty_cache()

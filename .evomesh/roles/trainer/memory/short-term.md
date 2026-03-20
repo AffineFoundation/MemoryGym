@@ -26,6 +26,13 @@
   - Critical for debugging GRPO v4a maintenance reward signal when GPU available
 - Reviewed executor's T5b/T5c changes — env.py reward logic confirmed sound, M formula change pending lead decision
 
+## Done (Loop 20, 2026-03-20)
+- Fixed parallel bug: ported per-token turn-level advantage from cli.py to scripts/grpo_train.py
+  - grpo_train.py had old episode-level mixing (scalar advantage for all tokens)
+  - Now uses build_turn_advantage_weights() for per-token advantage from turn rewards
+  - Both scripts now share identical turn-level GRPO logic
+  - This is the critical v4a feature — high-reward Write turns get amplified gradients
+
 ## Status
-- 15 loops, GPU still blocked
-- Next action: resume light mode until GPU access or new inbox
+- 20 loops, GPU still blocked
+- Next action: commit turn-level fix, then light mode until GPU access or new inbox
