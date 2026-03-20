@@ -11,6 +11,7 @@ build/
 venv/
 .venv/
 env/
+.pylibs/
 
 # ChromaDB data
 chroma_data/
@@ -21,8 +22,6 @@ chromadb_data/
 .vscode/
 *.swp
 *.swo
-*.evomesh
-
 # OS
 .DS_Store
 Thumbs.db
@@ -45,4 +44,14 @@ logs/
 results*.json
 validation_report*.json
 
+# EvoMesh runtime (Mode A: Managed)
+.evomesh/project.yaml
+.evomesh/project.yaml.bak
 .evomesh/runtime/
+.evomesh/templates/
+.evomesh/roles/*/.session-id
+.evomesh/roles/*/memory/short-term.md
+.evomesh/roles/*/heartbeat.json
+.evomesh/roles/*/role-card.json
+.evomesh/roles/*/inbox/processed/
+.evomesh/roles/*/metrics.log

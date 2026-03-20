@@ -737,3 +737,138 @@ class TestMemoryEnv:
             "args": {"old_text": old_val, "new_text": "WRONG_VALUE_999"}
         })
         assert reward_wrong == 0.1, f"Wrong edit should get 0.1, got {reward_wrong}"
+
+
+class TestBuildAssistantMask:
+    """Tests for build_assistant_mask token-id O(n) masking."""
+
+    @pytest.fixture
+    def tok(self):
+        """Minimal mock tokenizer replicating Qwen chat-template tokens."""
+        # Token vocabulary (arbitrary IDs)
+        VOCAB = {
+            "<|im_start|>assistant": [100, 200],  # 2-token start marker
+            "<|im_end|>": [300],                   # 1-token end marker
+            "<|im_start|>system": [100, 201],
+            "<|im_start|>user": [100, 202],
+            "\n": [10],                            # newline token
+        }
+        # Reverse map: single token id → decoded string
+        DECODE = {
+            100: "<|im_start|>",
+            200: "assistant",
+            201: "system",
+            202: "user",
+            300: "<|im_end|>",
+            10: "\n",
+            1: "Hello",
+            2: "world",
+            3: "How",
+            4: "are",
+            5: "you",
+            6: "Fine",
+            7: "thanks",
+            8: "System",
+            9: "prompt",
+        }
+
+        class MockTokenizer:
+            def encode(self, text, add_special_tokens=False):
+                if text in VOCAB:
+                    return VOCAB[text]
+                return [ord(c) for c in text]
+
+            def decode(self, ids, skip_special_tokens=False):
+                if isinstance(ids, list):
+                    return "".join(DECODE.get(i, f"[{i}]") for i in ids)
+                return DECODE.get(ids, f"[{ids}]")
+
+        return MockTokenizer()
+
+    def _ids(self, *tokens):
+        """Helper to build a torch tensor of token ids."""
+        import torch
+        return torch.tensor(list(tokens), dtype=torch.long)
+
+    def test_single_assistant_turn(self, tok):
+        """Single assistant turn — only assistant content is unmasked."""
+        from memorygym.training.common import build_assistant_mask
+        input_ids = self._ids(
+            100, 201, 10, 8, 9, 300,       # <|im_start|>system\nSystem prompt<|im_end|>
+            100, 202, 10, 3, 4, 5, 300,     # <|im_start|>user\nHow are you<|im_end|>
+            100, 200, 10, 1, 2, 300,        # <|im_start|>assistant\nHello world<|im_end|>
+        )
+        labels = build_assistant_mask(tok, input_ids, full_text="dummy")
+        ids = input_ids.tolist()
+        labs = labels.tolist()
+        # Tokens before assistant marker should be masked
+        for i in range(13):
+            assert labs[i] == -100, f"Token {i} should be masked"
+        # Index 13=100, 14=200 (start marker), 15=10 (newline, skipped)
+        assert labs[15] == -100, "Newline after assistant marker should be masked"
+        # Index 16=Hello, 17=world, 18=<|im_end|> — all unmasked
+        assert labs[16] == ids[16], "Hello should be unmasked"
+        assert labs[17] == ids[17], "world should be unmasked"
+        assert labs[18] == ids[18], "<|im_end|> should be unmasked"
+
+    def test_multi_turn(self, tok):
+        """Two assistant turns — both are unmasked."""
+        from memorygym.training.common import build_assistant_mask
+        input_ids = self._ids(
+            100, 201, 10, 8, 300,           # system (5 tokens)
+            100, 202, 10, 3, 300,           # user turn 1 (5 tokens)
+            100, 200, 10, 1, 300,           # assistant turn 1 (5 tokens)
+            100, 202, 10, 4, 300,           # user turn 2 (5 tokens)
+            100, 200, 10, 6, 7, 300,        # assistant turn 2 (6 tokens)
+        )
+        labels = build_assistant_mask(tok, input_ids, full_text="dummy")
+        labs = labels.tolist()
+        ids = input_ids.tolist()
+
+        # Turn 1: idx 10=100, 11=200, 12=\n(skip), 13=Hello(unmask), 14=end(unmask)
+        assert labs[12] == -100, "Newline of turn 1 should be masked"
+        assert labs[13] == ids[13], "Hello (turn 1) should be unmasked"
+        assert labs[14] == ids[14], "<|im_end|> (turn 1) should be unmasked"
+
+        # Turn 2: idx 20=100, 21=200, 22=\n(skip), 23=Fine, 24=thanks, 25=end
+        assert labs[22] == -100, "Newline of turn 2 should be masked"
+        assert labs[23] == ids[23], "Fine (turn 2) should be unmasked"
+        assert labs[24] == ids[24], "thanks (turn 2) should be unmasked"
+        assert labs[25] == ids[25], "<|im_end|> (turn 2) should be unmasked"
+
+        # System/user tokens should all be masked
+        for i in [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 15, 16, 17, 18, 19]:
+            assert labs[i] == -100, f"Token {i} (non-assistant) should be masked"
+
+    def test_no_assistant_turn_fallback(self, tok):
+        """No assistant marker — fallback returns input_ids.clone()."""
+        from memorygym.training.common import build_assistant_mask
+        import torch
+        input_ids = self._ids(100, 201, 10, 8, 9, 300, 100, 202, 10, 3, 300)
+        labels = build_assistant_mask(tok, input_ids, full_text="dummy")
+        assert torch.equal(labels, input_ids), "Fallback should return input_ids clone"
+
+    def test_missing_end_marker(self, tok):
+        """Assistant starts but no <|im_end|> — unmask to end of sequence."""
+        from memorygym.training.common import build_assistant_mask
+        input_ids = self._ids(
+            100, 202, 10, 3, 300,       # user
+            100, 200, 10, 1, 2, 6, 7,   # assistant with no end marker
+        )
+        labels = build_assistant_mask(tok, input_ids, full_text="dummy")
+        labs = labels.tolist()
+        ids = input_ids.tolist()
+        assert labs[7] == -100, "Newline should be masked"
+        for i in range(8, len(ids)):
+            assert labs[i] == ids[i], f"Token {i} should be unmasked (no end marker)"
+
+    def test_empty_assistant_no_crash(self, tok):
+        """<|im_start|>assistant\\n<|im_end|> — should not crash."""
+        from memorygym.training.common import build_assistant_mask
+        input_ids = self._ids(100, 200, 10, 300)
+        labels = build_assistant_mask(tok, input_ids, full_text="dummy")
+        labs = labels.tolist()
+        assert labs[0] == -100   # start marker part 1
+        assert labs[1] == -100   # start marker part 2
+        assert labs[2] == -100   # newline (skipped)
+        assert labs[3] == 300    # <|im_end|> is unmasked
