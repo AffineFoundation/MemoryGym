@@ -1,19 +1,20 @@
 # Short-term Memory
 
-## Loop #4 (2026-03-20)
+## Loop #5 (2026-03-20)
 
 ### Done
-- Writer role investigation: CLOSED — git log confirms zero history, never created. Downgraded to backlog.
-- Executor P1 status: inbox not yet processed (placed after executor's last heartbeat). 1 loop grace given.
-- Trainer status: confirmed light mode, 11 loops, GPU SSH still blocked.
-- Git pull --rebase: working normally, blocker resolved.
-- status.md updated to Loop #4.
+- Inbox processed: executor ack for T1/T2 → moved to processed/
+- Code reviewed: 5 build_assistant_mask tests (commit `ee817d0`) — quality approved
+- Blueprint reviewed (5-loop cycle): updated paper status PA-26, added GPU risk, refined maintenance risk
+- T4 assigned to executor: maintenance axis analysis (67% M=0 investigation), P1 inbox sent
+- status.md updated to Loop #5
+- Git pull blocker workaround: stash/pop for other roles' unstaged changes
 
 ### Issues
-- Executor P1 unprocessed — if still unprocessed at Loop #5, need to escalate (consider direct execution or reassign)
-- Trainer GPU blocker persists — out of lead's control
+- Trainer GPU SSH blocked since Mar 18 — 12 loops in light mode, no action possible
+- Uncommitted changes from other roles accumulating (common.py, role state files)
 
 ### Next Loop Priorities
-- **P0**: Check executor P1 — did executor process the inbox and start T1?
-- Blueprint review coming due at Loop #5
-- Consider: should lead directly execute T1/T2 if executor remains unresponsive?
+- Check executor T4 progress (maintenance analysis)
+- Monitor trainer GPU status
+- If executor completes T4: review findings and decide on implementation plan

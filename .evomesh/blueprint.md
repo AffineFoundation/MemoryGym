@@ -16,7 +16,8 @@ Build a **realistic, cheat-proof, training-valuable** LLM memory management eval
 - 9 simulation strategies verifying scoring invariants
 - 199 successful evaluations, covering 8 models
 - RL training pipeline (GRPO) initially running, SFT verified ineffective (degradation ~9pp)
-- Paper PA-23 complete, still needs continued polishing
+- Paper PA-26 complete, still needs radar chart, ablation, behavior example
+- `build_assistant_mask` fully unit-tested (5 tests, mock tokenizer)
 
 ### Key Metrics
 - Strongest model Mistral-Small-24B: composite 24.3% (high variance)
@@ -54,5 +55,6 @@ Build a **realistic, cheat-proof, training-valuable** LLM memory management eval
 | Risk | Impact | Mitigation |
 |------|--------|------------|
 | GRPO long training doesn't converge | Paper lacks training data | GiGPO as backup; tune reward shaping |
-| NeurIPS deadline is tight | Abstract May 4 | Paper thread continues polishing |
-| Maintenance axis too low | Insufficient evaluation discriminability | Analyze model behavior patterns, may adjust prompts |
+| GPU access blocked since Mar 18 | Training completely stalled, 0 progress for 2+ days | Escalate to infra; all local prep exhausted |
+| NeurIPS deadline is tight (45 days) | Abstract May 4, Paper May 6 | Paper thread continues polishing; parallelize non-GPU work |
+| Maintenance axis too low (67% M=0) | Weak evaluation discriminability | Analyze model behavior — assigned to executor as T3 |
