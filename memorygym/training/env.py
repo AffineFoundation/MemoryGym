@@ -432,6 +432,11 @@ class MemoryEnv:
         self._correction_searched: bool = False
         self._correction_forgot: bool = False
         self._stored_entity_names: set[str] = set()
+        # Correction diagnostics (episode-level)
+        self._corr_total: int = 0
+        self._corr_with_search: int = 0
+        self._corr_with_edit: int = 0
+        self._corr_edit_success: int = 0
 
         self._backend_type = backend_type
         self._backend = self._make_backend()
@@ -557,6 +562,10 @@ class MemoryEnv:
         self._correction_searched = False
         self._correction_forgot = False
         self._stored_entity_names = set()
+        self._corr_total = 0
+        self._corr_with_search = 0
+        self._corr_with_edit = 0
+        self._corr_edit_success = 0
 
         # Precompute question/correction counts
         self._total_questions = sum(
@@ -665,6 +674,8 @@ class MemoryEnv:
             old_text = args.get("old_text", "")
             new_text = args.get("new_text", "")
             is_correction = event_type == "correction"
+            if is_correction:
+                self._corr_with_edit += 1
             if not old_text:
                 info["error"] = "old_text is required"
             elif not is_correction and self._writes_used >= self.write_budget:
@@ -683,6 +694,8 @@ class MemoryEnv:
                         info["error"] = "Text not found in memory"
                     else:
                         info["edited"] = True
+                        if is_correction:
+                            self._corr_edit_success += 1
                         info["remaining"] = (self.write_budget
                                              - self._writes_used)
                         if shaped and is_correction:
@@ -699,6 +712,8 @@ class MemoryEnv:
                         mid = f"mem_{self._mem_counter:03d}"
                         self._backend.store(updated, memory_id=mid)
                         info["edited"] = True
+                        if is_correction:
+                            self._corr_edit_success += 1
                         info["remaining"] = (self.write_budget
                                              - self._writes_used)
                         if shaped and is_correction:
@@ -768,7 +783,11 @@ class MemoryEnv:
                     reward = -0.05
 
         elif tool == "next":
-            # Reset correction tracking when advancing past a correction event
+            # Accumulate correction diagnostics before resetting
+            if event_type == "correction":
+                self._corr_total += 1
+                if self._correction_searched:
+                    self._corr_with_search += 1
             if shaped and event_type == "correction":
                 self._correction_searched = False
                 self._correction_forgot = False
@@ -783,6 +802,12 @@ class MemoryEnv:
             "questions_answered": self._questions_answered,
             "correct_count": self._correct_count,
             "total_questions": self._total_questions,
+            "correction_diagnostics": {
+                "total": self._corr_total,
+                "with_search": self._corr_with_search,
+                "with_edit": self._corr_with_edit,
+                "edit_success": self._corr_edit_success,
+            },
         }
 
         if done:

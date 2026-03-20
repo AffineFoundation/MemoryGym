@@ -20,7 +20,12 @@
   - eval_task.py already had the fix; stream_agent.py (used by bench.py + training env) did not
   - Now both prompts consistently communicate that Edits are free during corrections
 
+## Done (Loop 15, 2026-03-20)
+- Added correction diagnostics to env.py episode_stats (mirrors executor's T5b bench.py diagnostics)
+  - Tracks per-episode: total corrections, with_search, with_edit, edit_success
+  - Critical for debugging GRPO v4a maintenance reward signal when GPU available
+- Reviewed executor's T5b/T5c changes — env.py reward logic confirmed sound, M formula change pending lead decision
+
 ## Status
-- 14 loops, exited light mode this loop (code change made)
-- GPU still blocked
-- Next action: commit prompt fix, then resume light mode until GPU access or new inbox
+- 15 loops, GPU still blocked
+- Next action: resume light mode until GPU access or new inbox
