@@ -171,6 +171,23 @@ def compute_axis_scores(
     }
 
 
+def compute_maintenance_alt(
+    update_correct: int,
+    update_total: int,
+) -> float:
+    """Alternative M formula: pure update accuracy, no coverage gate.
+
+    M = correct_updates / total_update_questions
+    Only counts update questions whose entities were actually stored
+    (already filtered by the simulation's _data_available).
+
+    For investigation only (T5c) — not used in production scoring.
+    """
+    if update_total == 0:
+        return 0.0
+    return update_correct / update_total
+
+
 def format_leaderboard_entry(
     model: str,
     tier: str,

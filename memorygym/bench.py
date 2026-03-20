@@ -326,6 +326,38 @@ def main(argv: list[str] | None = None) -> int:
                         write_budget=write_budget,
                     )
 
+                    # Aggregate correction diagnostics from trajectory
+                    corr_diag = {
+                        "total": 0, "applied": 0,
+                        "with_search": 0, "with_edit": 0,
+                        "edit_success": 0, "edit_fail": 0,
+                    }
+                    for te in traj:
+                        if te.get("type") != "correction":
+                            continue
+                        corr_diag["total"] += 1
+                        if te.get("correction_applied"):
+                            corr_diag["applied"] += 1
+                        has_search = has_edit = edit_ok = False
+                        for turn in te.get("turns", []):
+                            for tc in turn.get("tool_calls", []):
+                                tn = tc.get("name", "")
+                                if tn == "memory_search":
+                                    has_search = True
+                                elif tn == "Edit":
+                                    has_edit = True
+                            for tr in turn.get("tool_results", []):
+                                if "Edited." in str(tr):
+                                    edit_ok = True
+                        if has_search:
+                            corr_diag["with_search"] += 1
+                        if has_edit:
+                            corr_diag["with_edit"] += 1
+                            if edit_ok:
+                                corr_diag["edit_success"] += 1
+                            else:
+                                corr_diag["edit_fail"] += 1
+
                     # Save per-seed result in LiveWeb-compatible format
                     eval_result = {
                         "task_name": (f"memorygym:{tmpl.name}"
@@ -349,6 +381,7 @@ def main(argv: list[str] | None = None) -> int:
                             "per_axis": axis_scores,
                             "composite": axis_scores["composite"],
                             "by_competency": comp_scores,
+                            "correction_diagnostics": corr_diag,
                             "answer_details": answer_details,
                             "conversation": trajectory_to_conversation(traj),
                         },
