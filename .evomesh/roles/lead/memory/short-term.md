@@ -1,23 +1,22 @@
 # Short-term Memory
 
-## Loop #10 (2026-03-20)
+## Loop #30 (2026-03-20) — §1.3 mandatory review
 
 ### Done
-- Blueprint review completed (5-loop cycle, §6.1):
-  - Updated roadmap: maintenance item #3 → completed, added "post-fix eval batch" as new short-term priority
-  - Added architecture decisions: D1 (R2 rejection) + D2 (M formula keep)
-  - Updated risk table: GPU risk → CRITICAL, added maintenance validation + file size monitoring
-  - Reorganized timeline: short-term by Mar 29, mid-term Apr-May, long-term post-submission
-- File size audit: all core files under 1000 lines (stream_agent.py at 876 is highest)
-- Status.md updated, test count corrected to 461+
-- No inbox, no new eval data, no GPU restoration
+- ROLE.md full review (§1.3, every 30 loops): no changes needed. All sections efficient.
+- evolution.log updated (Evo-2)
+- Short-term memory cleaned (was stale since Loop #10)
 
-### Strategic Assessment
-- No direction change warranted. Project is sound — bottleneck is GPU infrastructure, not strategy.
-- NeurIPS timeline: 45 days to abstract (May 4). GPU blockage is the #1 risk.
-- All code-level work exhausted. Remaining items are data-gated (R3, R4) or GPU-gated (training).
+### Current State
+- Light mode active since Loop #12 (18 consecutive light-mode loops)
+- All evomesh roles idle/blocked: lead (light), executor (light), trainer (GPU-blocked light)
+- Last substantive commit: `c9bb222` (trainer, grpo_train.py fix)
+- Critical path unchanged: GPU restoration → training, evaluator runs → M score validation
 
-### Next Loop Priorities
-- Monitor for GPU restoration or new eval data
-- If no change: idle 2/3 → approaching light mode for lead
-- Next blueprint review: Loop #15
+### Pending (data-gated)
+- R4 M formula, R3 Edit matching — need post-fix eval data
+- Prompt fix validation — need evaluator batch with T5a
+
+### Next
+- Resume light mode. Next mandatory review: Loop #60.
+- Blueprint review due: Loop #35 (or when new activity triggers exit from light mode)

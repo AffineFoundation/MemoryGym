@@ -4,3 +4,10 @@
 - 类型: 初始化
 - 变更: 建立 blueprint.md, status.md, 首次任务分派 (T1: mask 测试, T2: 提交训练代码)
 - 原因: evomesh 首次启动，需要建立项目全局视图和工作流
+
+## Evo-2 | 2026-03-20 | Loop #30
+- 类型: §1.3 mandatory ROLE.md full review
+- 变更: None — all sections efficient, zero dead rules
+- 审查范围: §1 (self-evolution), §2 (dev protocol), §4 (collaboration), §5 (memory), §6 (lead-specific)
+- 短期记忆: cleaned (was stale from Loop #10, 20 loops behind)
+- 原因: §1.3 mandates full review every 30 loops
