@@ -47,6 +47,15 @@ def apply_chat_template(tokenizer, messages: list[dict],
             messages, tokenize=False)
 
 
+def _find_subseq(seq, subseq, start=0):
+    """Find first occurrence of subseq in seq starting at start. Returns -1 if not found."""
+    slen = len(subseq)
+    for i in range(start, len(seq) - slen + 1):
+        if seq[i:i + slen] == subseq:
+            return i
+    return -1
+
+
 def build_assistant_mask(tokenizer, input_ids, full_text: str | None = None):
     """Build labels tensor with -100 for non-assistant tokens.
 
@@ -69,17 +78,10 @@ def build_assistant_mask(tokenizer, input_ids, full_text: str | None = None):
     ids = input_ids.tolist()
     n = len(ids)
 
-    def find_subseq(seq, subseq, start=0):
-        slen = len(subseq)
-        for i in range(start, len(seq) - slen + 1):
-            if seq[i:i + slen] == subseq:
-                return i
-        return -1
-
     pos = 0
     found_any = False
     while pos < n:
-        start = find_subseq(ids, start_ids, pos)
+        start = _find_subseq(ids, start_ids, pos)
         if start == -1:
             break
         # Content starts after marker + newline token
@@ -88,7 +90,7 @@ def build_assistant_mask(tokenizer, input_ids, full_text: str | None = None):
         if content_start < n and tokenizer.decode(
                 [ids[content_start]]).strip() == "":
             content_start += 1
-        end = find_subseq(ids, end_ids, content_start)
+        end = _find_subseq(ids, end_ids, content_start)
         if end == -1:
             tok_end = n
         else:
@@ -146,24 +148,17 @@ def build_turn_advantage_weights(tokenizer, input_ids, turn_advantages):
     ids = input_ids.tolist()
     n = len(ids)
 
-    def find_subseq(seq, subseq, start=0):
-        slen = len(subseq)
-        for i in range(start, len(seq) - slen + 1):
-            if seq[i:i + slen] == subseq:
-                return i
-        return -1
-
     pos = 0
     turn_idx = 0
     while pos < n and turn_idx < len(turn_advantages):
-        start = find_subseq(ids, marker_start, pos)
+        start = _find_subseq(ids, marker_start, pos)
         if start == -1:
             break
         content_start = start + len(marker_start)
         if content_start < n and tokenizer.decode(
                 [ids[content_start]]).strip() == "":
             content_start += 1
-        end = find_subseq(ids, marker_end, content_start)
+        end = _find_subseq(ids, marker_end, content_start)
         tok_end = end + len(marker_end) if end != -1 else n
         weights[content_start:tok_end] = turn_advantages[turn_idx]
         turn_idx += 1

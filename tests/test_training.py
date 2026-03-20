@@ -872,3 +872,171 @@ class TestBuildAssistantMask:
         assert labs[1] == -100   # start marker part 2
         assert labs[2] == -100   # newline (skipped)
         assert labs[3] == 300    # <|im_end|> is unmasked
+
+
+class TestStripFunctions:
+    """Tests for strip_think and strip_special_tokens."""
+
+    def test_strip_think_basic(self):
+        from memorygym.training.common import strip_think
+        text = "Hello <think>internal reasoning</think> world"
+        assert strip_think(text) == "Hello world"
+
+    def test_strip_think_multiline(self):
+        from memorygym.training.common import strip_think
+        text = "A <think>line1\nline2\nline3</think>B"
+        assert strip_think(text) == "A B"
+
+    def test_strip_think_multiple_blocks(self):
+        from memorygym.training.common import strip_think
+        text = "<think>a</think>X<think>b</think>Y"
+        assert strip_think(text) == "XY"
+
+    def test_strip_think_no_match(self):
+        from memorygym.training.common import strip_think
+        text = "no think tags here"
+        assert strip_think(text) == "no think tags here"
+
+    def test_strip_think_empty(self):
+        from memorygym.training.common import strip_think
+        assert strip_think("") == ""
+
+    def test_strip_special_tokens_basic(self):
+        from memorygym.training.common import strip_special_tokens
+        text = "Hello<|im_end|> world<|endoftext|>"
+        assert strip_special_tokens(text) == "Hello world"
+
+    def test_strip_special_tokens_all(self):
+        from memorygym.training.common import strip_special_tokens
+        text = "<|im_start|>assistant<|im_end|><|endoftext|>"
+        assert strip_special_tokens(text) == "assistant"
+
+    def test_strip_special_tokens_empty(self):
+        from memorygym.training.common import strip_special_tokens
+        assert strip_special_tokens("") == ""
+
+    def test_strip_special_tokens_no_match(self):
+        from memorygym.training.common import strip_special_tokens
+        assert strip_special_tokens("plain text") == "plain text"
+
+
+class TestCountAssistantTurns:
+    """Tests for count_assistant_turns."""
+
+    @pytest.fixture
+    def tok(self):
+        """Same mock tokenizer as TestBuildAssistantMask."""
+        VOCAB = {
+            "<|im_start|>assistant": [100, 200],
+            "<|im_end|>": [300],
+        }
+
+        class MockTokenizer:
+            def encode(self, text, add_special_tokens=False):
+                if text in VOCAB:
+                    return VOCAB[text]
+                return [ord(c) for c in text]
+
+        return MockTokenizer()
+
+    def _ids(self, *tokens):
+        import torch
+        return torch.tensor(list(tokens), dtype=torch.long)
+
+    def test_zero_turns(self, tok):
+        from memorygym.training.common import count_assistant_turns
+        ids = self._ids(100, 201, 10, 8, 300)  # system only
+        assert count_assistant_turns(tok, ids) == 0
+
+    def test_one_turn(self, tok):
+        from memorygym.training.common import count_assistant_turns
+        ids = self._ids(100, 202, 10, 3, 300, 100, 200, 10, 1, 300)
+        assert count_assistant_turns(tok, ids) == 1
+
+    def test_two_turns(self, tok):
+        from memorygym.training.common import count_assistant_turns
+        ids = self._ids(
+            100, 200, 10, 1, 300,   # assistant 1
+            100, 202, 10, 3, 300,   # user
+            100, 200, 10, 6, 300,   # assistant 2
+        )
+        assert count_assistant_turns(tok, ids) == 2
+
+    def test_partial_marker_not_counted(self, tok):
+        """Partial marker [100] without [200] should not count."""
+        from memorygym.training.common import count_assistant_turns
+        ids = self._ids(100, 10, 8, 300)  # 100 alone (not 100,200)
+        assert count_assistant_turns(tok, ids) == 0
+
+
+class TestBuildTurnAdvantageWeights:
+    """Tests for build_turn_advantage_weights."""
+
+    @pytest.fixture
+    def tok(self):
+        VOCAB = {
+            "<|im_start|>assistant": [100, 200],
+            "<|im_end|>": [300],
+        }
+        DECODE = {100: "<|im_start|>", 200: "assistant", 300: "<|im_end|>",
+                  10: "\n", 1: "Hello", 6: "Fine", 7: "thanks"}
+
+        class MockTokenizer:
+            def encode(self, text, add_special_tokens=False):
+                if text in VOCAB:
+                    return VOCAB[text]
+                return [ord(c) for c in text]
+
+            def decode(self, ids, skip_special_tokens=False):
+                if isinstance(ids, list):
+                    return "".join(DECODE.get(i, f"[{i}]") for i in ids)
+                return DECODE.get(ids, f"[{ids}]")
+
+        return MockTokenizer()
+
+    def _ids(self, *tokens):
+        import torch
+        return torch.tensor(list(tokens), dtype=torch.long)
+
+    def test_single_turn_weights(self, tok):
+        from memorygym.training.common import build_turn_advantage_weights
+        ids = self._ids(100, 200, 10, 1, 300)  # assistant: Hello <|im_end|>
+        weights = build_turn_advantage_weights(tok, ids, [2.5])
+        w = weights.tolist()
+        assert w[0] == 0.0  # start marker
+        assert w[1] == 0.0  # start marker
+        assert w[2] == 0.0  # newline (skipped)
+        assert w[3] == 2.5  # Hello
+        assert w[4] == 2.5  # <|im_end|>
+
+    def test_two_turns_different_advantages(self, tok):
+        from memorygym.training.common import build_turn_advantage_weights
+        ids = self._ids(
+            100, 200, 10, 1, 300,       # turn 1
+            100, 200, 10, 6, 7, 300,    # turn 2
+        )
+        weights = build_turn_advantage_weights(tok, ids, [1.0, -0.5])
+        w = weights.tolist()
+        assert w[3] == 1.0   # turn 1 content
+        assert w[4] == 1.0   # turn 1 end
+        assert w[8] == -0.5  # turn 2 content (Fine)
+        assert w[9] == -0.5  # turn 2 content (thanks)
+        assert w[10] == -0.5  # turn 2 end
+
+    def test_fewer_advantages_than_turns(self, tok):
+        """If fewer advantages than turns, extra turns get 0."""
+        from memorygym.training.common import build_turn_advantage_weights
+        ids = self._ids(
+            100, 200, 10, 1, 300,     # turn 1
+            100, 200, 10, 6, 300,     # turn 2
+        )
+        weights = build_turn_advantage_weights(tok, ids, [3.0])  # only 1 advantage
+        w = weights.tolist()
+        assert w[3] == 3.0  # turn 1 gets advantage
+        assert w[8] == 0.0  # turn 2 gets 0 (no advantage)
+
+    def test_no_turns_all_zero(self, tok):
+        from memorygym.training.common import build_turn_advantage_weights
+        ids = self._ids(100, 201, 10, 8, 300)  # no assistant
+        weights = build_turn_advantage_weights(tok, ids, [1.0])
+        assert all(w == 0.0 for w in weights.tolist())
