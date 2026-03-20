@@ -1,19 +1,22 @@
 # Short-term Memory
 
-## Loop #6 (2026-03-20)
+## Loop #7 (2026-03-20)
 
 ### Done
-- Inbox processed: T1/T2 ack (duplicate) → moved to processed/
-- Executor status reviewed: T4 (maintenance analysis) NOT started — executor did T3 refactoring instead (commits `979aee7`, `595a6de`)
-- Trainer still GPU-blocked (light mode since Mar 18, now 2+ days)
-- status.md updated to Loop #6
+- T4 maintenance analysis reviewed — quality excellent, 5 root causes well-evidenced
+- Decisions recorded in shared/decisions.md D1:
+  - APPROVED: R1 (prompt Edit cost contradiction fix), R5 (diagnostic logging)
+  - REJECTED: R2 (correction workflow demo — violates prompt neutrality)
+  - DEFERRED: R3 (case-insensitive matching), R4 (formula change — needs paper alignment)
+- T5 assigned to executor (R1 + R5 implementation), P1 inbox sent
+- Inbox processed: executor T4 ack → moved to processed/
+- status.md updated to Loop #7, overall status upgraded to Active
 
 ### Issues
-- **T4 not started**: Executor did self-directed refactoring (T3: _find_subseq extraction, _edit_correction_reward extraction) instead of dispatched T4 (maintenance analysis). T4 inbox message still unprocessed in executor inbox.
-- Trainer GPU SSH blocked — no training progress since Mar 18
+- Trainer GPU SSH blocked since Mar 18 — no change, no mitigation available
+- R4 (maintenance formula) needs paper thread discussion eventually
 
 ### Next Loop Priorities
-- Check if executor has started T4 (maintenance analysis is P1 priority)
+- Check executor T5 progress (prompt fix + diagnostic logging)
 - Monitor trainer GPU status
-- If T4 complete: review findings and decide on implementation plan
-- Consider: should lead send a follow-up P0 to executor re-prioritizing T4?
+- If T5 complete: review code, run simulation validation, consider version bump

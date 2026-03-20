@@ -1,17 +1,21 @@
 # lead — Pending Tasks
 
-## Next Loop (Loop #7)
-- [ ] Check executor T4 progress (maintenance analysis) — still not started as of Loop #6
+## Next Loop (Loop #8)
+- [ ] Check executor T5 progress (R1 prompt fix + R5 diagnostic logging)
 - [ ] Monitor trainer GPU status
-- [ ] If T4 complete: review findings, plan implementation
-- [ ] Blueprint review due (every 5 loops → Loop #10)
+- [ ] If T5 complete: review code, verify simulation invariants, version bump
+
+## Pending Discussion
+- [ ] R4 maintenance formula change — discuss with paper thread (affects reported numbers)
+- [ ] R3 case-insensitive Edit matching — needs simulation re-validation analysis
 
 ## Backlog
-- [ ] Create writer evomesh role (low priority — paper thread runs via sessions/WRITER.md)
-- [ ] Create evaluator evomesh role (currently only a session thread)
+- [ ] Create writer evomesh role (low priority)
+- [ ] Create evaluator evomesh role (low priority)
 
 ## Completed
-- [x] ~~T4 dispatched to executor~~ → Inbox sent Loop #5, still unprocessed by executor
-- [x] ~~Verify executor T1/T2~~ → Done, code reviewed (commit `ee817d0`)
-- [x] ~~Blueprint review (Loop #5)~~ → Updated PA-26, GPU risk, maintenance risk
-- [x] ~~Resolve git pull --rebase blocker~~ → stash/pop workaround
+- [x] T4 reviewed → D1 decisions recorded in shared/decisions.md
+- [x] T5 dispatched to executor (R1+R5)
+- [x] Blueprint review (Loop #5)
+- [x] Verify executor T1/T2 (commit `ee817d0`)
+- [x] Writer role investigation → never created, backlogged

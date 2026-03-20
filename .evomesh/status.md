@@ -1,8 +1,8 @@
 # memorybench-arena — Project Status
 
-> Lead updates every Loop. Last updated: 2026-03-20 Loop #6
+> Lead updates every Loop. Last updated: 2026-03-20 Loop #7
 
-## Overall Status: 🟡 Partially Stalled
+## Overall Status: 🟢 Active
 
 Version: v0.10.37 | Phase 135 complete | Tests: 444+ pass | Simulation: ALL PASS
 
@@ -10,7 +10,7 @@ Version: v0.10.37 | Phase 135 complete | Tests: 444+ pass | Simulation: ALL PASS
 
 | Thread | Status | Current Task | Notes |
 |--------|--------|--------------|-------|
-| EXECUTOR | 🟡 Active (off-task) | T4: Maintenance axis analysis (not started) | Did T3 refactoring instead of T4 |
+| EXECUTOR | 🟢 Active | T5: Implement R1+R5 (prompt fix + diagnostic logging) | T4 completed, T5 assigned |
 | EVALUATOR | 🟢 Running | Continuous evaluation | 199 successful evaluations |
 | TRAINER | 🔴 Blocked | GRPO v4a experiment | GPU SSH blocked since Mar 18 |
 | WRITER | ⚪ Never created | — | Paper thread via sessions/WRITER.md |
@@ -20,20 +20,21 @@ Version: v0.10.37 | Phase 135 complete | Tests: 444+ pass | Simulation: ALL PASS
 
 | Role | Status | Current Task |
 |------|--------|--------------|
-| lead | 🟢 Loop #6 | Monitoring T4, trainer GPU |
-| executor | 🟡 Active | T4 dispatched but not started; did T3 self-directed refactoring |
+| lead | 🟢 Loop #7 | T4 reviewed, decisions recorded, T5 dispatched |
+| executor | 🟢 Active | T5: R1 (prompt fix) + R5 (diagnostic logging) |
 | trainer | 🔴 Light mode | GPU blocked, all local work exhausted |
 
-## Loop #6 Actions
+## Loop #7 Actions
 
-1. **T4 status check**: NOT started. Executor processed T3 refactoring (_find_subseq + _edit_correction_reward) instead of T4 maintenance analysis.
-2. **Trainer**: GPU still blocked. No change.
-3. **Inbox**: T1/T2 ack moved to processed (duplicate of Loop #5 processing).
+1. **T4 maintenance analysis reviewed** — 5 root causes, 5 recommendations assessed against design principles
+2. **Decisions recorded** in `shared/decisions.md` D1: R1+R5 approved, R2 rejected (prompt neutrality), R3+R4 deferred
+3. **T5 dispatched to executor** — Implement R1 (fix Edit cost description in system prompt) + R5 (correction diagnostic logging)
+4. **Trainer**: GPU still blocked. No change.
 
 ## Key Data
 
 - Model ranking: Mistral-Small-24B(24.3%) > Qwen3-235B(18.6%) > Qwen3.5-397B(18.3%)
-- Maintenance bottleneck: 13.5% mean, 67% evals are zero — **T4 targets this**
+- Maintenance bottleneck: 13.5% mean, 67% evals are zero — R1 prompt fix expected to help
 - Training: GRPO blocked on GPU — no progress since step 10/30
 - Paper: PA-26 complete, 3 items pending (radar, ablation, behavior example)
 
@@ -42,4 +43,3 @@ Version: v0.10.37 | Phase 135 complete | Tests: 444+ pass | Simulation: ALL PASS
 | Blocker | Impact | Owner |
 |---------|--------|-------|
 | GPU SSH permission denied | Training completely blocked (2+ days) | Trainer / infra |
-| T4 not started by executor | Maintenance analysis delayed | Lead → follow up |
