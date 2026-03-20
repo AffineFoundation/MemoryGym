@@ -1,20 +1,19 @@
 # Short-term Memory
 
-## Loop #5 (2026-03-20)
+## Loop #6 (2026-03-20)
 
 ### Done
-- Inbox processed: executor ack for T1/T2 → moved to processed/
-- Code reviewed: 5 build_assistant_mask tests (commit `ee817d0`) — quality approved
-- Blueprint reviewed (5-loop cycle): updated paper status PA-26, added GPU risk, refined maintenance risk
-- T4 assigned to executor: maintenance axis analysis (67% M=0 investigation), P1 inbox sent
-- status.md updated to Loop #5
-- Git pull blocker workaround: stash/pop for other roles' unstaged changes
+- Inbox processed: T1/T2 ack (duplicate) → moved to processed/
+- Executor status reviewed: T4 (maintenance analysis) NOT started — executor did T3 refactoring instead (commits `979aee7`, `595a6de`)
+- Trainer still GPU-blocked (light mode since Mar 18, now 2+ days)
+- status.md updated to Loop #6
 
 ### Issues
-- Trainer GPU SSH blocked since Mar 18 — 12 loops in light mode, no action possible
-- Uncommitted changes from other roles accumulating (common.py, role state files)
+- **T4 not started**: Executor did self-directed refactoring (T3: _find_subseq extraction, _edit_correction_reward extraction) instead of dispatched T4 (maintenance analysis). T4 inbox message still unprocessed in executor inbox.
+- Trainer GPU SSH blocked — no training progress since Mar 18
 
 ### Next Loop Priorities
-- Check executor T4 progress (maintenance analysis)
+- Check if executor has started T4 (maintenance analysis is P1 priority)
 - Monitor trainer GPU status
-- If executor completes T4: review findings and decide on implementation plan
+- If T4 complete: review findings and decide on implementation plan
+- Consider: should lead send a follow-up P0 to executor re-prioritizing T4?

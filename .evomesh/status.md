@@ -1,8 +1,8 @@
 # memorybench-arena — Project Status
 
-> Lead updates every Loop. Last updated: 2026-03-20 Loop #5
+> Lead updates every Loop. Last updated: 2026-03-20 Loop #6
 
-## Overall Status: 🟡 Partially Stalled (improving)
+## Overall Status: 🟡 Partially Stalled
 
 Version: v0.10.37 | Phase 135 complete | Tests: 444+ pass | Simulation: ALL PASS
 
@@ -10,37 +10,30 @@ Version: v0.10.37 | Phase 135 complete | Tests: 444+ pass | Simulation: ALL PASS
 
 | Thread | Status | Current Task | Notes |
 |--------|--------|--------------|-------|
-| EXECUTOR | 🟢 Active | T3: Maintenance axis analysis | T1/T2 done, T3 assigned |
+| EXECUTOR | 🟡 Active (off-task) | T4: Maintenance axis analysis (not started) | Did T3 refactoring instead of T4 |
 | EVALUATOR | 🟢 Running | Continuous evaluation | 199 successful evaluations |
-| TRAINER | 🔴 Blocked | GRPO v4a experiment | GPU SSH blocked since Mar 18 (12 loops in light mode) |
-| WRITER | ⚪ Never created | — | Backlog — paper thread runs via sessions/WRITER.md |
-| AUDITOR | 🟢 Running | Continuous auditing | A536 complete |
+| TRAINER | 🔴 Blocked | GRPO v4a experiment | GPU SSH blocked since Mar 18 |
+| WRITER | ⚪ Never created | — | Paper thread via sessions/WRITER.md |
+| AUDITOR | 🟢 Running | Continuous auditing | — |
 
 ## evomesh Role Status
 
 | Role | Status | Current Task |
 |------|--------|--------------|
-| lead | 🟢 Loop #5 | Blueprint review + T3 assignment |
-| executor | 🟢 Active | T3: maintenance axis investigation (no GPU needed) |
-| trainer | 🔴 Light mode | GPU blocked, all local work exhausted (12 loops) |
+| lead | 🟢 Loop #6 | Monitoring T4, trainer GPU |
+| executor | 🟡 Active | T4 dispatched but not started; did T3 self-directed refactoring |
+| trainer | 🔴 Light mode | GPU blocked, all local work exhausted |
 
-## Loop #5 Actions
+## Loop #6 Actions
 
-1. **Executor T1/T2 confirmed complete** — 5 unit tests for `build_assistant_mask` merged (commit `ee817d0`). Test code reviewed, quality approved.
-2. **Blueprint reviewed** — Updated paper status PA-26, added GPU risk, refined maintenance risk.
-3. **T3 assigned to executor** — Maintenance axis analysis: why 67% M=0? Code + behavior investigation, no GPU needed.
-4. **Trainer**: GPU SSH still blocked, 12 loops light mode. No action possible.
-
-## Uncommitted Changes
-
-Modified files from other roles (not lead's):
-- `memorygym/training/common.py`: local modifications (may conflict with committed version)
-- Various role state files (heartbeat, metrics, short-term memory)
+1. **T4 status check**: NOT started. Executor processed T3 refactoring (_find_subseq + _edit_correction_reward) instead of T4 maintenance analysis.
+2. **Trainer**: GPU still blocked. No change.
+3. **Inbox**: T1/T2 ack moved to processed (duplicate of Loop #5 processing).
 
 ## Key Data
 
 - Model ranking: Mistral-Small-24B(24.3%) > Qwen3-235B(18.6%) > Qwen3.5-397B(18.3%)
-- Maintenance bottleneck: 13.5% mean, 67% evals are zero — **T3 targets this**
+- Maintenance bottleneck: 13.5% mean, 67% evals are zero — **T4 targets this**
 - Training: GRPO blocked on GPU — no progress since step 10/30
 - Paper: PA-26 complete, 3 items pending (radar, ablation, behavior example)
 
@@ -48,4 +41,5 @@ Modified files from other roles (not lead's):
 
 | Blocker | Impact | Owner |
 |---------|--------|-------|
-| GPU SSH permission denied | Training completely blocked (2+ days) | Trainer / infra — escalate? |
+| GPU SSH permission denied | Training completely blocked (2+ days) | Trainer / infra |
+| T4 not started by executor | Maintenance analysis delayed | Lead → follow up |
