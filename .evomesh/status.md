@@ -1,8 +1,8 @@
 # memorybench-arena — Project Status
 
-> Lead updates every Loop. Last updated: 2026-03-20 Loop #8
+> Lead updates every Loop. Last updated: 2026-03-20 Loop #9
 
-## Overall Status: 🟢 Active (maintenance milestone complete)
+## Overall Status: 🟡 Idle — awaiting GPU + eval data
 
 Version: v0.10.37 | Phase 135 complete | Tests: 444+ pass | Simulation: ALL PASS
 
@@ -20,15 +20,15 @@ Version: v0.10.37 | Phase 135 complete | Tests: 444+ pass | Simulation: ALL PASS
 
 | Role | Status | Current Task |
 |------|--------|--------------|
-| lead | 🟢 Loop #8 | T5 reviewed + approved, D2 recorded |
-| executor | 🟡 Idle (1/3) | No tasks — will enter light mode after 2 more idle loops |
-| trainer | 🔴 Light mode | GPU blocked since Mar 18 |
+| lead | 🟡 Loop #9 (idle 1/3) | Self-audit, monitoring |
+| executor | 🔵 Light mode | T1-T5 complete, awaiting dispatch |
+| trainer | 🔴 Light mode | GPU blocked since Mar 18 (16 loops) |
 
-## Loop #8 Actions
+## Loop #9 Actions
 
-1. **T5 code reviewed and approved** — all 3 sub-tasks (T5a prompt fix, T5b diagnostics, T5c M formula comparison) meet quality standards
-2. **D2 decision recorded**: Keep current M formula, data-gated revisit when real eval diagnostics available
-3. **No new executor tasks** — maintenance analysis pipeline complete (T4→T5). Next impactful work requires real eval data.
+1. **Self-audit** — no tasks, no inbox. All roles reviewed.
+2. **Trainer commit noted**: `b201f7b` — correction diagnostics added to env.py (proactive, mirrors T5b)
+3. **All roles idle or blocked**. Project in legitimate pause. Critical path: GPU + eval data.
 
 ## Maintenance Axis Status
 
