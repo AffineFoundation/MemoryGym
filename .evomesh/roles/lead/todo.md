@@ -1,21 +1,22 @@
 # lead — Pending Tasks
 
 ## Next Loop (Loop #8)
-- [ ] Check executor T5 progress (R1 prompt fix + R5 diagnostic logging)
+- [ ] Check executor T5 progress (prompt fix + diagnostics + M formula investigation)
 - [ ] Monitor trainer GPU status
-- [ ] If T5 complete: review code, verify simulation invariants, version bump
+- [ ] When T5c arrives: review simulation comparison, decide on M formula change
 
 ## Pending Discussion
-- [ ] R4 maintenance formula change — discuss with paper thread (affects reported numbers)
-- [ ] R3 case-insensitive Edit matching — needs simulation re-validation analysis
+- [ ] R4 maintenance formula change — needs simulation validation + paper alignment
+- [ ] R3 case-insensitive Edit matching — needs R5 diagnostic data first
 
 ## Backlog
+- [ ] Blueprint review (due Loop #10, every 5 loops)
 - [ ] Create writer evomesh role (low priority)
 - [ ] Create evaluator evomesh role (low priority)
 
 ## Completed
-- [x] T4 reviewed → D1 decisions recorded in shared/decisions.md
-- [x] T5 dispatched to executor (R1+R5)
+- [x] T4 reviewed → decisions made (R1+R5 approved, R2 rejected, R3 deferred, R4 investigate)
+- [x] T5 dispatched to executor (Phase 128)
+- [x] T4 dispatched to executor → completed
+- [x] T1/T2 verified → code reviewed (commit `ee817d0`)
 - [x] Blueprint review (Loop #5)
-- [x] Verify executor T1/T2 (commit `ee817d0`)
-- [x] Writer role investigation → never created, backlogged

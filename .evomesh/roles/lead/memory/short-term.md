@@ -4,19 +4,19 @@
 
 ### Done
 - T4 maintenance analysis reviewed — quality excellent, 5 root causes well-evidenced
-- Decisions recorded in shared/decisions.md D1:
-  - APPROVED: R1 (prompt Edit cost contradiction fix), R5 (diagnostic logging)
+- Decisions:
+  - APPROVED: R1 (prompt Edit cost contradiction fix), R5 (diagnostic logging), R4 (M formula investigation only)
   - REJECTED: R2 (correction workflow demo — violates prompt neutrality)
-  - DEFERRED: R3 (case-insensitive matching), R4 (formula change — needs paper alignment)
-- T5 assigned to executor (R1 + R5 implementation), P1 inbox sent
-- Inbox processed: executor T4 ack → moved to processed/
-- status.md updated to Loop #7, overall status upgraded to Active
+  - DEFERRED: R3 (case-insensitive matching — need R5 data first)
+- T5 dispatched to executor (Phase 128): T5a prompt fix + T5b diagnostic logging + T5c M formula simulation comparison
+- Inbox processed: executor T4 report → moved to processed/
+- status.md updated to Loop #7
 
 ### Issues
-- Trainer GPU SSH blocked since Mar 18 — no change, no mitigation available
-- R4 (maintenance formula) needs paper thread discussion eventually
+- Trainer GPU SSH blocked since Mar 18 — no change
+- Concurrent lead loop caused rebase conflicts (resolved)
 
 ### Next Loop Priorities
-- Check executor T5 progress (prompt fix + diagnostic logging)
+- Check executor T5 progress
 - Monitor trainer GPU status
-- If T5 complete: review code, run simulation validation, consider version bump
+- When T5c simulation report arrives: review and decide on M formula change
