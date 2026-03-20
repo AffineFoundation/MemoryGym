@@ -1,20 +1,19 @@
 # Short-term Memory
 
-## Loop #3 (2026-03-20)
+## Loop #4 (2026-03-20)
 
 ### Done
-- Full role review: executor idle (P1 sent), trainer GPU-blocked (legitimate), writer role missing
-- status.md rewritten with accurate state — downgraded to "Partially Stalled"
-- Sent P1 inbox to executor to activate T1/T2 (no GPU needed)
-- Identified writer role discrepancy: directory doesn't exist despite Loop #2 claiming initialization
+- Writer role investigation: CLOSED — git log confirms zero history, never created. Downgraded to backlog.
+- Executor P1 status: inbox not yet processed (placed after executor's last heartbeat). 1 loop grace given.
+- Trainer status: confirmed light mode, 11 loops, GPU SSH still blocked.
+- Git pull --rebase: working normally, blocker resolved.
+- status.md updated to Loop #4.
 
-### Issues Found
-- Writer role `.evomesh/roles/writer/` never created — investigate git history
-- Executor has been idle 5 days on actionable tasks
-- Git pull --rebase blocked by other roles' unstaged changes
+### Issues
+- Executor P1 unprocessed — if still unprocessed at Loop #5, need to escalate (consider direct execution or reassign)
+- Trainer GPU blocker persists — out of lead's control
 
 ### Next Loop Priorities
-- Check executor response to P1 (did T1 start?)
-- Investigate writer role: `git log` for any trace
-- GPU blocker status check
+- **P0**: Check executor P1 — did executor process the inbox and start T1?
 - Blueprint review coming due at Loop #5
+- Consider: should lead directly execute T1/T2 if executor remains unresponsive?

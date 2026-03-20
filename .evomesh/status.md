@@ -1,6 +1,6 @@
 # memorybench-arena — Project Status
 
-> Lead updates every Loop. Last updated: 2026-03-20 Loop #3
+> Lead updates every Loop. Last updated: 2026-03-20 Loop #4
 
 ## Overall Status: 🟡 Partially Stalled
 
@@ -10,26 +10,26 @@ Version: v0.10.37 | Phase 135 complete | Tests: 439+ pass | Simulation: ALL PASS
 
 | Thread | Status | Current Task | Notes |
 |--------|--------|--------------|-------|
-| EXECUTOR | 🟡 Idle | T1: build_assistant_mask tests | P1 nudge sent — T1/T2 don't need GPU |
+| EXECUTOR | 🟡 Idle | T1: build_assistant_mask tests | P1 sent, awaiting processing (1 loop grace) |
 | EVALUATOR | 🟢 Running | Continuous evaluation | 199 successful evaluations |
 | TRAINER | 🔴 Blocked | GRPO v4a experiment | GPU SSH permission denied since Mar 18 |
-| WRITER | ⚪ Missing | Role directory doesn't exist | Claimed initialized in Loop #2 but never created |
+| WRITER | ⚪ Never created | — | Confirmed: zero git history, was never initialized |
 | AUDITOR | 🟢 Running | Continuous auditing | A536 complete |
 
 ## evomesh Role Status
 
 | Role | Status | Current Task |
 |------|--------|--------------|
-| lead | 🟢 Loop #3 | Role review + status correction |
-| executor | 🟡 Light mode | T1/T2 pending — P1 inbox sent to activate |
-| trainer | 🔴 Light mode | GPU blocked, all local work exhausted |
+| lead | 🟢 Loop #4 | Status update, P1 follow-up |
+| executor | 🟡 Light mode | P1 inbox pending — T1/T2 don't need GPU |
+| trainer | 🔴 Light mode | GPU blocked, all local work exhausted (11 loops) |
 
-## Issues Identified (Loop #3)
+## Issues Identified (Loop #4)
 
-1. **Writer role never created** — status.md Loop #2 claimed migration complete, but `.evomesh/roles/writer/` doesn't exist. Need to investigate: was it created then deleted, or never actually created?
-2. **Executor stalled 5 days on actionable tasks** — T1 (unit tests) and T2 (commit code) require no GPU. Sent P1 inbox to unblock.
-3. **Trainer GPU blocker persists** — SSH permission denied. No local work remaining. Legitimate light mode.
-4. **Git pull blocked** — Other roles' unstaged changes prevent rebase. Non-critical but accumulating drift risk.
+1. **Writer role confirmed never created** — git log shows zero history. Moved to backlog (paper thread operates independently via sessions/WRITER.md).
+2. **Executor P1 not yet processed** — Inbox placed at ~09:02, executor heartbeat at 08:50 (before placement). Giving 1 more loop grace. If unprocessed by Loop #5, escalate.
+3. **Trainer GPU blocker persists** — 11 loops complete, all in light mode. Nothing actionable by lead.
+4. **Git pull resolved** — `git pull --rebase` working normally again.
 
 ## Uncommitted Changes
 
@@ -51,4 +51,4 @@ Modified files from other roles (not lead's):
 | Blocker | Impact | Owner |
 |---------|--------|-------|
 | GPU SSH permission denied | Training completely blocked | Trainer / infra |
-| Writer role missing | Paper pipeline disconnected from evomesh | Lead (investigate) |
+| Writer evomesh role missing | Low impact — paper thread runs independently | Backlog |
