@@ -1,13 +1,11 @@
 # 短期记忆
 
-## Loop 10 — 2026-03-20
+## Loop 14 — 2026-03-22
 
-- **Status**: Active. T5 in progress.
+- **Status**: Idle, returning from light mode. Self-audit completed.
 - **Done**:
-  - T5a: Already done by trainer (commit `259a936`)
-  - T5b: Correction diagnostic counters added to bench.py `extra` dict
-  - T5c: M formula comparison — formulas equivalent in simulation, all invariants pass. Report sent to lead.
-  - Resolved merge conflict in lead heartbeat.json/metrics.log (kept remote)
-- **All tests pass**: test_worlds.py ✓, 22 CPU-only training tests ✓
+  - Full test suite pass (398/398, 1 skip for optional `affinetes` dep)
+  - Environment note: `/home/dev/.cache` not writable; tests need `HF_HOME=/tmp/hf_cache`
+  - Previous inbox (T5 tasks) already processed and deleted
 - **Blockers**: None.
-- **Next focus**: Commit + push T5b/T5c work.
+- **Next focus**: Awaiting new tasks from lead.
