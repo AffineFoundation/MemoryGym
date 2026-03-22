@@ -6,11 +6,13 @@
 - [ ] Validate prompt fix impact — compare M scores before/after T5a
 
 ## Backlog
-- [ ] Blueprint review (next due: Loop #45)
+- [ ] Blueprint review (next due: Loop #55)
 - [ ] Create writer evomesh role (low priority)
 - [ ] Create evaluator evomesh role (low priority)
 
 ## Completed
+- [x] Blueprint review (Loop #50) — no-change, 4th consecutive
+- [x] Blueprint review (Loop #45) — no-change, 3rd consecutive
 - [x] Blueprint review (Loop #40) — no-change review, marker updated
 - [x] Blueprint review (Loop #35) — risk severity updated, status refreshed
 - [x] Blueprint review (Loop #10) — roadmap + risks + architecture decisions updated

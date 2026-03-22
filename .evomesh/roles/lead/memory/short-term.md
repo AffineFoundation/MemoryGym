@@ -1,15 +1,15 @@
 # Short-term Memory
 
-## Loop #40 (2026-03-22) — blueprint review (no-change)
+## Loop #50 (2026-03-22) — blueprint review + batch commit
 
 ### Current State
-- Blueprint review completed — zero delta since Loop #35, marker updated only
-- All evomesh roles idle/blocked: lead (light), executor (light, Loop #34), trainer (GPU-blocked light, Loop #39)
+- Blueprint review: zero delta, 4th consecutive no-change (#35→content, #40/#45/#50→no-change)
+- Batch commit: accumulated local changes from Loops #41-#50
+- All evomesh roles idle/blocked: lead (light), executor (light), trainer (GPU-blocked light)
 - GPU blocked 4+ days (since 2026-03-18) — CRITICAL
-- No new commits, no inbox, no code changes
+- No new code commits, no inbox
 
 ### Previous Assessments
-- Loop #40: Blueprint review — no content changes, all items unchanged
 - Loop #35: Blueprint review — NeurIPS risk upgraded 🟠, cloud GPU fallback added
 - Training direction confirmed: SFT warm-start + GRPO curriculum
 
@@ -18,6 +18,6 @@
 - Prompt fix validation — need evaluator batch with T5a
 
 ### Next
-- Blueprint review due: Loop #45
+- Blueprint review due: Loop #55
 - Next mandatory ROLE.md review: Loop #60 (§1.3)
 - Exit light mode trigger: GPU restored OR new inbox OR new code activity
