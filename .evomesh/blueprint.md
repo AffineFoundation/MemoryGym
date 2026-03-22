@@ -1,7 +1,7 @@
 # memorybench-arena — Strategic Blueprint
 
 > Lead-exclusive document, read-only for other roles. Review and update every 5 Loops.
-> Last reviewed: Loop #10 (2026-03-20)
+> Last reviewed: Loop #35 (2026-03-22)
 
 ## Project Vision
 
@@ -60,8 +60,8 @@ Build a **realistic, cheat-proof, training-valuable** LLM memory management eval
 
 | Risk | Impact | Status | Mitigation |
 |------|--------|--------|------------|
-| GPU access blocked (since Mar 18) | Training completely stalled | 🔴 CRITICAL | Escalate to infra; all local prep exhausted |
-| NeurIPS deadline tight (45 days) | Abstract May 4, Paper May 6 | 🟡 | Paper thread polishing; parallelize non-GPU work |
+| GPU access blocked (since Mar 18) | Training completely stalled — 4+ days | 🔴 CRITICAL | Escalate to infra; all local prep exhausted; consider cloud GPU fallback |
+| NeurIPS deadline tight (43 days) | Abstract May 4, Paper May 6 | 🟡→🟠 | Paper thread polishing; parallelize non-GPU work; GPU block threatens training results |
 | GRPO doesn't converge | Paper lacks training results | 🟡 | GiGPO as backup; reward shaping tuned |
 | Maintenance axis validation | Fix deployed but unvalidated | 🟡 NEW | Run post-fix eval batch with correction diagnostics |
 | stream_agent.py approaching 1000 lines | 876 lines, nearing split threshold | ⚪ MONITOR | Split if it crosses 900 |

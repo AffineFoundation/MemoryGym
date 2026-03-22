@@ -1,6 +1,6 @@
 # memorybench-arena — Project Status
 
-> Lead updates every Loop. Last updated: 2026-03-20 Loop #10
+> Lead updates every Loop. Last updated: 2026-03-22 Loop #35
 
 ## Overall Status: 🟡 Idle — awaiting GPU + eval data
 
@@ -12,23 +12,24 @@ Version: v0.10.37 | Phase 135 complete | Tests: 461+ pass | Simulation: ALL PASS
 |--------|--------|--------------|-------|
 | EXECUTOR | 🔵 Light mode | T1-T5 complete | Awaiting dispatch |
 | EVALUATOR | 🟢 Running | Continuous evaluation | Next batch must use updated prompt (T5a) |
-| TRAINER | 🔴 Blocked | GRPO v4a experiment | GPU SSH blocked since Mar 18 |
+| TRAINER | 🔴 Blocked | GRPO v4a experiment | GPU SSH blocked since Mar 18 (4+ days) |
 | WRITER | ⚪ Never created | — | Paper thread via sessions/WRITER.md |
 | AUDITOR | 🟢 Running | Continuous auditing | — |
 
 ## evomesh Role Status
 
-| Role | Status | Current Task |
-|------|--------|--------------|
-| lead | 🟢 Loop #10 | Blueprint review (5-loop cycle) |
-| executor | 🔵 Light mode | Awaiting dispatch |
-| trainer | 🔴 Light mode | GPU blocked since Mar 18 |
+| Role | Status | Loop | Current Task |
+|------|--------|------|--------------|
+| lead | 🟢 Active | #35 | Blueprint review (5-loop cycle) |
+| executor | 🔵 Light mode | #24 | Awaiting dispatch |
+| trainer | 🔴 Light mode | #32 | GPU blocked since Mar 18 |
 
-## Loop #10 Actions
+## Loop #35 Actions
 
-1. **Blueprint review completed** — updated roadmap, risk table, architecture decisions. Reflects maintenance pipeline completion (T4→D1→T5→D2), test coverage gains (+22 tests), and updated risk severity.
-2. **Key strategic finding**: No direction change warranted. Project in legitimate pause. Bottleneck is infrastructure (GPU), not strategy or code.
-3. **File size check**: All core files under 1000 lines. stream_agent.py at 876 — added to monitoring.
+1. **Blueprint review** — Updated risk severity: NeurIPS deadline upgraded 🟡→🟠 (43 days to abstract, GPU block threatens training results). Added cloud GPU fallback to mitigations.
+2. **No direction change warranted** — Project remains infrastructure-blocked, not strategy-blocked. All code prep exhausted across all roles.
+3. **File size check**: stream_agent.py stable at 876 lines (under 1000 limit).
+4. **Role health**: All roles healthy but idle. Executor (Loop #24), Trainer (Loop #32) — both in light mode, no anomalies.
 
 ## Maintenance Axis Status
 
@@ -49,7 +50,7 @@ Pipeline complete:
 
 ## Blockers
 
-| Blocker | Impact | Owner |
-|---------|--------|-------|
-| GPU SSH permission denied | Training completely blocked (2+ days) | Trainer / infra — CRITICAL |
-| No post-fix eval data | Can't validate maintenance improvement | Evaluator thread |
+| Blocker | Impact | Owner | Duration |
+|---------|--------|-------|----------|
+| GPU SSH permission denied | Training completely blocked | Trainer / infra — CRITICAL | 4+ days (since Mar 18) |
+| No post-fix eval data | Can't validate maintenance improvement | Evaluator thread | Pending |
