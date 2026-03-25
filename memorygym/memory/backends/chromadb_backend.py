@@ -185,7 +185,12 @@ class ChromaDBBackend:
         )
 
     def close(self) -> None:
-        """Delete the collection and release client references."""
+        """Delete the collection and release client references.
+
+        Idempotent: safe to call multiple times.
+        """
+        if self._client is None:
+            return
         try:
             self._client.delete_collection(self._collection.name)
         except Exception:

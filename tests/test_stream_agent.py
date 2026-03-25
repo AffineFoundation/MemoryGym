@@ -329,6 +329,40 @@ def test_xml_preferred_over_code_block():
     assert calls[0]["arguments"]["answer"] == "from_xml"
 
 
+def test_missing_closing_brace_xml():
+    """LLM outputs JSON with missing closing brace — should be auto-fixed."""
+    # Real failure pattern from MiniMax model evaluations
+    text = '<tool_call>{"name": "submit_answer", "arguments": {"answer": "42"}</tool_call>'
+    calls = _extract_tool_calls(text)
+    assert len(calls) == 1
+    assert calls[0]["name"] == "submit_answer"
+    assert calls[0]["arguments"]["answer"] == "42"
+
+
+def test_missing_closing_brace_with_special_chars():
+    """Missing brace with apostrophe in value (common failure case)."""
+    text = '<tool_call>{"name": "submit_answer", "arguments": {"answer": "I don\'t know"}</tool_call>'
+    calls = _extract_tool_calls(text)
+    assert len(calls) == 1
+    assert calls[0]["arguments"]["answer"] == "I don't know"
+
+
+def test_missing_closing_brace_memory_search():
+    """Missing brace on memory_search tool call."""
+    text = '<tool_call>{"name": "memory_search", "arguments": {"query": "Entity A"}</tool_call>'
+    calls = _extract_tool_calls(text)
+    assert len(calls) == 1
+    assert calls[0]["name"] == "memory_search"
+
+
+def test_valid_json_not_broken_by_brace_fix():
+    """Valid JSON still works (regression check — don't double-close)."""
+    text = '<tool_call>{"name": "Write", "arguments": {"content": "data"}}</tool_call>'
+    calls = _extract_tool_calls(text)
+    assert len(calls) == 1
+    assert calls[0]["arguments"]["content"] == "data"
+
+
 def _check_correction_tracking(turns, new_val):
     """Replicate correction tracking logic from stream_agent for testing."""
     did_store = False

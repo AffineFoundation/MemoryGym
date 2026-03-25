@@ -17,4 +17,8 @@ RUN pip install --no-cache-dir -e .
 # Pre-download sentence-transformers model
 RUN python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('all-MiniLM-L6-v2')"
 
+# Python should handle SIGTERM for graceful shutdown in container
+ENV PYTHONUNBUFFERED=1
+STOPSIGNAL SIGTERM
+
 EXPOSE 8080

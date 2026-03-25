@@ -252,23 +252,32 @@ def _run_evaluation(
         contradictions=contradictions,
     )
 
+    # Each evaluation gets a unique collection name to prevent concurrent
+    # evaluations from corrupting each other's data.
+    eval_id = f"eval_{seed}_{template_name}_{uuid.uuid4().hex[:8]}"
     if backend_type == "markdown":
         from memorygym.memory.backends.markdown_backend import MarkdownBackend
         backend_obj = MarkdownBackend()
     else:
-        backend_obj = ChromaDBBackend()
+        backend_obj = ChromaDBBackend(collection_name=eval_id)
 
-    agent_results, writes_used, stored, eval_error, traj = run_stream_agent(
-        model=model,
-        stream=stream,
-        write_budget=write_budget,
-        api_base=base_url,
-        api_key=api_key,
-        backend=backend_obj,
-        world=world,
-        template=tmpl,
-        seed=seed,
-    )
+    try:
+        agent_results, writes_used, stored, eval_error, traj = run_stream_agent(
+            model=model,
+            stream=stream,
+            write_budget=write_budget,
+            api_base=base_url,
+            api_key=api_key,
+            backend=backend_obj,
+            world=world,
+            template=tmpl,
+            seed=seed,
+        )
+    except Exception:
+        # Ensure backend is cleaned up even if run_stream_agent fails early
+        if hasattr(backend_obj, "close"):
+            backend_obj.close()
+        raise
 
     # Compute scores
     correct = sum(r.correct for r in agent_results)

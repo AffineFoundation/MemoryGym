@@ -117,6 +117,21 @@ class AgentResult:
     error: str | None = None          # non-None if eval model failed
 
 
+def _try_parse_json(raw: str) -> dict | None:
+    """Try parsing JSON, auto-fixing common LLM errors (missing braces)."""
+    try:
+        return json.loads(raw)
+    except json.JSONDecodeError:
+        pass
+    # Common LLM error: missing closing brace(s) for nested objects
+    for suffix in ("}", "}}"):
+        try:
+            return json.loads(raw + suffix)
+        except json.JSONDecodeError:
+            continue
+    return None
+
+
 def _extract_tool_calls(text: str) -> list[dict]:
     """Extract tool calls from text.
 
@@ -124,36 +139,29 @@ def _extract_tool_calls(text: str) -> list[dict]:
     1. <tool_call>/<function_call> XML tags
     2. Markdown code blocks (```json ... ```)
     3. Bare JSON with "name"/"arguments" keys
+
+    Handles common LLM JSON errors (missing closing braces).
     """
     calls = []
     # 1) Try XML-wrapped format first (<tool_call> or <function_call>)
     for match in _TOOL_CALL_RE.finditer(text):
-        try:
-            call = json.loads(match.group(1))
-            if call.get("name") in _KNOWN_TOOLS:
-                calls.append(call)
-        except json.JSONDecodeError:
-            continue
+        call = _try_parse_json(match.group(1))
+        if call and call.get("name") in _KNOWN_TOOLS:
+            calls.append(call)
     if calls:
         return calls
     # 2) Try markdown code blocks
     for match in _CODE_BLOCK_RE.finditer(text):
-        try:
-            call = json.loads(match.group(1))
-            if call.get("name") in _KNOWN_TOOLS:
-                calls.append(call)
-        except json.JSONDecodeError:
-            continue
+        call = _try_parse_json(match.group(1))
+        if call and call.get("name") in _KNOWN_TOOLS:
+            calls.append(call)
     if calls:
         return calls
     # 3) Fallback: bare JSON (Qwen-style)
     for match in _BARE_JSON_RE.finditer(text):
-        try:
-            call = json.loads(match.group(0))
-            if call.get("name") in _KNOWN_TOOLS:
-                calls.append(call)
-        except json.JSONDecodeError:
-            continue
+        call = _try_parse_json(match.group(0))
+        if call and call.get("name") in _KNOWN_TOOLS:
+            calls.append(call)
     return calls
 
 
@@ -346,7 +354,9 @@ def run_stream_agent(
     judge_client = OpenAI(api_key=cfg.api_key, base_url=cfg.api_url)
 
     if backend is None:
-        backend = ChromaDBBackend()
+        import uuid as _uuid
+        backend = ChromaDBBackend(
+            collection_name=f"agent_{_uuid.uuid4().hex[:8]}")
 
     def _close_clients() -> None:
         try:
