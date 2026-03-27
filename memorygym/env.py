@@ -15,6 +15,7 @@ Usage:
 
 from __future__ import annotations
 
+import asyncio
 import time
 import uuid
 from collections import defaultdict
@@ -52,6 +53,7 @@ class Actor:
         backend: str = "chromadb",
         timeout: int = 3600,
         task_id: int | None = None,
+        **kwargs,
     ) -> dict:
         """Run a complete evaluation episode.
 
@@ -86,12 +88,14 @@ class Actor:
                 f"Unknown tier '{tier}'. Choose from: {', '.join(TIERS)}")
 
         try:
-            result = _run_evaluation(
+            result = await asyncio.to_thread(
+                _run_evaluation,
                 model=model,
                 base_url=base_url,
                 api_key=current_key,
                 seed=seed,
                 template_name=template,
+                tier=tier,
                 tier_cfg=tier_cfg,
                 backend_type=backend,
             )
@@ -202,15 +206,14 @@ class Actor:
 def _parse_task_id(task_id: int) -> str:
     """Map task_id to template name via stable registry.
 
-    task_id is an index into TEMPLATE_REGISTRY (0..N-1).
-    Seed is passed separately by the caller.
+    Supports both direct indices (0..N-1) and large task_ids used by
+    sampling platforms: ``task_id % len(TEMPLATE_REGISTRY)`` selects
+    the template.  Seed is passed separately by the caller.
     """
     from memorygym.worlds import TEMPLATE_REGISTRY
-    if task_id < 0 or task_id >= len(TEMPLATE_REGISTRY):
-        raise ValueError(
-            f"task_id must be 0..{len(TEMPLATE_REGISTRY) - 1}, "
-            f"got {task_id}")
-    return TEMPLATE_REGISTRY[task_id]
+    if task_id < 0:
+        raise ValueError(f"task_id must be >= 0, got {task_id}")
+    return TEMPLATE_REGISTRY[task_id % len(TEMPLATE_REGISTRY)]
 
 
 def _run_evaluation(
@@ -219,6 +222,7 @@ def _run_evaluation(
     api_key: str | None,
     seed: int,
     template_name: str,
+    tier: str,
     tier_cfg: dict,
     backend_type: str = "chromadb",
 ) -> dict:
@@ -321,8 +325,8 @@ def _run_evaluation(
     )
 
     return {
-        "task_name": f"memorygym:{template_name}:{n_entities}e:{n_questions}q",
-        "score": round(correct / total, 4) if total else 0.0,
+        "task_name": f"memorygym:{template_name}:{tier}",
+        "score": axis_scores["composite"],
         "success": total > 0 and eval_error is None,
         "time_taken": 0.0,  # filled by caller
         "extra": {
@@ -339,6 +343,7 @@ def _run_evaluation(
             "missed_entities": len(missed),
             "per_axis": axis_scores,
             "composite": axis_scores["composite"],
+            "accuracy": round(correct / total, 4) if total else 0.0,
             "by_competency": comp_scores,
             "answer_details": answer_details,
             "conversation": conversation,

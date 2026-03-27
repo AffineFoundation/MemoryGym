@@ -1,0 +1,14 @@
+memorygym/training/
+memorygym/adapters/
+scripts/
+tests/
+data/
+devlog/
+sessions/
+docs/
+.evomesh/
+.claude/
+.git/
+__pycache__/
+*.pyc
+*.egg-info/
