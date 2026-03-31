@@ -326,7 +326,7 @@ def _run_evaluation(
 
     return {
         "task_name": f"memorygym:{template_name}:{tier}",
-        "score": axis_scores["composite"],
+        "score": axis_scores["composite"] if writes_used > 0 else 0.0,
         "success": total > 0 and eval_error is None,
         "time_taken": 0.0,  # filled by caller
         "extra": {
