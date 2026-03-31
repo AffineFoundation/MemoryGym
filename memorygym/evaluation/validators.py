@@ -231,6 +231,10 @@ def validate_with_fallback(
     if competency == "abstention":
         return _VALIDATOR.validate(answer, ground_truth, competency), "rule:abstention"
 
+    # Empty or trivially non-informative answers are always wrong
+    if not answer or not answer.strip():
+        return False, "rule:empty_answer"
+
     if _VALIDATOR.validate(answer, ground_truth, competency):
         return True, "rule:pass"
 
@@ -258,6 +262,10 @@ async def async_validate_with_fallback(
     """
     if competency == "abstention":
         return _VALIDATOR.validate(answer, ground_truth, competency), "rule:abstention"
+
+    # Empty or trivially non-informative answers are always wrong
+    if not answer or not answer.strip():
+        return False, "rule:empty_answer"
 
     if _VALIDATOR.validate(answer, ground_truth, competency):
         return True, "rule:pass"
