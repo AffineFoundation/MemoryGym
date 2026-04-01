@@ -350,8 +350,11 @@ def run_stream_agent(
     cfg = get_api_config(api_key=api_key, api_url=api_base)
     client = OpenAI(api_key=cfg.api_key, base_url=cfg.api_url)
 
-    # Judge client: same API config (Chutes supports cheap multi-model judging)
-    judge_client = OpenAI(api_key=cfg.api_key, base_url=cfg.api_url)
+    # Judge client: always use Chutes public API with TEE models.
+    # Must NOT use miner's base_url — miner-controlled endpoints can
+    # return garbage verdicts to inflate scores.
+    _judge_key = os.environ.get("CHUTES_API_KEY") or cfg.api_key
+    judge_client = OpenAI(api_key=_judge_key, base_url="https://llm.chutes.ai/v1")
 
     if backend is None:
         import uuid as _uuid
