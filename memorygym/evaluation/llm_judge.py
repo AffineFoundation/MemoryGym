@@ -16,6 +16,8 @@ import os as _os
 _JUDGE_MODEL_OVERRIDE = _os.environ.get("MEMORYGYM_JUDGE_MODEL")
 JUDGE_MODELS = (
     [_JUDGE_MODEL_OVERRIDE] if _JUDGE_MODEL_OVERRIDE else [
+        "Qwen/Qwen3-32B-TEE",
+        "openai/gpt-oss-120b-TEE",
         "Qwen/Qwen3-235B-A22B-Instruct-2507-TEE",
         "moonshotai/Kimi-K2.5-TEE",
         "MiniMaxAI/MiniMax-M2.5-TEE",
