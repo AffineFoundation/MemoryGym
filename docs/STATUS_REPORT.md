@@ -216,8 +216,6 @@ Adapters (adapters/)
 
 **GRPO v3 code ready**: IPS (importance sampling) + DAPO Clip-Higher + KL regularization + clipped ratio. Addresses v2 policy collapse (loss → negative).
 
-**Blocked**: GPU SSH not reachable for 9+ days. Requires infrastructure admin intervention.
-
 ---
 
 ## 6. Competitive Landscape
@@ -295,7 +293,7 @@ Anti-gaming:  9 simulation strategies
 10.8% breadth across all models. Low storage coverage cascades into reasoning and maintenance failures. This is a model-side limitation, not a system issue.
 
 ### 8.2 Training Not Yet Validated End-to-End
-SFT v6 data and GRPO v3 code are ready, but GPU access has been blocked for 9+ days. Largest open risk.
+SFT v6 data and GRPO v3 code are ready but not yet validated end-to-end.
 
 ### 8.3 Reasoning Tests Computation, Not Understanding
 All 20 reasoning types are formula-based. Measures "can you compute on stored data?" not semantic understanding.
