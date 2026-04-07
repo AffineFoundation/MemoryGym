@@ -26,8 +26,9 @@ JUDGE_MODELS = (
 )
 
 # Total timeout for all judge attempts (seconds).
-# After this, raise RuntimeError instead of retrying forever.
-JUDGE_TIMEOUT_S = 300
+# Per-question judge timeout. Keeps retrying across all TEE models
+# with 10s backoff until this limit. Aligned with eval proxy_timeout.
+JUDGE_TIMEOUT_S = 600
 
 _VERDICT_RE = re.compile(r"(VERDICT_CORRECT|VERDICT_INCORRECT)", re.IGNORECASE)
 
@@ -164,11 +165,13 @@ def llm_judge_validate_sync(
 
     t0 = _time.monotonic()
     errors: list[str] = []
-    for round_num in range(10):  # up to 10 full rounds through all models
+    round_num = 0
+    while True:
         for model in JUDGE_MODELS:
             if _time.monotonic() - t0 > JUDGE_TIMEOUT_S:
                 raise RuntimeError(
-                    f"Judge timeout after {JUDGE_TIMEOUT_S}s. "
+                    f"Judge timeout after {JUDGE_TIMEOUT_S}s, "
+                    f"{round_num} rounds. "
                     f"Last errors: {'; '.join(errors[-3:])}"
                 )
             try:
@@ -183,16 +186,15 @@ def llm_judge_validate_sync(
             except Exception as exc:
                 errors.append(f"{model}: {exc}")
                 continue  # try next model immediately
-        # All models failed this round — backoff before next round
-        if round_num < 9:
-            elapsed = _time.monotonic() - t0
-            if elapsed > JUDGE_TIMEOUT_S:
-                break
-            wait = min(2 ** round_num * 5, 60)
-            _time.sleep(wait)
+        # All models failed this round — short fixed backoff, then retry
+        round_num += 1
+        elapsed = _time.monotonic() - t0
+        if elapsed > JUDGE_TIMEOUT_S:
+            break
+        _time.sleep(min(10, JUDGE_TIMEOUT_S - elapsed))
 
     raise RuntimeError(
-        f"All judge models failed after {round_num + 1} rounds "
+        f"All judge models failed after {round_num} rounds "
         f"({_time.monotonic() - t0:.0f}s): "
         f"{'; '.join(errors[-len(JUDGE_MODELS):])}"
     )
