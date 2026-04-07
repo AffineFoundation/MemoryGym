@@ -777,19 +777,22 @@ def run_stream_agent(
             try:
                 ok, reason = llm_judge_validate_sync(
                     judge_client, question, gt_, answer, competency)
-                return idx, ok, f"judge:{reason}"
+                return idx, ok, f"judge:{reason}", None
             except Exception as exc:
-                return idx, False, f"judge:failed({exc})"
+                return idx, False, f"judge:failed({exc})", str(exc)
 
         judge_t0 = time.time()
         n_pending = len(pending_judge)
         print(f"  Judging {n_pending} answers in parallel ...", end="",
               flush=True)
+        judge_errors = []
         with ThreadPoolExecutor(max_workers=min(n_pending, 4)) as pool:
             futures = [pool.submit(_run_judge, item)
                        for item in pending_judge]
             for future in as_completed(futures):
-                idx, ok, reason = future.result()
+                idx, ok, reason, err = future.result()
+                if err:
+                    judge_errors.append(err)
                 results[idx] = AgentResult(
                     question=results[idx].question,
                     answer=results[idx].answer,
@@ -810,6 +813,10 @@ def run_stream_agent(
         judge_results = sum(1 for i, _, _, _, _ in pending_judge
                            if results[i].correct)
         print(f" {judge_results}/{n_pending} correct, {judge_elapsed:.1f}s")
+
+        if judge_errors:
+            eval_error = (f"Judge failed for {len(judge_errors)}/{n_pending} "
+                         f"answers: {judge_errors[0][:200]}")
 
         # Update trajectory entries with post-judging correct values
         judged_indices = {i for i, _, _, _, _ in pending_judge}

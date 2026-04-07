@@ -324,29 +324,39 @@ def _run_evaluation(
         write_budget=write_budget,
     )
 
+    has_error = eval_error is not None
+    if has_error or writes_used == 0 or len(stored_names) == 0:
+        final_score = 0.0
+    else:
+        final_score = axis_scores["composite"]
+
+    extra = {
+        "model": model,
+        "backend": backend_type,
+        "seed": seed,
+        "template": template_name,
+        "n_entities": n_entities,
+        "n_questions": n_questions,
+        "n_corrections": n_corrections,
+        "write_budget": write_budget,
+        "writes_used": writes_used,
+        "stored_entities": len(stored_names),
+        "missed_entities": len(missed),
+        "per_axis": axis_scores,
+        "composite": axis_scores["composite"],
+        "accuracy": round(correct / total, 4) if total else 0.0,
+        "by_competency": comp_scores,
+        "answer_details": answer_details,
+        "conversation": conversation,
+        "version": __version__,
+    }
+    if has_error:
+        extra["error"] = eval_error
+
     return {
         "task_name": f"memorygym:{template_name}:{tier}",
-        "score": axis_scores["composite"] if writes_used > 0 and len(stored_names) > 0 else 0.0,
-        "success": total > 0 and eval_error is None,
+        "score": final_score,
+        "success": total > 0 and not has_error,
         "time_taken": 0.0,  # filled by caller
-        "extra": {
-            "model": model,
-            "backend": backend_type,
-            "seed": seed,
-            "template": template_name,
-            "n_entities": n_entities,
-            "n_questions": n_questions,
-            "n_corrections": n_corrections,
-            "write_budget": write_budget,
-            "writes_used": writes_used,
-            "stored_entities": len(stored_names),
-            "missed_entities": len(missed),
-            "per_axis": axis_scores,
-            "composite": axis_scores["composite"],
-            "accuracy": round(correct / total, 4) if total else 0.0,
-            "by_competency": comp_scores,
-            "answer_details": answer_details,
-            "conversation": conversation,
-            "version": __version__,
-        },
+        "extra": extra,
     }
