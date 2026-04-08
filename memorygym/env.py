@@ -105,6 +105,7 @@ class Actor:
                 "task_name": f"memorygym:{template}:{tier}",
                 "score": 0.0,
                 "success": False,
+                "error": str(exc),
                 "time_taken": time.time() - start_time,
                 "extra": {
                     "error": str(exc),
@@ -353,10 +354,13 @@ def _run_evaluation(
     if has_error:
         extra["error"] = eval_error
 
-    return {
+    result = {
         "task_name": f"memorygym:{template_name}:{tier}",
         "score": final_score,
         "success": total > 0 and not has_error,
         "time_taken": 0.0,  # filled by caller
         "extra": extra,
     }
+    if has_error:
+        result["error"] = eval_error
+    return result
