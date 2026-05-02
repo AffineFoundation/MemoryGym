@@ -962,6 +962,56 @@ def test_run_stream_agent_wallclock_budget_finalizes_early(monkeypatch):
         f"got {len(traj)} trajectory entries")
 
 
+def test_run_tool_loop_honors_wallclock_deadline_during_retries(monkeypatch):
+    """A retry storm must not cross the wallclock deadline. The retry
+    chain has a max idle of 10×60s=600s; without this guard, the eval
+    can overshoot the validator's hard kill (7210s) on a single LLM
+    call and lose all partial work. The fix surfaces a wallclock
+    error so the outer loop finalizes immediately."""
+    from memorygym.agents.stream_agent import _run_tool_loop
+
+    state = {"calls": 0}
+
+    class _FailingStub:
+        def create(self, **kwargs):
+            state["calls"] += 1
+            raise Exception("Error code: 429 - capacity")
+
+    class _Client:
+        chat = type("C", (), {"completions": _FailingStub()})()
+
+        def close(self):
+            pass
+
+    # Patch sleep so the deadline check is the only thing that can
+    # break the retry loop — otherwise the test would itself wait.
+    import memorygym.agents.stream_agent as sa
+    monkeypatch.setattr(sa.time, "sleep", lambda *a, **kw: None)
+
+    backend = _fresh_backend()
+    budget = MemoryBudget(total_writes=5)
+
+    import time as _t
+    deadline = _t.time() - 1  # already passed
+    stats = _run_tool_loop(
+        _Client(), "test-model",
+        [{"role": "system", "content": "x"},
+         {"role": "user", "content": "y"}],
+        backend, budget,
+        max_turns=10, max_retries=10,
+        wallclock_deadline=deadline,
+    )
+
+    # Should bail immediately, not run the full 10 retries
+    assert stats.error is not None, "expected stats.error to be set"
+    assert "wallclock" in stats.error.lower(), (
+        f"expected wallclock_exhausted error, got: {stats.error}")
+    # Calls should be at most a handful (one initial + a couple retries
+    # before deadline check fires) — definitely far under 10.
+    assert state["calls"] <= 3, (
+        f"deadline guard didn't trip fast enough: {state['calls']} calls")
+
+
 if __name__ == "__main__":
     import sys
     tests = [v for k, v in sorted(globals().items()) if k.startswith("test_")]

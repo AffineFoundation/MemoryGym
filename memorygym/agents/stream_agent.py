@@ -218,6 +218,7 @@ def _run_tool_loop(
     backend: MemoryBackend, budget: MemoryBudget,
     max_turns: int = 10, max_retries: int = 10,
     *, free_edit: bool = False,
+    wallclock_deadline: float | None = None,
 ) -> _LoopStats:
     """Run text-based tool loop until submit_answer or max_turns.
 
@@ -225,6 +226,11 @@ def _run_tool_loop(
         max_retries: Max consecutive retries for transient eval model errors.
             After this many failures, the loop aborts with stats.error set.
             Judge/infrastructure errors are handled separately (always retry).
+        wallclock_deadline: Optional absolute wall-clock cutoff (epoch
+            seconds). When approaching it, exit the retry chain early
+            so the caller can finalize partials before a server-side
+            kill. Without this guard, a 10-retry storm at 60s cap can
+            overshoot the outer deadline by ~10 minutes.
     """
     stats = _LoopStats()
     t0 = time.time()
@@ -278,7 +284,22 @@ def _run_tool_loop(
                         f"retries: {err_str[:200]}")
                     stats.elapsed = time.time() - t0
                     return stats
+                # Honor the outer deadline: if even the *minimum* backoff
+                # would push us past it, stop retrying now and surface
+                # the error so the outer loop can finalize partials.
                 wait = min(2 ** attempt * 5, 60)
+                if wallclock_deadline is not None:
+                    remaining = wallclock_deadline - time.time()
+                    if remaining <= 0:
+                        stats.error = (
+                            f"wallclock_exhausted during retry "
+                            f"#{attempt}: {err_str[:160]}")
+                        stats.elapsed = time.time() - t0
+                        return stats
+                    if wait > remaining:
+                        # Last-chance try with a short wait — never
+                        # cross the deadline.
+                        wait = max(1, int(remaining))
                 print(f" [retry #{attempt}/{max_retries} in {wait}s]",
                       end="", flush=True)
                 time.sleep(wait)
@@ -561,7 +582,8 @@ def run_stream_agent(
             )
             entities_seen += n_ents
             messages.append({"role": "user", "content": content})
-            stats = _run_tool_loop(client, model, messages, backend, budget)
+            stats = _run_tool_loop(client, model, messages, backend, budget,
+                                   wallclock_deadline=wallclock_deadline)
             total_api_calls += stats.api_calls
 
             if quiet:
@@ -629,7 +651,8 @@ def run_stream_agent(
             )
             messages.append({"role": "user", "content": content})
             stats = _run_tool_loop(client, model, messages, backend, budget,
-                                   free_edit=True)
+                                   free_edit=True,
+                                   wallclock_deadline=wallclock_deadline)
             total_api_calls += stats.api_calls
 
             # Determine if correction was actually applied
@@ -732,7 +755,8 @@ def run_stream_agent(
             )
             messages.append({"role": "user", "content": content})
             stats = _run_tool_loop(
-                client, model, messages, backend, budget)
+                client, model, messages, backend, budget,
+                wallclock_deadline=wallclock_deadline)
             total_api_calls += stats.api_calls
 
             if stats.error:
@@ -867,7 +891,8 @@ def run_stream_agent(
                 "Store only if relevant to your tasks."
             )
             messages.append({"role": "user", "content": content})
-            stats = _run_tool_loop(client, model, messages, backend, budget)
+            stats = _run_tool_loop(client, model, messages, backend, budget,
+                                   wallclock_deadline=wallclock_deadline)
             total_api_calls += stats.api_calls
 
         # Selective redaction: keep system prompt + memory state summary.
