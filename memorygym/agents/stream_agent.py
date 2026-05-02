@@ -129,6 +129,42 @@ def _shrink_completion_cap(current_cap: int, error_text: str) -> int | None:
     return None
 
 
+def _parse_retry_after(exc: BaseException) -> float | None:
+    """Pull a Retry-After hint from a 429/503 response, in seconds.
+
+    Returns None if no parseable hint is present. When the provider tells
+    us how long to wait, we should respect that instead of guessing via
+    exp-backoff — exp-backoff overshoots (60s when the chute would have
+    accepted at 5s) and undershoots (5s when the chute needs 60s, then
+    we burn another retry slot).
+
+    Capped to [1, 120] so a malformed/abusive header can't park us for
+    hours.
+    """
+    try:
+        resp = getattr(exc, "response", None)
+        if resp is None:
+            return None
+        hdrs = getattr(resp, "headers", None)
+        if hdrs is None:
+            return None
+        for key in ("Retry-After", "retry-after",
+                    "X-RateLimit-Reset-After", "x-ratelimit-reset-after"):
+            val = hdrs.get(key)
+            if val is None:
+                continue
+            try:
+                seconds = float(val)
+            except (TypeError, ValueError):
+                # HTTP-date form is rare in practice; skip rather than
+                # bring in a date parser.
+                continue
+            return max(1.0, min(120.0, seconds))
+    except Exception:
+        return None
+    return None
+
+
 @dataclass
 class AgentResult:
     """Result of processing one question event."""
@@ -284,10 +320,15 @@ def _run_tool_loop(
                         f"retries: {err_str[:200]}")
                     stats.elapsed = time.time() - t0
                     return stats
+                # Prefer the provider's Retry-After hint when present —
+                # exp-backoff is a guess, the header is the chute saying
+                # exactly when it will accept again. Falls back to
+                # exp-backoff when no hint is provided.
+                hint = _parse_retry_after(e)
+                wait = hint if hint is not None else min(2 ** attempt * 5, 60)
                 # Honor the outer deadline: if even the *minimum* backoff
                 # would push us past it, stop retrying now and surface
                 # the error so the outer loop can finalize partials.
-                wait = min(2 ** attempt * 5, 60)
                 if wallclock_deadline is not None:
                     remaining = wallclock_deadline - time.time()
                     if remaining <= 0:
@@ -300,7 +341,8 @@ def _run_tool_loop(
                         # Last-chance try with a short wait — never
                         # cross the deadline.
                         wait = max(1, int(remaining))
-                print(f" [retry #{attempt}/{max_retries} in {wait}s]",
+                hint_tag = " hinted" if hint is not None else ""
+                print(f" [retry #{attempt}/{max_retries} in {wait}s{hint_tag}]",
                       end="", flush=True)
                 time.sleep(wait)
         if response is None:

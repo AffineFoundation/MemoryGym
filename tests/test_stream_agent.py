@@ -1012,6 +1012,99 @@ def test_run_tool_loop_honors_wallclock_deadline_during_retries(monkeypatch):
         f"deadline guard didn't trip fast enough: {state['calls']} calls")
 
 
+def test_parse_retry_after_extracts_seconds():
+    """Provider's Retry-After header (seconds) should override exp-backoff."""
+    from memorygym.agents.stream_agent import _parse_retry_after
+
+    class _FakeHeaders(dict):
+        pass
+
+    class _FakeResponse:
+        def __init__(self, headers):
+            self.headers = _FakeHeaders(headers)
+
+    class _FakeExc(Exception):
+        def __init__(self, headers):
+            super().__init__("rate limited")
+            self.response = _FakeResponse(headers)
+
+    # Standard Retry-After
+    assert _parse_retry_after(_FakeExc({"Retry-After": "30"})) == 30.0
+    # Lowercase
+    assert _parse_retry_after(_FakeExc({"retry-after": "5"})) == 5.0
+    # Cap at 120
+    assert _parse_retry_after(_FakeExc({"Retry-After": "9999"})) == 120.0
+    # Floor at 1
+    assert _parse_retry_after(_FakeExc({"Retry-After": "0.1"})) == 1.0
+    # Float input
+    assert _parse_retry_after(_FakeExc({"Retry-After": "12.5"})) == 12.5
+    # Missing header -> None
+    assert _parse_retry_after(_FakeExc({})) is None
+    # No response attribute -> None
+    assert _parse_retry_after(Exception("plain")) is None
+    # Bad value (HTTP-date) -> None (skipped)
+    assert _parse_retry_after(
+        _FakeExc({"Retry-After": "Wed, 21 Oct 2026 07:28:00 GMT"})
+    ) is None
+
+
+def test_run_tool_loop_uses_retry_after_hint(monkeypatch):
+    """When the 429 carries a Retry-After header, the wait time should
+    match the hint instead of the exp-backoff value."""
+    from memorygym.agents.stream_agent import _run_tool_loop
+    import memorygym.agents.stream_agent as sa
+
+    class _Hdrs(dict):
+        pass
+
+    class _Resp:
+        def __init__(self, hdrs):
+            self.headers = _Hdrs(hdrs)
+
+    class _Exc(Exception):
+        def __init__(self, msg, hdrs):
+            super().__init__(msg)
+            self.response = _Resp(hdrs)
+
+    # Always raise 429 with Retry-After=7s
+    state = {"calls": 0, "sleeps": []}
+
+    class _Stub:
+        def create(self, **kwargs):
+            state["calls"] += 1
+            raise _Exc("Error code: 429 - capacity",
+                       {"Retry-After": "7"})
+
+    class _Client:
+        chat = type("C", (), {"completions": _Stub()})()
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(sa.time, "sleep",
+                        lambda s: state["sleeps"].append(s))
+
+    backend = _fresh_backend()
+    budget = MemoryBudget(total_writes=5)
+
+    stats = _run_tool_loop(
+        _Client(), "test", [
+            {"role": "system", "content": "x"},
+            {"role": "user", "content": "y"},
+        ],
+        backend, budget,
+        max_turns=1, max_retries=3,
+    )
+
+    # All sleep durations should equal the hint (7.0), not exp backoff (5,10,20)
+    assert stats.error is not None, "expected stats.error"
+    assert all(s == 7.0 for s in state["sleeps"]), (
+        f"expected all sleeps to equal Retry-After hint of 7s; got {state['sleeps']}")
+    assert len(state["sleeps"]) == 3, (
+        f"expected exactly 3 retries before exhausting max_retries=3; "
+        f"got {len(state['sleeps'])}")
+
+
 if __name__ == "__main__":
     import sys
     tests = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
