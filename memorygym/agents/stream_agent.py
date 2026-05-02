@@ -305,11 +305,22 @@ def _run_tool_loop(
                         stats.answer = "I don't have enough information"
                         response = None
                         break
+                # OpenAI APITimeoutError surfaces as "Request timed out." —
+                # two words, so a bare "timeout" substring check would miss
+                # it, propagate the exception out of the tool loop, and
+                # bypass every graceful-continuation guard. Live observation
+                # (2026-05-02): 4/4 memory samples in 1h died with
+                # `error=Request timed out.` because of exactly this gap.
                 transient = ("429" in err_str or "503" in err_str
                              or "capacity" in err_lower
                              or "overloaded" in err_lower
                              or "timeout" in err_lower
-                             or "502" in err_str)
+                             or "timed out" in err_lower
+                             or "502" in err_str
+                             or "504" in err_str
+                             or "connection" in err_lower
+                             or "apitimeout" in err_lower
+                             or "readtimeout" in err_lower)
                 if not transient:
                     raise
                 attempt += 1

@@ -962,6 +962,57 @@ def test_run_stream_agent_wallclock_budget_finalizes_early(monkeypatch):
         f"got {len(traj)} trajectory entries")
 
 
+def test_run_tool_loop_treats_request_timed_out_as_transient(monkeypatch):
+    """OpenAI APITimeoutError uses message 'Request timed out.' (two
+    words). A previous bug checked only for 'timeout' substring, missed
+    'timed out', and propagated the exception out of the tool loop —
+    bypassing every graceful-continuation guard. Live observation
+    2026-05-02: 4/4 memory samples in 1h died with this error before
+    the fix.
+    """
+    from memorygym.agents.stream_agent import _run_tool_loop
+    import memorygym.agents.stream_agent as sa
+
+    state = {"calls": 0}
+
+    class _Stub:
+        def create(self, **kwargs):
+            state["calls"] += 1
+            # OpenAI APITimeoutError-style message — exactly what the SDK
+            # emits when a request exceeds its read timeout. No 'timeout'
+            # substring (one word), only 'timed out' (two words).
+            raise Exception("Request timed out.")
+
+    class _Client:
+        chat = type("C", (), {"completions": _Stub()})()
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(sa.time, "sleep", lambda *a, **kw: None)
+
+    backend = _fresh_backend()
+    budget = MemoryBudget(total_writes=5)
+
+    stats = _run_tool_loop(
+        _Client(), "test-model",
+        [{"role": "system", "content": "x"},
+         {"role": "user", "content": "y"}],
+        backend, budget,
+        max_turns=1, max_retries=3,
+    )
+
+    # Must be treated as transient → retried 3 times → exhausted with
+    # stats.error set. NOT raised out of the tool loop (which would
+    # bypass graceful continuation in the outer event loop).
+    assert stats.error is not None, (
+        "expected 'Request timed out.' to be caught and converted to "
+        "stats.error, but it was raised out of the tool loop")
+    assert "Request timed out" in stats.error or "unreachable" in stats.error
+    assert state["calls"] == 4, (
+        f"expected initial + 3 retries = 4 calls; got {state['calls']}")
+
+
 def test_run_tool_loop_honors_wallclock_deadline_during_retries(monkeypatch):
     """A retry storm must not cross the wallclock deadline. The retry
     chain has a max idle of 10×60s=600s; without this guard, the eval
