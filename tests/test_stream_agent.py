@@ -1,9 +1,13 @@
 """Tests for stream_agent tool parsing and execution (no API calls)."""
 
+import os
+
 from memorygym.agents.stream_agent import (
     _execute_tool,
     _extract_tool_calls,
     _format_documents,
+    _completion_max_tokens,
+    _shrink_completion_cap,
     SYSTEM_PROMPT,
     _TOOL_CALL_RE,
 )
@@ -198,6 +202,35 @@ def test_system_prompt_budget():
     assert "30" in prompt
     assert "Write" in prompt
     assert "submit_answer" in prompt
+
+
+def test_completion_max_tokens_default_and_override():
+    """Eval max_tokens uses a safe default and respects env override."""
+    prev = os.environ.get("MEMORYGYM_MAX_TOKENS")
+    try:
+        os.environ.pop("MEMORYGYM_MAX_TOKENS", None)
+        assert _completion_max_tokens() == 2048
+        os.environ["MEMORYGYM_MAX_TOKENS"] = "1024"
+        assert _completion_max_tokens() == 1024
+        os.environ["MEMORYGYM_MAX_TOKENS"] = "invalid"
+        assert _completion_max_tokens() == 2048
+    finally:
+        if prev is None:
+            os.environ.pop("MEMORYGYM_MAX_TOKENS", None)
+        else:
+            os.environ["MEMORYGYM_MAX_TOKENS"] = prev
+
+
+def test_shrink_completion_cap_from_overflow_error():
+    """Overflow errors should shrink max_tokens based on prompt length."""
+    err = (
+        "This model's maximum context length is 8192 tokens. "
+        "However, you requested 1024 output tokens and your prompt contains "
+        "at least 7169 input tokens, for a total of at least 8193 tokens."
+    )
+    assert _shrink_completion_cap(1024, err) == 959
+    assert _shrink_completion_cap(512, "input_tokens, value=8100") == 64
+    assert _shrink_completion_cap(64, err) is None
 
 
 def test_edit_updates_existing():
@@ -507,6 +540,426 @@ def test_free_edit_miss_no_refund_needed():
     )
     assert "not found" in result.lower()
     assert budget.writes_used == 1  # Only the initial Write
+
+
+def test_budget_death_loop_breaks_early():
+    """When budget is exhausted, _run_tool_loop must break after at most
+    2 consecutive turns of all-rejected Write/Edit, not run to max_turns.
+
+    Score-invariance: writes_used, stored_count, backend.list() must be
+    identical to running the full max_turns; only api_calls/elapsed differ.
+    """
+    from memorygym.agents.stream_agent import _run_tool_loop
+
+    class _ChatCompletionsStub:
+        def __init__(self, outer):
+            self.outer = outer
+
+        def create(self, **kwargs):
+            self.outer.calls += 1
+            # Always emit a Write attempt — simulates budget death loop
+            text = ('<tool_call>{"name": "Write", "arguments": '
+                    '{"content": "irrelevant"}}</tool_call>')
+
+            class _Msg:
+                content = text
+
+            class _Choice:
+                message = _Msg()
+
+            class _Resp:
+                choices = [_Choice()]
+
+            return _Resp()
+
+    class _MockClient:
+        def __init__(self):
+            self.calls = 0
+            self.chat = type("C", (), {})()
+            self.chat.completions = _ChatCompletionsStub(self)
+
+    client = _MockClient()
+    backend = _fresh_backend()
+    # Budget pre-exhausted to force "Budget exhausted" on every Write
+    budget = MemoryBudget(total_writes=5, writes_used=5)
+    initial_writes_used = budget.writes_used
+    initial_entries = len(backend.list())
+
+    messages = [
+        {"role": "system", "content": "sys"},
+        {"role": "user", "content": "ingest event"},
+    ]
+    stats = _run_tool_loop(
+        client, "test-model", messages, backend, budget,
+        max_turns=10,
+    )
+
+    # Must break after detecting 2 consecutive all-rejected turns,
+    # not continue to max_turns=10
+    assert stats.api_calls <= 3, (
+        f"budget death loop not capped: ran {stats.api_calls} turns "
+        f"(expected <=3, max_turns=10)")
+    # Score-invariance: budget and backend untouched
+    assert budget.writes_used == initial_writes_used
+    assert len(backend.list()) == initial_entries
+    # Every turn's results must be Budget exhausted
+    for turn in stats.turns:
+        for r in turn["tool_results"]:
+            assert "Budget exhausted" in r
+
+
+def test_budget_death_loop_does_not_break_when_writes_succeed():
+    """When Writes succeed (budget available), loop must continue normally —
+    the death-loop detector must NOT fire on healthy ingest."""
+    from memorygym.agents.stream_agent import _run_tool_loop
+
+    class _ChatCompletionsStub:
+        def __init__(self, outer):
+            self.outer = outer
+
+        def create(self, **kwargs):
+            self.outer.calls += 1
+            if self.outer.calls < 3:
+                text = ('<tool_call>{"name": "Write", "arguments": '
+                        f'{{"content": "entry-{self.outer.calls}"}}}}'
+                        '</tool_call>')
+            else:
+                # Exit gracefully on turn 3 by submitting an answer
+                text = ('<tool_call>{"name": "submit_answer", '
+                        '"arguments": {"answer": "done"}}</tool_call>')
+
+            class _Msg:
+                content = text
+
+            class _Choice:
+                message = _Msg()
+
+            class _Resp:
+                choices = [_Choice()]
+
+            return _Resp()
+
+    class _MockClient:
+        def __init__(self):
+            self.calls = 0
+            self.chat = type("C", (), {})()
+            self.chat.completions = _ChatCompletionsStub(self)
+
+    client = _MockClient()
+    backend = _fresh_backend()
+    budget = MemoryBudget(total_writes=10, writes_used=0)
+
+    messages = [
+        {"role": "system", "content": "sys"},
+        {"role": "user", "content": "ingest event"},
+    ]
+    stats = _run_tool_loop(
+        client, "test-model", messages, backend, budget,
+        max_turns=10,
+    )
+
+    # Both Writes should have succeeded, then submit_answer
+    assert budget.writes_used == 2
+    assert stats.answer == "done"
+    assert stats.budget_dead_turns == 0
+
+
+def test_budget_death_loop_recovers_with_search():
+    """If model recovers from budget exhaustion by issuing memory_search,
+    the death-loop counter must reset (model is using a non-Write tool)."""
+    from memorygym.agents.stream_agent import _run_tool_loop
+
+    class _ChatCompletionsStub:
+        def __init__(self, outer):
+            self.outer = outer
+
+        def create(self, **kwargs):
+            self.outer.calls += 1
+            if self.outer.calls == 1:
+                # rejected Write
+                text = ('<tool_call>{"name": "Write", "arguments": '
+                        '{"content": "x"}}</tool_call>')
+            elif self.outer.calls == 2:
+                # model pivots to search — counter resets
+                text = ('<tool_call>{"name": "memory_search", '
+                        '"arguments": {"query": "x"}}</tool_call>')
+            else:
+                text = ('<tool_call>{"name": "submit_answer", '
+                        '"arguments": {"answer": "ok"}}</tool_call>')
+
+            class _Msg:
+                content = text
+
+            class _Choice:
+                message = _Msg()
+
+            class _Resp:
+                choices = [_Choice()]
+
+            return _Resp()
+
+    class _MockClient:
+        def __init__(self):
+            self.calls = 0
+            self.chat = type("C", (), {})()
+            self.chat.completions = _ChatCompletionsStub(self)
+
+    client = _MockClient()
+    backend = _fresh_backend()
+    budget = MemoryBudget(total_writes=1, writes_used=1)  # exhausted
+
+    messages = [
+        {"role": "system", "content": "sys"},
+        {"role": "user", "content": "event"},
+    ]
+    stats = _run_tool_loop(
+        client, "test-model", messages, backend, budget,
+        max_turns=10,
+    )
+
+    # Loop should reach submit_answer, NOT break early
+    assert stats.answer == "ok"
+    assert stats.api_calls == 3
+    # Counter reset by the search turn
+    assert stats.budget_dead_turns == 0
+
+
+def _make_failing_client(exc_factory, *, fail_until_call: int = 10**9):
+    """Build a mock OpenAI client that raises on every call up to limit."""
+
+    class _ChatCompletionsStub:
+        def __init__(self, outer):
+            self.outer = outer
+
+        def create(self, **kwargs):
+            self.outer.calls += 1
+            if self.outer.calls <= fail_until_call:
+                raise exc_factory(self.outer.calls)
+            text = (
+                '<tool_call>{"name": "submit_answer", '
+                '"arguments": {"answer": "ok"}}</tool_call>'
+            )
+
+            class _Msg:
+                content = text
+
+            class _Choice:
+                message = _Msg()
+
+            class _Resp:
+                choices = [_Choice()]
+
+            return _Resp()
+
+    class _MockClient:
+        def __init__(self):
+            self.calls = 0
+            self.chat = type("C", (), {})()
+            self.chat.completions = _ChatCompletionsStub(self)
+
+        def close(self):  # parity with real OpenAI client
+            pass
+
+    return _MockClient()
+
+
+def test_run_stream_agent_continues_past_infra_failures(monkeypatch):
+    """A single LLM call exhausting retries must NOT abort the whole eval.
+
+    Failed events become abstain/no-op; the agent's prior storage and any
+    earlier correct answers are preserved. This is the dominant failure
+    mode in production (see executor logs: 'Eval model unreachable after
+    10 retries' caused 100% loss of partial work).
+    """
+    from memorygym.agents import stream_agent as sa
+    from memorygym.worlds import ALL_TEMPLATES
+
+    # Mock OpenAI to always raise 429 -> single LLM call exhausts retries
+    # quickly. We patch the client constructor to return our mock and we
+    # patch time.sleep to skip the exp-backoff waits.
+    fake_client = _make_failing_client(
+        lambda i: Exception("Error code: 429 - Infrastructure at maximum capacity")
+    )
+    monkeypatch.setattr(sa, "OpenAI", lambda **kw: fake_client)
+    monkeypatch.setattr(sa.time, "sleep", lambda *a, **kw: None)
+
+    tmpl = ALL_TEMPLATES["company"]()
+    world = tmpl.generate_world(seed=1, n_entities=8, eval_salt=1)
+    rng = __import__("random").Random(1)
+    stream = tmpl.generate_stream(
+        world, rng, corrections=[], stored_names=set(),
+        n_questions=4, entities_per_batch=4, contradictions=[],
+    )
+
+    backend = _fresh_backend()
+    results, writes_used, stored, eval_error, traj = sa.run_stream_agent(
+        model="mock-model",
+        stream=stream,
+        write_budget=10,
+        api_base="http://mock",
+        api_key="mock",
+        backend=backend,
+        world=world,
+        template=tmpl,
+        seed=1,
+        quiet=True,
+    )
+
+    # Eval error must be set (provider down or majority-failed), but the
+    # function must NOT have raised. Trajectory and result list must be
+    # populated rather than empty/half-built.
+    assert eval_error is not None, "expected eval_error to be set"
+    assert (
+        "provider_unreachable" in eval_error
+        or "too_many_infra_failures" in eval_error
+    ), f"unexpected eval_error: {eval_error}"
+    # Trajectory entries record the infra error rather than crashing.
+    assert any(
+        "infra_error" in t and t.get("infra_error")
+        for t in traj
+    ), "trajectory must record infra_error markers"
+
+
+def test_run_stream_agent_partial_completion_under_threshold(monkeypatch):
+    """When fewer than half of questions hit infra-fail, eval should
+    return without setting eval_error so the partially-completed
+    sample is still scored (efficiency: don't throw away good data)."""
+    from memorygym.agents import stream_agent as sa
+    from memorygym.worlds import ALL_TEMPLATES
+
+    state = {"calls": 0}
+
+    class _Stub:
+        def create(self, **kwargs):
+            state["calls"] += 1
+            # Fail every 5th call only — sparse 429 pattern
+            if state["calls"] % 5 == 0:
+                raise Exception("Error code: 429 - capacity")
+            text = (
+                '<tool_call>{"name": "submit_answer", '
+                '"arguments": {"answer": "I don\'t have enough information"}}'
+                "</tool_call>"
+            )
+
+            class _Msg:
+                content = text
+
+            class _Choice:
+                message = _Msg()
+
+            class _Resp:
+                choices = [_Choice()]
+
+            return _Resp()
+
+    class _Client:
+        chat = type("C", (), {"completions": _Stub()})()
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(sa, "OpenAI", lambda **kw: _Client())
+    monkeypatch.setattr(sa.time, "sleep", lambda *a, **kw: None)
+    # Judge runs at end of eval; with abstain answers we'd otherwise
+    # spin in JUDGE_TIMEOUT_S retrying on the same failing mock client.
+    monkeypatch.setattr(
+        sa, "llm_judge_validate_sync",
+        lambda *a, **kw: (False, "abstain"),
+    )
+
+    tmpl = ALL_TEMPLATES["company"]()
+    world = tmpl.generate_world(seed=2, n_entities=10, eval_salt=1)
+    rng = __import__("random").Random(2)
+    stream = tmpl.generate_stream(
+        world, rng, corrections=[], stored_names=set(),
+        n_questions=20, entities_per_batch=5, contradictions=[],
+    )
+
+    backend = _fresh_backend()
+    results, _, _, eval_error, _ = sa.run_stream_agent(
+        model="mock-model",
+        stream=stream,
+        write_budget=20,
+        api_base="http://mock",
+        api_key="mock",
+        backend=backend,
+        world=world,
+        template=tmpl,
+        seed=2,
+        quiet=True,
+    )
+
+    # Most questions should have been answered (model abstained, but no
+    # infra error). eval_error must remain None so the sample is scored.
+    assert eval_error is None, (
+        f"expected no eval_error for sparse failures, got: {eval_error}")
+    infra_q = sum(1 for r in results if r.error)
+    assert infra_q < len(results) / 2, (
+        f"too many infra-failed questions: {infra_q}/{len(results)}")
+
+
+def test_run_stream_agent_wallclock_budget_finalizes_early(monkeypatch):
+    """Soft wallclock budget must stop the event loop before the validator
+    kills the process at proxy_timeout. Partial results survive."""
+    from memorygym.agents import stream_agent as sa
+    from memorygym.worlds import ALL_TEMPLATES
+
+    class _Stub:
+        def create(self, **kwargs):
+            text = (
+                '<tool_call>{"name": "submit_answer", '
+                '"arguments": {"answer": "fast"}}</tool_call>'
+            )
+
+            class _Msg:
+                content = text
+
+            class _Choice:
+                message = _Msg()
+
+            class _Resp:
+                choices = [_Choice()]
+
+            return _Resp()
+
+    class _Client:
+        chat = type("C", (), {"completions": _Stub()})()
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(sa, "OpenAI", lambda **kw: _Client())
+
+    tmpl = ALL_TEMPLATES["company"]()
+    world = tmpl.generate_world(seed=3, n_entities=10, eval_salt=1)
+    rng = __import__("random").Random(3)
+    stream = tmpl.generate_stream(
+        world, rng, corrections=[], stored_names=set(),
+        n_questions=20, entities_per_batch=5, contradictions=[],
+    )
+
+    backend = _fresh_backend()
+    results, _, _, eval_error, traj = sa.run_stream_agent(
+        model="mock-model",
+        stream=stream,
+        write_budget=20,
+        api_base="http://mock",
+        api_key="mock",
+        backend=backend,
+        world=world,
+        template=tmpl,
+        seed=3,
+        quiet=True,
+        wallclock_budget=0.001,  # immediately breached on second event
+    )
+
+    # Hit the wallclock budget on the very first iteration — only one
+    # event (the first ingest) should have been processed.
+    assert eval_error is None or "too_many" in (eval_error or ""), (
+        f"unexpected eval_error: {eval_error}")
+    assert len(traj) <= 3, (
+        f"wallclock budget should have stopped processing early; "
+        f"got {len(traj)} trajectory entries")
 
 
 if __name__ == "__main__":

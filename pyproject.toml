@@ -1,6 +1,6 @@
 [project]
 name = "memorygym"
-version = "0.10.37"
+version = "0.10.39"
 description = "Memory management evaluation for LLM agents"
 requires-python = ">=3.11"
 dependencies = [
@@ -15,6 +15,7 @@ dependencies = [
 [project.optional-dependencies]
 dev = ["pytest>=8.0", "ruff>=0.4"]
 affinetes = ["affinetes>=0.2"]
+swift = ["ms-swift>=4.0"]
 
 [project.scripts]
 memorygym = "memorygym.bench:_cli_entry"

@@ -31,7 +31,6 @@ load_dotenv()
 from memorygym.config import get_api_config
 from memorygym.evaluation.llm_judge import llm_judge_validate_sync
 from memorygym.evaluation.validators import validate_with_fallback
-from memorygym.memory.backends.chromadb_backend import ChromaDBBackend
 from memorygym.memory.budget import MemoryBudget
 
 
@@ -95,6 +94,39 @@ _CODE_BLOCK_RE = re.compile(
 _BARE_JSON_RE = re.compile(
     r'\{[^{}]*"name"\s*:\s*"[^"]+?"[^{}]*"arguments"\s*:\s*\{[^{}]*\}[^{}]*\}',
 )
+_INPUT_TOKENS_RE = re.compile(
+    r"(?:prompt contains at least\s+|input_tokens[^0-9]*value=)(\d+)",
+    re.IGNORECASE,
+)
+
+
+def _completion_max_tokens() -> int:
+    """Return per-turn completion cap for eval rollouts.
+
+    Large caps cause avoidable context overflow during real benchmark evals.
+    Tool-calling turns are short in practice, so default to a safer limit while
+    still allowing override for larger models or debugging.
+    """
+    raw = os.getenv("MEMORYGYM_MAX_TOKENS", "2048").strip()
+    try:
+        value = int(raw)
+    except ValueError:
+        return 2048
+    return max(1, value)
+
+
+def _shrink_completion_cap(current_cap: int, error_text: str) -> int | None:
+    """Reduce completion cap when the backend reports context overflow."""
+    match = _INPUT_TOKENS_RE.search(error_text)
+    if match:
+        prompt_tokens = int(match.group(1))
+        # Leave some slack instead of packing exactly to the model limit.
+        headroom = 8192 - prompt_tokens - 64
+        if headroom > 0 and headroom < current_cap:
+            return max(64, headroom)
+    if current_cap > 64:
+        return max(64, current_cap // 2)
+    return None
 
 
 @dataclass
@@ -178,6 +210,7 @@ class _LoopStats:
     ctx_trims: int = 0
     error: str | None = None
     turns: list[dict] = field(default_factory=list)  # per-turn detail
+    budget_dead_turns: int = 0  # consecutive turns with all-rejected Write/Edit
 
 
 def _run_tool_loop(
@@ -200,11 +233,12 @@ def _run_tool_loop(
         # Retry up to max_retries on transient eval model errors.
         # On context overflow, trim intermediate tool messages and retry.
         attempt = 0
+        completion_cap = _completion_max_tokens()
         while True:
             try:
                 response = client.chat.completions.create(
                     model=model, messages=messages,
-                    max_tokens=4096,
+                    max_tokens=completion_cap,
                 )
                 break
             except Exception as e:
@@ -214,6 +248,11 @@ def _run_tool_loop(
                 if ("context" in err_lower and "length" in err_lower
                         or "input_tokens" in err_lower
                         or "reduce the length" in err_lower):
+                    shrunk = _shrink_completion_cap(completion_cap, err_str)
+                    if shrunk is not None and shrunk < completion_cap:
+                        completion_cap = shrunk
+                        print(f" [ctx-cap={completion_cap}]", end="", flush=True)
+                        continue
                     if len(messages) > 4:
                         messages[2:-2] = []
                         stats.ctx_trims += 1
@@ -286,6 +325,26 @@ def _run_tool_loop(
             stats.answer = answer
             break
 
+        # Detect budget death loop: every tool call this turn was a
+        # Write/Edit that hit "Budget exhausted". The budget is full,
+        # writes_used didn't change, backend didn't change — these turns
+        # are pure no-ops. Allow one recovery turn (model may pivot to
+        # memory_search / Read / no-op), but break on the second.
+        # Score-invariant: stored_count, writes_used, backend state all
+        # unchanged whether we break here or after max_turns.
+        write_calls = [
+            c for c in parsed_calls
+            if c.get("name") in ("Write", "memory_store", "Edit")
+        ]
+        if (write_calls
+                and len(write_calls) == len(parsed_calls)
+                and all("Budget exhausted" in r for r in results)):
+            stats.budget_dead_turns += 1
+            if stats.budget_dead_turns >= 2:
+                break
+        else:
+            stats.budget_dead_turns = 0
+
         if not results:
             # If no tool calls and no answer on the first attempt,
             # nudge the model to use submit_answer. This handles
@@ -327,6 +386,7 @@ def run_stream_agent(
     template: Any = None,
     seed: int = 0,
     no_redaction: bool = False,
+    wallclock_budget: float | None = None,
 ) -> tuple[list[AgentResult], int, list[dict], str | None, list[dict]]:
     """Run a real LLM agent on a WorldTemplate event stream.
 
@@ -338,7 +398,8 @@ def run_stream_agent(
         api_key: API key (default: from env).
         verbose: Print per-event details (legacy, superseded by default).
         quiet: Minimal output (old-style single-line per event).
-        backend: Memory backend (default: ChromaDBBackend).
+        backend: Memory backend. When omitted, a default ChromaDB backend is
+            created lazily.
         world: World instance for adaptive comprehension questions.
         template: WorldTemplate instance for adaptive comprehension questions.
         seed: Random seed for replacement question generation.
@@ -358,6 +419,8 @@ def run_stream_agent(
 
     if backend is None:
         import uuid as _uuid
+        from memorygym.memory.backends.chromadb_backend import ChromaDBBackend
+
         backend = ChromaDBBackend(
             collection_name=f"agent_{_uuid.uuid4().hex[:8]}")
 
@@ -386,6 +449,23 @@ def run_stream_agent(
     total_api_calls = 0
     run_t0 = time.time()
 
+    # Infra-failure tolerance: when the upstream eval model is overloaded,
+    # individual LLM calls exhaust their retry budget and surface as
+    # stats.error. Historically a single such failure broke the whole
+    # event loop, discarding any progress. Now: we mark the failed event
+    # as a no-op and continue. Hard-abort only if many *consecutive*
+    # failures suggest the provider is fully down.
+    infra_fail_count = 0           # consecutive infra failures
+    infra_fail_total_q = 0         # total infra-failed questions
+    INFRA_FAIL_HARD_ABORT = 8      # consecutive cap → assume provider down
+    INFRA_FAIL_QUESTION_RATIO = 0.5  # >50% questions infra-failed → invalid
+
+    # Soft wallclock budget — finalize before the validator's hard server
+    # kill at proxy_timeout (default 7210s). When breached, stop
+    # processing new events and run the deferred judge batch on whatever
+    # we have. None disables the check.
+    wallclock_deadline = (run_t0 + wallclock_budget) if wallclock_budget else None
+
     # Precompute stream stats for dynamic budget context
     total_entities = sum(
         len(e.get("entity_names", []))
@@ -398,6 +478,14 @@ def run_stream_agent(
     correction_results: list[dict] = []  # Track correction outcomes
 
     for event_idx, event in enumerate(stream):
+        # Soft wallclock guard — finalize gracefully before validator's
+        # hard kill. Process pending judge calls and return partials
+        # rather than losing everything to a server-side timeout.
+        if wallclock_deadline and time.time() >= wallclock_deadline:
+            print(f"  WALLCLOCK-LIMIT reached at event {event_idx}/"
+                  f"{total_events} — stopping early to preserve partial results")
+            break
+
         msg_start = len(messages)
         event_type = event["type"]
         event_label = f"[{event_idx+1}/{total_events}]"
@@ -502,11 +590,19 @@ def run_stream_agent(
                 "api_calls": stats.api_calls,
                 "budget_remaining": budget.remaining(),
                 "turns": stats.turns,
+                "infra_error": stats.error,
             })
             if stats.error:
-                print(f"  ERROR: {stats.error}")
-                eval_error = stats.error
-                break
+                print(f"  INFRA-FAIL (continuing): {stats.error[:100]}")
+                infra_fail_count += 1
+                if infra_fail_count >= INFRA_FAIL_HARD_ABORT:
+                    eval_error = (f"provider_unreachable: {infra_fail_count} "
+                                  f"consecutive infra failures; last="
+                                  f"{stats.error[:160]}")
+                    break
+                continue
+            else:
+                infra_fail_count = 0
 
         elif event_type == "correction":
             entity_name = event["entity_name"]
@@ -596,11 +692,19 @@ def run_stream_agent(
                 "api_calls": stats.api_calls,
                 "correction_applied": correction_ok,
                 "turns": stats.turns,
+                "infra_error": stats.error,
             })
             if stats.error:
-                print(f"  ERROR: {stats.error}")
-                eval_error = stats.error
-                break
+                print(f"  INFRA-FAIL (continuing): {stats.error[:100]}")
+                infra_fail_count += 1
+                if infra_fail_count >= INFRA_FAIL_HARD_ABORT:
+                    eval_error = (f"provider_unreachable: {infra_fail_count} "
+                                  f"consecutive infra failures; last="
+                                  f"{stats.error[:160]}")
+                    break
+                continue
+            else:
+                infra_fail_count = 0
 
         elif event_type == "question":
             # Adaptive comprehension: replace if required entities not stored
@@ -632,8 +736,10 @@ def run_stream_agent(
             total_api_calls += stats.api_calls
 
             if stats.error:
-                # Eval model unreachable — record as error, skip scoring
-                print(f"           ERROR: {stats.error[:80]}")
+                # Infra-fail — record as abstain, advance to next event.
+                # Aborting on first failure used to throw away every
+                # already-stored entity and any prior correct answers.
+                print(f"           INFRA-FAIL (abstain): {stats.error[:80]}")
                 results.append(AgentResult(
                     question=question_text,
                     answer="",
@@ -649,8 +755,33 @@ def run_stream_agent(
                     retries=stats.retries,
                     error=stats.error,
                 ))
-                eval_error = stats.error
-                break
+                trajectory.append({
+                    "event_idx": event_idx,
+                    "type": "question",
+                    "competency": competency,
+                    "purpose": event.get("purpose", ""),
+                    "question": question_text,
+                    "ground_truth": str(event["answer"]),
+                    "agent_answer": "",
+                    "correct": False,
+                    "content": content,
+                    "writes": stats.writes,
+                    "searches": stats.searches,
+                    "api_calls": stats.api_calls,
+                    "elapsed": round(stats.elapsed, 2),
+                    "turns": stats.turns,
+                    "infra_error": stats.error,
+                })
+                infra_fail_count += 1
+                infra_fail_total_q += 1
+                if infra_fail_count >= INFRA_FAIL_HARD_ABORT:
+                    eval_error = (f"provider_unreachable: {infra_fail_count} "
+                                  f"consecutive infra failures; last="
+                                  f"{stats.error[:160]}")
+                    break
+                continue
+            else:
+                infra_fail_count = 0
 
             agent_answer = stats.answer or ""
             gt = str(event["answer"])
@@ -826,6 +957,16 @@ def run_stream_agent(
                 if result_idx_counter in judged_indices:
                     t_entry["correct"] = results[result_idx_counter].correct
                 result_idx_counter += 1
+
+    # Mark eval invalid if a clear majority of questions infra-failed.
+    # Below this threshold we still return the partial result and let
+    # the agent earn whatever credit it deserves — efficiency comes
+    # from preserving partial samples, not from binary all-or-nothing.
+    if eval_error is None and results:
+        infra_q = sum(1 for r in results if r.error)
+        if infra_q / len(results) > INFRA_FAIL_QUESTION_RATIO:
+            eval_error = (f"too_many_infra_failures: {infra_q}/{len(results)} "
+                          f"questions could not reach eval model")
 
     total_elapsed = time.time() - run_t0
     correct_count = sum(r.correct for r in results)

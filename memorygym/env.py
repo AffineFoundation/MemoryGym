@@ -53,6 +53,7 @@ class Actor:
         backend: str = "chromadb",
         timeout: int = 3600,
         task_id: int | None = None,
+        _timeout: float | None = None,
         **kwargs,
     ) -> dict:
         """Run a complete evaluation episode.
@@ -87,6 +88,13 @@ class Actor:
             raise ValueError(
                 f"Unknown tier '{tier}'. Choose from: {', '.join(TIERS)}")
 
+        # Soft wallclock budget — leave 200s headroom under the
+        # validator's hard server kill so we can finalize partial
+        # results (judge phase + cleanup) instead of being terminated
+        # mid-scoring.
+        outer_timeout = _timeout if _timeout else float(timeout)
+        wallclock_budget = max(60.0, outer_timeout - 200.0)
+
         try:
             result = await asyncio.to_thread(
                 _run_evaluation,
@@ -98,6 +106,7 @@ class Actor:
                 tier=tier,
                 tier_cfg=tier_cfg,
                 backend_type=backend,
+                wallclock_budget=wallclock_budget,
             )
         except Exception as exc:
             import traceback
@@ -226,6 +235,7 @@ def _run_evaluation(
     tier: str,
     tier_cfg: dict,
     backend_type: str = "chromadb",
+    wallclock_budget: float | None = None,
 ) -> dict:
     """Run a synchronous evaluation and return result dict."""
     n_entities = tier_cfg["entities"]
@@ -277,6 +287,7 @@ def _run_evaluation(
             world=world,
             template=tmpl,
             seed=seed,
+            wallclock_budget=wallclock_budget,
         )
     except Exception:
         # Ensure backend is cleaned up even if run_stream_agent fails early
