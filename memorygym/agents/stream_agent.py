@@ -277,11 +277,32 @@ def _run_tool_loop(
         attempt = 0
         completion_cap = _completion_max_tokens()
         while True:
+            # Bound this single LLM call by the remaining wallclock budget.
+            # Without this, a slow non-retrying call can hang for the SDK
+            # default (600s) and overshoot the outer deadline, leading to
+            # a server-side 7210s kill that loses every partial result.
+            call_timeout = None
+            if wallclock_deadline is not None:
+                remaining_call = wallclock_deadline - time.time()
+                if remaining_call <= 0:
+                    stats.error = "wallclock_exhausted before LLM call"
+                    stats.elapsed = time.time() - t0
+                    return stats
+                # Floor at 30s so an in-flight call has a chance to finish;
+                # cap at 300s so a buggy provider can't pin us until deadline.
+                call_timeout = max(30.0, min(300.0, remaining_call))
             try:
-                response = client.chat.completions.create(
-                    model=model, messages=messages,
-                    max_tokens=completion_cap,
-                )
+                if call_timeout is not None:
+                    response = client.chat.completions.create(
+                        model=model, messages=messages,
+                        max_tokens=completion_cap,
+                        timeout=call_timeout,
+                    )
+                else:
+                    response = client.chat.completions.create(
+                        model=model, messages=messages,
+                        max_tokens=completion_cap,
+                    )
                 break
             except Exception as e:
                 err_str = str(e)
@@ -978,8 +999,15 @@ def run_stream_agent(
     # Parallel judge validation for rule-failed answers.
     # This runs all pending judge calls concurrently instead of
     # blocking after each question — typically 3-5x faster.
+    #
+    # Wallclock guard: each judge call has its own internal 600s
+    # retry budget (JUDGE_TIMEOUT_S). Without an outer cap the
+    # judge phase can overshoot the env's wallclock_deadline and
+    # trigger the 7210s server-side kill. We bound the whole batch
+    # by the remaining wallclock and accept partial judging if we
+    # run out of time.
     if pending_judge:
-        from concurrent.futures import ThreadPoolExecutor, as_completed
+        from concurrent.futures import ThreadPoolExecutor, as_completed, TimeoutError as FuturesTimeout
 
         def _run_judge(item):
             idx, question, gt_, answer, competency = item
@@ -992,43 +1020,76 @@ def run_stream_agent(
 
         judge_t0 = time.time()
         n_pending = len(pending_judge)
-        print(f"  Judging {n_pending} answers in parallel ...", end="",
-              flush=True)
-        judge_errors = []
-        with ThreadPoolExecutor(max_workers=min(n_pending, 4)) as pool:
-            futures = [pool.submit(_run_judge, item)
-                       for item in pending_judge]
-            for future in as_completed(futures):
-                idx, ok, reason, err = future.result()
-                if err:
-                    judge_errors.append(err)
-                results[idx] = AgentResult(
-                    question=results[idx].question,
-                    answer=results[idx].answer,
-                    ground_truth=results[idx].ground_truth,
-                    competency=results[idx].competency,
-                    purpose=results[idx].purpose,
-                    correct=ok,
-                    n_writes=results[idx].n_writes,
-                    n_searches=results[idx].n_searches,
-                    required_entities=results[idx].required_entities,
-                    validation_method=reason.split(":")[0],
-                    validation_reason=reason,
-                    api_calls=results[idx].api_calls,
-                    elapsed=results[idx].elapsed,
-                    retries=results[idx].retries,
-                )
-        judge_elapsed = time.time() - judge_t0
-        judge_results = sum(1 for i, _, _, _, _ in pending_judge
-                           if results[i].correct)
-        print(f" {judge_results}/{n_pending} correct, {judge_elapsed:.1f}s")
 
-        if judge_errors:
-            eval_error = (f"Judge failed for {len(judge_errors)}/{n_pending} "
-                         f"answers: {judge_errors[0][:200]}")
+        # Compute available judge budget. If we already passed the
+        # outer deadline, skip judging entirely — every pending answer
+        # stays at its rule-fail verdict (False), and we mark the eval
+        # as judge-incomplete so the validator can decide.
+        judge_budget: float | None
+        if wallclock_deadline is not None:
+            judge_budget = wallclock_deadline - judge_t0
+        else:
+            judge_budget = None
+
+        if judge_budget is not None and judge_budget <= 0:
+            print(f"  Judging skipped (wallclock past deadline, "
+                  f"{n_pending} pending stays rule-fail)")
+            eval_error = (f"wallclock_no_judge_time: {n_pending} answers "
+                          f"could not be judged before deadline")
+            judged_indices: set[int] = set()
+        else:
+            print(f"  Judging {n_pending} answers in parallel ...", end="",
+                  flush=True)
+            judge_errors = []
+            judged_indices = set()
+            with ThreadPoolExecutor(max_workers=min(n_pending, 4)) as pool:
+                futures = [pool.submit(_run_judge, item)
+                           for item in pending_judge]
+                try:
+                    completed_iter = as_completed(futures, timeout=judge_budget)
+                    for future in completed_iter:
+                        idx, ok, reason, err = future.result()
+                        if err:
+                            judge_errors.append(err)
+                        judged_indices.add(idx)
+                        results[idx] = AgentResult(
+                            question=results[idx].question,
+                            answer=results[idx].answer,
+                            ground_truth=results[idx].ground_truth,
+                            competency=results[idx].competency,
+                            purpose=results[idx].purpose,
+                            correct=ok,
+                            n_writes=results[idx].n_writes,
+                            n_searches=results[idx].n_searches,
+                            required_entities=results[idx].required_entities,
+                            validation_method=reason.split(":")[0],
+                            validation_reason=reason,
+                            api_calls=results[idx].api_calls,
+                            elapsed=results[idx].elapsed,
+                            retries=results[idx].retries,
+                        )
+                except FuturesTimeout:
+                    # Wallclock budget exhausted mid-judge. Cancel
+                    # remaining futures so the threadpool unwinds
+                    # promptly — finalize with partial results.
+                    for f in futures:
+                        f.cancel()
+                    print(f" [judge-wallclock-cut after {len(judged_indices)}/"
+                          f"{n_pending}]", end="", flush=True)
+                    eval_error = (f"judge_incomplete: "
+                                  f"{len(judged_indices)}/{n_pending} judged "
+                                  f"before wallclock cut")
+            judge_elapsed = time.time() - judge_t0
+            judge_results = sum(1 for i, _, _, _, _ in pending_judge
+                               if i in judged_indices and results[i].correct)
+            print(f" {judge_results}/{n_pending} correct, {judge_elapsed:.1f}s")
+
+            if judge_errors and eval_error is None:
+                eval_error = (f"Judge failed for {len(judge_errors)}/{n_pending} "
+                              f"answers: {judge_errors[0][:200]}")
 
         # Update trajectory entries with post-judging correct values
-        judged_indices = {i for i, _, _, _, _ in pending_judge}
+        # (only entries that got judged this round).
         result_idx_counter = 0
         for t_entry in trajectory:
             if t_entry.get("type") == "question":
@@ -1045,6 +1106,17 @@ def run_stream_agent(
         if infra_q / len(results) > INFRA_FAIL_QUESTION_RATIO:
             eval_error = (f"too_many_infra_failures: {infra_q}/{len(results)} "
                           f"questions could not reach eval model")
+
+    # If wallclock fired before any QUESTION event was reached, the model
+    # never had a chance to demonstrate capability. Without an eval_error
+    # marker, env.py's score=0 fallback lets affine record this as a
+    # legitimate RESULT — penalizing the model for an env-side timeout.
+    # Mark it as wallclock-side so the validator can exclude.
+    if (eval_error is None and not results
+            and wallclock_deadline is not None
+            and time.time() >= wallclock_deadline):
+        eval_error = "wallclock_before_questions: agent ran out of time " \
+                     "during ingest/correction phase, no questions answered"
 
     total_elapsed = time.time() - run_t0
     correct_count = sum(r.correct for r in results)

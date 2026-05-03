@@ -954,8 +954,16 @@ def test_run_stream_agent_wallclock_budget_finalizes_early(monkeypatch):
     )
 
     # Hit the wallclock budget on the very first iteration — only one
-    # event (the first ingest) should have been processed.
-    assert eval_error is None or "too_many" in (eval_error or ""), (
+    # event (the first ingest) should have been processed. Since no
+    # question was answered, the eval should be marked
+    # wallclock_before_questions so the validator excludes it instead of
+    # recording a misleading score=0 RESULT.
+    expected_markers = (
+        "wallclock_before_questions", "too_many", "wallclock_no_judge_time",
+        "judge_incomplete",
+    )
+    assert eval_error is None or any(m in (eval_error or "")
+                                      for m in expected_markers), (
         f"unexpected eval_error: {eval_error}")
     assert len(traj) <= 3, (
         f"wallclock budget should have stopped processing early; "
@@ -1154,6 +1162,194 @@ def test_run_tool_loop_uses_retry_after_hint(monkeypatch):
     assert len(state["sleeps"]) == 3, (
         f"expected exactly 3 retries before exhausting max_retries=3; "
         f"got {len(state['sleeps'])}")
+
+
+def test_run_tool_loop_passes_dynamic_timeout_to_llm_client(monkeypatch):
+    """Fix A: each LLM call must receive a `timeout=` kwarg derived from
+    the remaining wallclock. Without this, the SDK default 600s timeout
+    can let a slow call overshoot the eval's wallclock_deadline and
+    trigger the affinetes 7210s server-side kill."""
+    from memorygym.agents.stream_agent import _run_tool_loop
+    import memorygym.agents.stream_agent as sa
+    import time as _t
+
+    captured_timeouts: list = []
+
+    class _Stub:
+        def create(self, **kwargs):
+            captured_timeouts.append(kwargs.get("timeout"))
+            text = (
+                '<tool_call>{"name": "submit_answer", '
+                '"arguments": {"answer": "ok"}}</tool_call>'
+            )
+
+            class _Msg:
+                content = text
+
+            class _Choice:
+                message = _Msg()
+
+            class _Resp:
+                choices = [_Choice()]
+
+            return _Resp()
+
+    class _Client:
+        chat = type("C", (), {"completions": _Stub()})()
+
+        def close(self):
+            pass
+
+    backend = _fresh_backend()
+    budget = MemoryBudget(total_writes=5)
+    deadline = _t.time() + 100  # 100s remaining
+
+    stats = _run_tool_loop(
+        _Client(), "test", [
+            {"role": "system", "content": "x"},
+            {"role": "user", "content": "y"},
+        ],
+        backend, budget,
+        max_turns=1, max_retries=3,
+        wallclock_deadline=deadline,
+    )
+
+    assert stats.error is None, f"unexpected error: {stats.error}"
+    assert len(captured_timeouts) >= 1, (
+        f"expected at least one LLM call; got {len(captured_timeouts)}")
+    # Timeout must be a finite number derived from remaining wallclock
+    for t in captured_timeouts:
+        assert t is not None, "timeout was not passed to LLM client"
+        assert 30.0 <= t <= 300.0, (
+            f"timeout out of expected bounds [30, 300]: {t}")
+
+
+def test_run_tool_loop_no_timeout_when_wallclock_deadline_absent(monkeypatch):
+    """Fix A negative case: when no wallclock_deadline is configured
+    (e.g. local testing), no timeout should be passed — preserve current
+    SDK default behavior. Avoids accidentally regressing offline use."""
+    from memorygym.agents.stream_agent import _run_tool_loop
+
+    captured_kwargs: list = []
+
+    class _Stub:
+        def create(self, **kwargs):
+            captured_kwargs.append(kwargs)
+            text = (
+                '<tool_call>{"name": "submit_answer", '
+                '"arguments": {"answer": "ok"}}</tool_call>'
+            )
+
+            class _Msg:
+                content = text
+
+            class _Choice:
+                message = _Msg()
+
+            class _Resp:
+                choices = [_Choice()]
+
+            return _Resp()
+
+    class _Client:
+        chat = type("C", (), {"completions": _Stub()})()
+
+        def close(self):
+            pass
+
+    backend = _fresh_backend()
+    budget = MemoryBudget(total_writes=5)
+
+    _run_tool_loop(
+        _Client(), "test", [
+            {"role": "system", "content": "x"},
+            {"role": "user", "content": "y"},
+        ],
+        backend, budget,
+        max_turns=1, max_retries=3,
+        wallclock_deadline=None,
+    )
+
+    assert "timeout" not in captured_kwargs[0], (
+        f"timeout should NOT be set when no wallclock_deadline; "
+        f"got kwargs={list(captured_kwargs[0].keys())}")
+
+
+def test_judge_phase_skipped_when_past_wallclock(monkeypatch):
+    """Fix B: when the agent loop exits past the wallclock_deadline,
+    the judge phase must skip rather than blocking for ~600s per pending
+    answer. Otherwise judge can push runtime past the 7210s server kill."""
+    from memorygym.agents import stream_agent as sa
+    from memorygym.worlds import ALL_TEMPLATES
+
+    judge_call_count = {"n": 0}
+
+    def _slow_judge(*args, **kwargs):
+        judge_call_count["n"] += 1
+        # Simulate a slow judge — should NEVER be called when past wallclock
+        import time as _t
+        _t.sleep(60)
+        return False, "should not be called"
+
+    monkeypatch.setattr(sa, "llm_judge_validate_sync", _slow_judge)
+
+    # Mock OpenAI to return abstain answers (which fail rule and would
+    # normally go to judge)
+    class _Stub:
+        def create(self, **kwargs):
+            text = (
+                '<tool_call>{"name": "submit_answer", '
+                '"arguments": {"answer": "wrong-answer-needs-judge"}}'
+                "</tool_call>"
+            )
+
+            class _Msg:
+                content = text
+
+            class _Choice:
+                message = _Msg()
+
+            class _Resp:
+                choices = [_Choice()]
+
+            return _Resp()
+
+    class _Client:
+        chat = type("C", (), {"completions": _Stub()})()
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(sa, "OpenAI", lambda **kw: _Client())
+
+    tmpl = ALL_TEMPLATES["company"]()
+    world = tmpl.generate_world(seed=11, n_entities=8, eval_salt=1)
+    rng = __import__("random").Random(11)
+    stream = tmpl.generate_stream(
+        world, rng, corrections=[], stored_names=set(),
+        n_questions=4, entities_per_batch=4, contradictions=[],
+    )
+
+    # Tiny wallclock budget to force agent to exit immediately, putting
+    # us past the deadline before the judge phase begins.
+    backend = _fresh_backend()
+    results, _, _, eval_error, _ = sa.run_stream_agent(
+        model="mock", stream=stream, write_budget=10,
+        api_base="http://mock", api_key="mock",
+        backend=backend, world=world, template=tmpl, seed=11,
+        quiet=True,
+        wallclock_budget=0.001,  # immediately past deadline
+    )
+
+    # If the wallclock guard is missing, _slow_judge would block 60s+
+    # per pending answer. With the guard, judge is skipped entirely.
+    assert judge_call_count["n"] == 0, (
+        f"judge should be skipped when past wallclock; got "
+        f"{judge_call_count['n']} judge calls")
+    # And the eval should mark itself as no-judge-time
+    assert eval_error and ("wallclock" in eval_error
+                           or "judge" in eval_error.lower()), (
+        f"expected wallclock/judge marker in eval_error; got: {eval_error}")
 
 
 if __name__ == "__main__":
