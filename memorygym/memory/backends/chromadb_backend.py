@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import threading
+import time
 import uuid
 from datetime import datetime, timezone
 
@@ -9,6 +11,80 @@ import chromadb
 from chromadb.utils.embedding_functions import (
     SentenceTransformerEmbeddingFunction,
 )
+
+
+# Process-wide singleton Chroma client.
+#
+# Why: chromadb.Client() shares an underlying System keyed on the identifier
+# "ephemeral" across the process. The chromadb internal init is unsafe under
+# concurrency:
+#
+#   1. SharedSystemClient._create_system_if_not_exists writes the new System
+#      into a class-level dict BEFORE calling new_system.start(). RustBindingsAPI
+#      (created via System.instance(ServerAPI)) only sets `self.bindings` inside
+#      .start(); a concurrent caller that observes the dict entry before start()
+#      runs gets a partial-state System whose ServerAPI.bindings is undefined,
+#      surfacing as `'RustBindingsAPI' object has no attribute 'bindings'`.
+#
+#   2. If a previous Client() init failed mid-way the broken System remains
+#      cached in `_identifier_to_system`. The next Client() takes the else-branch
+#      and returns the broken System verbatim — the caller never gets a healthy
+#      client even on retry.
+#
+#   3. KeyError('ephemeral') surfaces when one thread's _release_system pops
+#      the entry while another thread reads it via the _system property.
+#
+# Defenses below:
+#   - Singleton + threading lock serialise our calls to chromadb.Client() so
+#     two backends in the same process don't enter chromadb init concurrently.
+#   - On failure we clear chromadb's class-level cache so the next attempt
+#     is not poisoned by the previous broken System.
+#   - Retry up to 3 times with short backoff to ride out transient races
+#     in chromadb's internal threading.
+
+_client_lock = threading.Lock()
+_shared_client: chromadb.api.ClientAPI | None = None
+
+
+def _get_shared_client(max_retries: int = 3) -> chromadb.api.ClientAPI:
+    """Return the process-wide chromadb client, retrying on chromadb-internal
+    init races. Raises RuntimeError if all retries fail.
+    """
+    global _shared_client
+    last_err: BaseException | None = None
+    for attempt in range(max_retries):
+        if _shared_client is not None:
+            return _shared_client
+        with _client_lock:
+            if _shared_client is not None:
+                return _shared_client
+            try:
+                # Reset chromadb's class-level cache so we never inherit a
+                # broken System from a previously failed Client() call.
+                from chromadb.api.shared_system_client import (
+                    SharedSystemClient,
+                )
+                SharedSystemClient.clear_system_cache()
+                _shared_client = chromadb.Client()
+                return _shared_client
+            except (AttributeError, KeyError, RuntimeError) as exc:
+                last_err = exc
+                _shared_client = None
+                # Clear again so the next attempt is on a clean slate.
+                try:
+                    from chromadb.api.shared_system_client import (
+                        SharedSystemClient as _SSC,
+                    )
+                    _SSC.clear_system_cache()
+                except Exception:
+                    pass
+        # Sleep outside the lock so other waiters can also retry.
+        if attempt < max_retries - 1:
+            time.sleep(0.3 * (attempt + 1))
+    raise RuntimeError(
+        f"ChromaDB Client init failed after {max_retries} retries: "
+        f"{type(last_err).__name__}: {last_err}"
+    )
 
 
 class ChromaDBBackend:
@@ -26,7 +102,7 @@ class ChromaDBBackend:
         self._ef = SentenceTransformerEmbeddingFunction(
             model_name=model_name,
         )
-        self._client = chromadb.Client()
+        self._client = _get_shared_client()
         self._collection = self._client.get_or_create_collection(
             name=collection_name,
             embedding_function=self._ef,

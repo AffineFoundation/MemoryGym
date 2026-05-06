@@ -109,6 +109,119 @@ class TestChromaDBConcurrency:
             "_run_evaluation must pass collection_name to ChromaDBBackend")
 
 
+class TestChromaDBSharedClientRace:
+    """Verify _get_shared_client recovers from chromadb-internal init races.
+
+    Live observation 2026-05-04..06: ChromaDBBackend init occasionally
+    failed with `'RustBindingsAPI' object has no attribute 'bindings'`
+    or KeyError('ephemeral'). Root cause: chromadb's
+    SharedSystemClient._create_system_if_not_exists is lock-free —
+    writes the new System into a class-level dict before calling
+    new_system.start(); RustBindingsAPI.bindings is only set inside
+    start(). A concurrent caller observes a partial-state System.
+    Plus failed-init residues the broken System in the cache so a
+    naive retry hits it again.
+
+    The fix wraps Client() in a singleton + retry + clear_system_cache.
+    """
+
+    def test_singleton_returns_same_client(self):
+        """Two backends in the same process share one chromadb client."""
+        from memorygym.memory.backends.chromadb_backend import (
+            _get_shared_client,
+        )
+        c1 = _get_shared_client()
+        c2 = _get_shared_client()
+        assert c1 is c2, "shared client must be a singleton"
+
+    def test_retries_on_attribute_error(self, monkeypatch):
+        """Simulate a chromadb-internal race: first Client() raises
+        AttributeError('bindings'), second succeeds. _get_shared_client
+        must clear cache, retry, and return a healthy client."""
+        from memorygym.memory.backends import chromadb_backend as cb
+
+        # Reset module state so retry path runs
+        cb._shared_client = None
+
+        attempts = {"n": 0}
+        original_client = cb.chromadb.Client
+
+        def fake_client(*args, **kwargs):
+            attempts["n"] += 1
+            if attempts["n"] == 1:
+                raise AttributeError(
+                    "'RustBindingsAPI' object has no attribute 'bindings'"
+                )
+            return original_client(*args, **kwargs)
+
+        monkeypatch.setattr(cb.chromadb, "Client", fake_client)
+        # Also patch sleep so the test runs fast
+        monkeypatch.setattr(cb.time, "sleep", lambda *a, **kw: None)
+
+        client = cb._get_shared_client()
+        assert client is not None
+        assert attempts["n"] == 2, (
+            f"expected 2 Client() calls (1 fail + 1 retry), got {attempts['n']}"
+        )
+
+    def test_retries_on_key_error_ephemeral(self, monkeypatch):
+        """Simulate the KeyError('ephemeral') variant of the same race."""
+        from memorygym.memory.backends import chromadb_backend as cb
+
+        cb._shared_client = None
+        attempts = {"n": 0}
+        original_client = cb.chromadb.Client
+
+        def fake_client(*args, **kwargs):
+            attempts["n"] += 1
+            if attempts["n"] == 1:
+                raise KeyError("ephemeral")
+            return original_client(*args, **kwargs)
+
+        monkeypatch.setattr(cb.chromadb, "Client", fake_client)
+        monkeypatch.setattr(cb.time, "sleep", lambda *a, **kw: None)
+
+        client = cb._get_shared_client()
+        assert client is not None
+        assert attempts["n"] == 2
+
+    def test_persistent_failure_raises_after_max_retries(self, monkeypatch):
+        """If chromadb is permanently broken, raise after N retries with
+        the last error context — don't hang the eval forever."""
+        from memorygym.memory.backends import chromadb_backend as cb
+
+        cb._shared_client = None
+        attempts = {"n": 0}
+
+        def always_fail(*args, **kwargs):
+            attempts["n"] += 1
+            raise AttributeError("permanent failure")
+
+        monkeypatch.setattr(cb.chromadb, "Client", always_fail)
+        monkeypatch.setattr(cb.time, "sleep", lambda *a, **kw: None)
+
+        import pytest
+        with pytest.raises(RuntimeError, match="ChromaDB Client init failed"):
+            cb._get_shared_client(max_retries=3)
+        assert attempts["n"] == 3, (
+            f"expected exactly 3 attempts at max_retries=3; got {attempts['n']}"
+        )
+
+    def test_backend_init_uses_shared_client(self):
+        """ChromaDBBackend.__init__ must route through _get_shared_client,
+        not call chromadb.Client directly. Otherwise the singleton/retry
+        defenses are bypassed and we regress to the live failure mode."""
+        from memorygym.memory.backends.chromadb_backend import (
+            ChromaDBBackend,
+            _get_shared_client,
+        )
+        b = ChromaDBBackend(collection_name=f"shared_test_{uuid.uuid4().hex[:8]}")
+        assert b._client is _get_shared_client(), (
+            "backend client must be the shared singleton"
+        )
+        b.close()
+
+
 class TestChromaDBResourceCleanup:
     """Verify ChromaDB resources are properly released."""
 
