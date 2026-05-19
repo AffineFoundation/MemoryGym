@@ -138,9 +138,20 @@ def _read_affent_memory_entries(workspace: Path) -> list[str]:
 
 
 def _write_affent_memory_entries(workspace: Path, entries: list[str]) -> None:
+    """Atomic write: tempfile in the same directory, then rename. A
+    crash mid-write leaves the previous file intact."""
     path = _memory_path(workspace)
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(_MEMORY_DELIM.join(entries))
+    fd, tmp_name = tempfile.mkstemp(dir=str(path.parent), prefix=".mem-", suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w") as f:
+            f.write(_MEMORY_DELIM.join(entries))
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp_name, path)
+    except Exception:
+        Path(tmp_name).unlink(missing_ok=True)
+        raise
 
 
 def _stored_contents(workspace: Path) -> list[str]:
@@ -150,6 +161,13 @@ def _stored_contents(workspace: Path) -> list[str]:
         for e in state.get("entries", [])
         if not e.get("deleted") and e.get("content")
     ]
+
+
+def _new_judge_client() -> OpenAI | None:
+    key = os.environ.get("CHUTES_API_KEY", "").strip()
+    if not key:
+        return None
+    return OpenAI(api_key=key, base_url="https://llm.chutes.ai/v1")
 
 
 def _parse_trace(
@@ -298,6 +316,36 @@ def _run_affent_turn(
     return turn
 
 
+def _correction_applied(turns: list[dict], entity_name: str, new_val: str) -> bool:
+    """Decide whether a correction event was successfully applied.
+
+    Returns True iff at least one memory.replace call satisfies all of:
+    old_text contains entity_name, content contains new_val, and the
+    tool_result reports ok=true.
+    """
+    if not entity_name:
+        return False
+    for t in turns:
+        calls = t.get("tool_calls", [])
+        results = t.get("tool_results", [])
+        for i, c in enumerate(calls):
+            if c.get("name") != "memory":
+                continue
+            args = c.get("arguments", {})
+            if args.get("action") != "replace":
+                continue
+            if entity_name not in str(args.get("old_text", "")):
+                continue
+            if new_val not in str(args.get("content", "")):
+                continue
+            if i >= len(results):
+                continue
+            if not _tool_result_ok(str(results[i])):
+                continue
+            return True
+    return False
+
+
 def _tool_result_ok(result: str | None) -> bool:
     if not result:
         return False
@@ -329,9 +377,10 @@ def _apply_memory_budget(
 ) -> int:
     """Replay affent memory calls under MemoryGym's write budget.
 
-    affent is a real agent and does not know MemoryGym's write budget.  The
-    benchmark enforces the budget here by replaying successful memory tool
-    calls and overwriting the workspace memory with the accepted state.
+    The benchmark enforces the budget here by replaying successful
+    memory tool calls and overwriting the workspace memory with the
+    accepted state. When the resulting entries equal before_entries,
+    skips the disk write.
     """
     entries = list(before_entries)
     writes = 0
@@ -376,7 +425,8 @@ def _apply_memory_budget(
                 budget.consume_write()
                 writes += 1
 
-    _write_affent_memory_entries(workspace, entries)
+    if entries != before_entries:
+        _write_affent_memory_entries(workspace, entries)
     return writes
 
 
@@ -402,8 +452,7 @@ def run_affent_agent(
     workspace_path.mkdir(parents=True, exist_ok=True)
     system_prompt = AFFENT_MEMORY_SYSTEM_PROMPT.format(budget=write_budget)
     budget = MemoryBudget(total_writes=write_budget)
-    judge_key = os.environ.get("CHUTES_API_KEY") or cfg.api_key
-    judge_client = OpenAI(api_key=judge_key, base_url="https://llm.chutes.ai/v1")
+    judge_client = _new_judge_client()
 
     results: list[AgentResult] = []
     trajectory: list[dict] = [{"event_idx": -1, "type": "system", "content": system_prompt}]
@@ -503,15 +552,10 @@ def run_affent_agent(
                     free_replace=True,
                 )
                 chain = _extract_action_chain(turn.turns)
-                new_val = str(event.get("new_val", "?"))
-                correction_ok = any(
-                    c.get("name") == "memory"
-                    and c.get("arguments", {}).get("action") == "replace"
-                    and new_val in str(c.get("arguments", {}).get("content", ""))
-                    and i < len(t.get("tool_results", []))
-                    and _tool_result_ok(str(t.get("tool_results", [])[i]))
-                    for t in turn.turns
-                    for i, c in enumerate(t.get("tool_calls", []))
+                correction_ok = _correction_applied(
+                    turn.turns,
+                    str(event.get("entity_name", "")),
+                    str(event.get("new_val", "?")),
                 )
                 trajectory.append({
                     "event_idx": event_idx,
@@ -568,7 +612,7 @@ def run_affent_agent(
                     answer, gt, competency, question=question_text,
                     judge_fn=None,
                 )
-                if not ok and competency != "abstention":
+                if not ok and competency != "abstention" and judge_client is not None:
                     try:
                         ok, judge_reason = llm_judge_validate_sync(
                             judge_client, question_text, gt, answer, competency)
@@ -618,7 +662,8 @@ def run_affent_agent(
         stored = _stored_contents(workspace_path)
         return results, budget.writes_used, stored, eval_error, trajectory
     finally:
-        try:
-            judge_client.close()
-        except Exception:
-            pass
+        if judge_client is not None:
+            try:
+                judge_client.close()
+            except Exception:
+                pass

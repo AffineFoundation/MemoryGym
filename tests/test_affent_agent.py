@@ -1,10 +1,14 @@
 import json
+import time
 from types import SimpleNamespace
 
 from memorygym.agents.affent_agent import (
     _apply_memory_budget,
+    _correction_applied,
     _load_memory_state,
+    _new_judge_client,
     _parse_trace,
+    _read_affent_memory_entries,
     _resolve_affentctl,
     _run_affent_turn,
     _write_affent_memory_entries,
@@ -145,6 +149,13 @@ def test_run_affent_turn_passes_optional_timeout_flags(tmp_path, monkeypatch):
     assert captured["cmd"][captured["cmd"].index("--retry-transient") + 1] == "0"
 
 
+def test_new_judge_client_requires_explicit_chutes_key(monkeypatch):
+    monkeypatch.delenv("CHUTES_API_KEY", raising=False)
+    monkeypatch.setenv("API_KEY", "dummy-target-model-key")
+
+    assert _new_judge_client() is None
+
+
 def test_parse_affent_trace_final_text_fallback(tmp_path):
     trace = tmp_path / "trace.jsonl"
     trace.write_text(json.dumps(_event(
@@ -169,6 +180,93 @@ def test_load_affent_markdown_memory(tmp_path):
     assert state["writes_used"] == 0
     assert state["entries"][0]["content"] == "Alice | salary: 100k"
     assert state["entries"][1]["content"] == "Bob | salary: 200k"
+
+
+def _ok(entries):
+    return '[tool] ' + json.dumps({"ok": True, "target": "memory", "entries": entries})
+
+
+def test_correction_applied_true_on_anchored_replace():
+    turns = [{
+        "tool_calls": [{
+            "name": "memory",
+            "arguments": {
+                "action": "replace",
+                "target": "memory",
+                "old_text": "Alice | salary",
+                "content": "Alice | salary: 250k",
+            },
+        }],
+        "tool_results": [_ok(["Alice | salary: 250k"])],
+    }]
+    assert _correction_applied(turns, entity_name="Alice", new_val="250k") is True
+
+
+def test_correction_applied_false_when_old_text_not_anchored_on_entity():
+    """The regression: agent replaces an unrelated entry whose new
+    content happens to mention new_val. Must NOT count as a correct
+    correction — the targeted entity was never touched."""
+    turns = [{
+        "tool_calls": [{
+            "name": "memory",
+            "arguments": {
+                "action": "replace",
+                # Replacing Bob's entry, but the correction event is for Alice.
+                "old_text": "Bob | salary",
+                "content": "Bob now mentions 250k somewhere",
+            },
+        }],
+        "tool_results": [_ok(["Bob now mentions 250k somewhere"])],
+    }]
+    assert _correction_applied(turns, entity_name="Alice", new_val="250k") is False
+
+
+def test_correction_applied_false_when_replace_call_failed():
+    turns = [{
+        "tool_calls": [{
+            "name": "memory",
+            "arguments": {
+                "action": "replace",
+                "old_text": "Alice | salary",
+                "content": "Alice | salary: 250k",
+            },
+        }],
+        "tool_results": [
+            '[tool] {"ok":false,"target":"memory","message":"no entry matched"}'
+        ],
+    }]
+    assert _correction_applied(turns, entity_name="Alice", new_val="250k") is False
+
+
+def test_write_affent_memory_entries_atomic_no_temp_leftovers(tmp_path):
+    _write_affent_memory_entries(tmp_path, ["one", "two"])
+    # Atomic implementations stage via a temp file in the same dir
+    # before rename; the temp file must NOT outlive the call.
+    mem_dir = tmp_path / ".affent"
+    leftovers = list(mem_dir.glob(".mem-*.tmp")) + list(mem_dir.glob("*.tmp"))
+    assert not leftovers, f"unexpected temp files: {leftovers}"
+    assert _read_affent_memory_entries(tmp_path) == ["one", "two"]
+
+
+def test_apply_memory_budget_skips_write_when_no_mutations(tmp_path):
+    """Question events trigger _apply_memory_budget with no memory
+    tool calls. The function must not rewrite MEMORY.md when nothing
+    changed — preserves mtime and avoids needless disk churn."""
+    _write_affent_memory_entries(tmp_path, ["alpha", "beta"])
+    mem_file = tmp_path / ".affent" / "MEMORY.md"
+    before_mtime = mem_file.stat().st_mtime_ns
+
+    # A pure question turn: model just answered, no tool calls.
+    turns = [{"tool_calls": [], "tool_results": []}]
+    budget = MemoryBudget(total_writes=10)
+    time.sleep(0.01)  # ensure mtime would change if a write happened
+
+    writes = _apply_memory_budget(tmp_path, ["alpha", "beta"], turns, budget)
+
+    after_mtime = mem_file.stat().st_mtime_ns
+    assert writes == 0
+    assert after_mtime == before_mtime, "MEMORY.md must not be rewritten on no-op turn"
+    assert _read_affent_memory_entries(tmp_path) == ["alpha", "beta"]
 
 
 def test_apply_memory_budget_replays_successful_memory_calls(tmp_path):
