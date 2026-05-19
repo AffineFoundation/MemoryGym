@@ -493,7 +493,7 @@ def run_stream_agent(
         api_key: API key (default: from env).
         verbose: Print per-event details (legacy, superseded by default).
         quiet: Minimal output (old-style single-line per event).
-        backend: Memory backend. When omitted, a default ChromaDB backend is
+        backend: Memory backend. When omitted, a default Markdown backend is
             created lazily.
         world: World instance for adaptive comprehension questions.
         template: WorldTemplate instance for adaptive comprehension questions.
@@ -513,11 +513,9 @@ def run_stream_agent(
     judge_client = OpenAI(api_key=_judge_key, base_url="https://llm.chutes.ai/v1")
 
     if backend is None:
-        import uuid as _uuid
-        from memorygym.memory.backends.chromadb_backend import ChromaDBBackend
+        from memorygym.memory.backends.markdown_backend import MarkdownBackend
 
-        backend = ChromaDBBackend(
-            collection_name=f"agent_{_uuid.uuid4().hex[:8]}")
+        backend = MarkdownBackend()
 
     def _close_clients() -> None:
         try:

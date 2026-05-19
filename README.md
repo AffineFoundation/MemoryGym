@@ -29,6 +29,24 @@ pip install -e .
 
 # With affinetes (containerized eval):
 pip install -e ".[affinetes]"
+
+# Optional legacy stream-runner Markdown backend:
+pip install -e ".[markdown]"
+
+# Optional legacy stream-runner ChromaDB backend:
+pip install -e ".[chromadb]"
+```
+
+The Docker image builds `affentctl` from the public affent repository.
+`AFFENT_REF` must point to a ref whose `affentctl run` supports
+`--memory-only`; the Docker build checks this and fails fast otherwise.
+Override the source or ref when needed:
+
+```bash
+docker build \
+  --build-arg AFFENT_REPO=https://github.com/AffineFoundation/affent.git \
+  --build-arg AFFENT_REF=main \
+  -t memorygym:latest .
 ```
 
 ## Quick start
@@ -50,6 +68,9 @@ export CHUTES_API_KEY="your-key"
 
 # Single evaluation
 python -m memorygym.bench --model moonshotai/Kimi-K2.5-TEE --seed 42 --template company
+
+# Evaluate the default affent agent with persistent budgeted memory tools
+python -m memorygym.bench --model moonshotai/Kimi-K2.5-TEE --seed 42 --template company --tier lite
 
 # Standard tier (60 entities, 20 questions)
 python -m memorygym.bench --model moonshotai/Kimi-K2.5-TEE --seed 0 --tier standard
@@ -73,7 +94,7 @@ python -m memorygym.training sft --data data/sft_v6_mixed.jsonl   # Fine-tune (r
 --seeds N            Number of seeds (default: 10)
 --template T         Template: company, research, city, hospital, sport, movie, university, codebase, project, agentteam
 --tier TIER          Evaluation tier: lite, standard (default), hard, multi
---backend BACKEND    Memory backend: chromadb (default), markdown
+--backend BACKEND    Memory backend: markdown (default), chromadb
 --validate           Run invariant checks
 --official           Official mode: seeds 0-9, all templates
 ```
@@ -123,7 +144,7 @@ memorygym/
 ├── worlds/          # 10 domain templates + scorer + Inspect AI integration
 ├── evaluation/      # Answer validation + LLM judge
 ├── memory/          # Budget management + backends (ChromaDB, Markdown)
-├── agents/          # Real LLM agent runner
+├── agents/          # Real LLM agent runners (native stream + affent)
 ├── adapters/        # RL framework adapters (verl/slime)
 ├── bench.py         # CLI entry point
 ├── simulation.py    # 9-strategy system self-test

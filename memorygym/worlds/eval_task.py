@@ -401,7 +401,7 @@ def worldbench(
     n_corrections: int | None = None,
     n_questions: int | None = None,
     write_budget: int | None = None,
-    backend: str = "chromadb",
+    backend: str = "markdown",
     entities_per_batch: int = 10,
 ) -> Task:
     """WorldTemplate-based memory management evaluation.
@@ -421,7 +421,7 @@ def worldbench(
         n_corrections: Number of correction events.
         n_questions: Number of questions to generate.
         write_budget: Total memory writes allowed.
-        backend: Memory backend ("chromadb").
+        backend: Memory backend ("markdown" by default, or "chromadb").
         entities_per_batch: Entities per ingest batch.
     """
     from memorygym.protocol import TIERS

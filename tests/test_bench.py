@@ -268,6 +268,13 @@ class TestCLIOutput:
         assert (entities, questions, corrections, budget) == (30, 10, 3, 15)
         assert sessions == 1
 
+    def test_manual_zero_overrides_default(self):
+        from memorygym.bench import parse_args, _resolve_config
+        args = parse_args(["--entities", "2", "--questions", "1", "--corrections", "0"])
+        entities, questions, corrections, budget, sessions = _resolve_config(args)
+        assert (entities, questions, corrections, budget) == (2, 1, 0, 30)
+        assert sessions == 1
+
     def test_tier_hard_config(self):
         from memorygym.bench import parse_args, _resolve_config
         args = parse_args(["--tier", "hard"])

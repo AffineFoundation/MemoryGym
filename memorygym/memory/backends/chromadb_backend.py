@@ -7,10 +7,16 @@ import time
 import uuid
 from datetime import datetime, timezone
 
-import chromadb
-from chromadb.utils.embedding_functions import (
-    SentenceTransformerEmbeddingFunction,
-)
+try:
+    import chromadb
+    from chromadb.utils.embedding_functions import (
+        SentenceTransformerEmbeddingFunction,
+    )
+except ImportError as exc:  # pragma: no cover - exercised without optional deps
+    raise ImportError(
+        "ChromaDB backend requires optional dependencies. "
+        "Install with: pip install 'memorygym[chromadb]'"
+    ) from exc
 
 
 # Process-wide singleton Chroma client.

@@ -26,7 +26,6 @@ from affinetes.core.openenv import OpenEnvResponse
 
 from memorygym import __version__
 from memorygym.agents.stream_agent import run_stream_agent
-from memorygym.memory.backends.chromadb_backend import ChromaDBBackend
 from memorygym.protocol import TIERS, compute_axis_scores, trajectory_to_conversation
 from memorygym.worlds import ALL_TEMPLATES
 
@@ -50,7 +49,10 @@ class Actor:
         seed: int = 0,
         template: str = "company",
         tier: str = "lite",
-        backend: str = "chromadb",
+        backend: str = "markdown",
+        agent_runner: str = "affent",
+        affent_bin: str | None = None,
+        affent_workspace: str | None = None,
         timeout: int = 3600,
         task_id: int | None = None,
         _timeout: float | None = None,
@@ -106,6 +108,9 @@ class Actor:
                 tier=tier,
                 tier_cfg=tier_cfg,
                 backend_type=backend,
+                agent_runner=agent_runner,
+                affent_bin=affent_bin,
+                affent_workspace=affent_workspace,
                 wallclock_budget=wallclock_budget,
             )
         except Exception as exc:
@@ -123,6 +128,7 @@ class Actor:
                     "seed": seed,
                     "template": template,
                     "tier": tier,
+                    "agent_runner": agent_runner,
                 },
             }
 
@@ -234,7 +240,10 @@ def _run_evaluation(
     template_name: str,
     tier: str,
     tier_cfg: dict,
-    backend_type: str = "chromadb",
+    backend_type: str = "markdown",
+    agent_runner: str = "affent",
+    affent_bin: str | None = None,
+    affent_workspace: str | None = None,
     wallclock_budget: float | None = None,
 ) -> dict:
     """Run a synchronous evaluation and return result dict."""
@@ -251,7 +260,7 @@ def _run_evaluation(
 
     rng_correct = Random(seed + 3333)
     corrections = tmpl.generate_corrections(world, rng_correct, n_corrections)
-    n_contras = max(1, n_corrections // 3)
+    n_contras = 0 if n_corrections == 0 else max(1, n_corrections // 3)
     exclude_corrected = {c.entity_name for c in corrections}
     rng_contra = Random(seed + 7373)
     contradictions = tmpl.generate_contradictions(
@@ -270,28 +279,52 @@ def _run_evaluation(
     # Each evaluation gets a unique collection name to prevent concurrent
     # evaluations from corrupting each other's data.
     eval_id = f"eval_{seed}_{template_name}_{uuid.uuid4().hex[:8]}"
-    if backend_type == "markdown":
-        from memorygym.memory.backends.markdown_backend import MarkdownBackend
-        backend_obj = MarkdownBackend()
-    else:
-        backend_obj = ChromaDBBackend(collection_name=eval_id)
+    backend_obj = None
+    if agent_runner != "affent":
+        if backend_type == "markdown":
+            from memorygym.memory.backends.markdown_backend import MarkdownBackend
+            backend_obj = MarkdownBackend()
+        else:
+            from memorygym.memory.backends.chromadb_backend import ChromaDBBackend
+            backend_obj = ChromaDBBackend(collection_name=eval_id)
 
     try:
-        agent_results, writes_used, stored, eval_error, traj = run_stream_agent(
-            model=model,
-            stream=stream,
-            write_budget=write_budget,
-            api_base=base_url,
-            api_key=api_key,
-            backend=backend_obj,
-            world=world,
-            template=tmpl,
-            seed=seed,
-            wallclock_budget=wallclock_budget,
-        )
+        if agent_runner == "affent":
+            from pathlib import Path
+            from memorygym.agents.affent_agent import run_affent_agent
+
+            workspace = affent_workspace
+            if workspace:
+                workspace = str(Path(workspace) / f"{template_name}_s{seed}")
+            agent_results, writes_used, stored, eval_error, traj = run_affent_agent(
+                model=model,
+                stream=stream,
+                write_budget=write_budget,
+                api_base=base_url,
+                api_key=api_key,
+                world=world,
+                template=tmpl,
+                seed=seed,
+                wallclock_budget=wallclock_budget,
+                affent_bin=affent_bin,
+                workspace=workspace,
+            )
+        else:
+            agent_results, writes_used, stored, eval_error, traj = run_stream_agent(
+                model=model,
+                stream=stream,
+                write_budget=write_budget,
+                api_base=base_url,
+                api_key=api_key,
+                backend=backend_obj,
+                world=world,
+                template=tmpl,
+                seed=seed,
+                wallclock_budget=wallclock_budget,
+            )
     except Exception:
         # Ensure backend is cleaned up even if run_stream_agent fails early
-        if hasattr(backend_obj, "close"):
+        if backend_obj is not None and hasattr(backend_obj, "close"):
             backend_obj.close()
         raise
 
@@ -345,6 +378,7 @@ def _run_evaluation(
     extra = {
         "model": model,
         "backend": backend_type,
+        "agent_runner": agent_runner,
         "seed": seed,
         "template": template_name,
         "n_entities": n_entities,

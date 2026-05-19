@@ -7,8 +7,14 @@ import uuid
 from pathlib import Path
 
 import numpy as np
-from rank_bm25 import BM25Okapi
-from sentence_transformers import SentenceTransformer
+try:
+    from rank_bm25 import BM25Okapi
+    from sentence_transformers import SentenceTransformer
+except ImportError as exc:  # pragma: no cover - exercised without optional deps
+    raise ImportError(
+        "MarkdownBackend search requires optional dependencies. "
+        "Install with: pip install 'memorygym[markdown]'"
+    ) from exc
 
 
 def _tokenize(text: str) -> list[str]:

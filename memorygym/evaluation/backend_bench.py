@@ -247,7 +247,7 @@ def benchmark_backend(
 
 
 def run_backend_bench(
-    backend_type: str = "chromadb",
+    backend_type: str = "markdown",
     template_name: str | None = None,
     n_seeds: int = 5,
 ) -> None:
@@ -276,6 +276,11 @@ def run_backend_bench(
                 )
                 backend = ChromaDBBackend(
                     collection_name=f"bench_{tname}_{seed}")
+            elif backend_type == "markdown":
+                from memorygym.memory.backends.markdown_backend import (
+                    MarkdownBackend,
+                )
+                backend = MarkdownBackend()
             else:
                 raise ValueError(f"Unsupported backend: {backend_type}")
 
@@ -298,7 +303,7 @@ def run_backend_bench(
 if __name__ == "__main__":
     import argparse
     p = argparse.ArgumentParser()
-    p.add_argument("--backend", default="chromadb")
+    p.add_argument("--backend", default="markdown")
     p.add_argument("--template", default=None)
     p.add_argument("--seeds", type=int, default=5)
     args = p.parse_args()

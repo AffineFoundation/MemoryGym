@@ -4,17 +4,17 @@ version = "0.10.44"
 description = "Memory management evaluation for LLM agents"
 requires-python = ">=3.11"
 dependencies = [
-    "chromadb>=0.4",
-    "sentence-transformers>=2.2",
     "inspect-ai>=0.3",
     "openai>=1.0",
     "python-dotenv>=1.0",
-    "rank-bm25>=0.2",
 ]
 
 [project.optional-dependencies]
 dev = ["pytest>=8.0", "ruff>=0.4"]
 affinetes = ["affinetes>=0.2"]
+markdown = ["numpy>=1.24", "rank-bm25>=0.2", "sentence-transformers>=2.2"]
+chromadb = ["chromadb>=0.4", "sentence-transformers>=2.2"]
+legacy = ["chromadb>=0.4", "numpy>=1.24", "rank-bm25>=0.2", "sentence-transformers>=2.2"]
 swift = ["ms-swift>=4.0"]
 
 [project.scripts]

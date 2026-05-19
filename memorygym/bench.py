@@ -89,13 +89,20 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
                    help="long-context mode: keep full history (no selective redaction)")
     p.add_argument("--model", "-m", type=str, metavar="MODEL",
                    help="run real LLM agent (requires API key)")
+    p.add_argument("--agent-runner", choices=["stream", "affent"],
+                   default="affent",
+                   help="agent implementation for --model eval")
+    p.add_argument("--affent-bin", type=str, metavar="PATH",
+                   help="path to affentctl (default: AFFENTCTL_BIN or ../affent)")
+    p.add_argument("--affent-workspace", type=str, metavar="DIR",
+                   help="workspace for affent memory/session state")
     p.add_argument("--api-base", type=str, metavar="URL",
                    help="OpenAI-compatible API base URL")
     p.add_argument("--eval-salt", type=int, default=0, metavar="N",
                    help="perturb numeric values (anti-fingerprint)")
     p.add_argument("--backend", choices=["chromadb", "markdown"],
-                   default="chromadb",
-                   help="memory backend (chromadb or markdown)")
+                   default="markdown",
+                   help="memory backend (markdown default, or chromadb)")
     p.add_argument("--tier", choices=list(TIERS),
                    default=None,
                    help="evaluation tier (lite/standard/hard/multi)")
@@ -110,18 +117,21 @@ def _resolve_config(args: argparse.Namespace) -> tuple[int, int, int, int, int]:
 
     Returns (entities, questions, corrections, write_budget, n_sessions).
     """
+    def override(value: int | None, default: int) -> int:
+        return default if value is None else value
+
     tier_name = args.tier or ("standard" if args.official else None)
     if tier_name:
         tier = TIERS[tier_name]
-        entities = args.entities or tier["entities"]
-        questions = args.questions or tier["questions"]
-        corrections = args.corrections or tier["corrections"]
+        entities = override(args.entities, tier["entities"])
+        questions = override(args.questions, tier["questions"])
+        corrections = override(args.corrections, tier["corrections"])
         write_budget = tier["write_budget"]
         n_sessions = tier.get("n_sessions", 1)
     else:
-        entities = args.entities or 60
-        questions = args.questions or 20
-        corrections = args.corrections or 5
+        entities = override(args.entities, 60)
+        questions = override(args.questions, 20)
+        corrections = override(args.corrections, 5)
         write_budget = 30
         n_sessions = 1
     return entities, questions, corrections, write_budget, n_sessions
@@ -195,7 +205,10 @@ def main(argv: list[str] | None = None) -> int:
 
             if is_model_eval:
                 # Real LLM agent evaluation
-                from memorygym.agents.stream_agent import run_stream_agent
+                if args.agent_runner == "affent":
+                    from memorygym.agents.affent_agent import run_affent_agent
+                else:
+                    from memorygym.agents.stream_agent import run_stream_agent
 
                 print(f"\n  [{tmpl.name}] seed={seed} — Generating world ...",
                       end="", flush=True)
@@ -209,7 +222,7 @@ def main(argv: list[str] | None = None) -> int:
                 corrections = tmpl.generate_corrections(
                     world, rng_correct, n_corrections)
                 # Implicit contradictions: ~30% of correction count
-                n_contras = max(1, n_corrections // 3)
+                n_contras = 0 if n_corrections == 0 else max(1, n_corrections // 3)
                 exclude_corrected = {c.entity_name for c in corrections}
                 rng_contra = Random(seed + 7373)
                 contradictions = tmpl.generate_contradictions(
@@ -238,29 +251,50 @@ def main(argv: list[str] | None = None) -> int:
 
                 print(f"  [{tmpl.name}] seed={seed} — Running agent "
                       f"({args.model}) ...")
-                # Create backend
-                if args.backend == "markdown":
-                    from memorygym.memory.backends.markdown_backend import MarkdownBackend
-                    backend_obj = MarkdownBackend()
-                else:
-                    from memorygym.memory.backends.chromadb_backend import ChromaDBBackend
-                    backend_obj = ChromaDBBackend()
+                # Create backend for the legacy stream runner. The affent
+                # runner owns memory inside affent's workspace instead.
+                backend_obj = None
+                if args.agent_runner != "affent":
+                    if args.backend == "markdown":
+                        from memorygym.memory.backends.markdown_backend import MarkdownBackend
+                        backend_obj = MarkdownBackend()
+                    else:
+                        from memorygym.memory.backends.chromadb_backend import ChromaDBBackend
+                        backend_obj = ChromaDBBackend()
 
                 seed_t0 = time.time()
                 try:
-                    agent_results, writes_used, stored, eval_error, traj = run_stream_agent(
-                        model=args.model,
-                        stream=stream,
-                        write_budget=write_budget,
-                        api_base=args.api_base,
-                        verbose=args.verbose,
-                        quiet=args.quiet,
-                        backend=backend_obj,
-                        world=world,
-                        template=tmpl,
-                        seed=seed,
-                        no_redaction=args.no_redaction,
-                    )
+                    if args.agent_runner == "affent":
+                        workspace = args.affent_workspace
+                        if workspace and len(seeds) > 1:
+                            workspace = str(Path(workspace) / f"{tmpl.name}_s{seed}")
+                        agent_results, writes_used, stored, eval_error, traj = run_affent_agent(
+                            model=args.model,
+                            stream=stream,
+                            write_budget=write_budget,
+                            api_base=args.api_base,
+                            verbose=args.verbose,
+                            quiet=args.quiet,
+                            world=world,
+                            template=tmpl,
+                            seed=seed,
+                            affent_bin=args.affent_bin,
+                            workspace=workspace,
+                        )
+                    else:
+                        agent_results, writes_used, stored, eval_error, traj = run_stream_agent(
+                            model=args.model,
+                            stream=stream,
+                            write_budget=write_budget,
+                            api_base=args.api_base,
+                            verbose=args.verbose,
+                            quiet=args.quiet,
+                            backend=backend_obj,
+                            world=world,
+                            template=tmpl,
+                            seed=seed,
+                            no_redaction=args.no_redaction,
+                        )
 
                     # Convert to standard format
                     seed_elapsed = time.time() - seed_t0
@@ -369,6 +403,7 @@ def main(argv: list[str] | None = None) -> int:
                             "version": __version__,
                             "model": args.model,
                             "backend": args.backend,
+                            "agent_runner": args.agent_runner,
                             "seed": seed,
                             "template": tmpl.name,
                             "n_entities": n_entities,
@@ -412,7 +447,8 @@ def main(argv: list[str] | None = None) -> int:
                     print(f"\n  ERROR (seed {seed}): {e}")
                     continue
                 finally:
-                    backend_obj.close()
+                    if backend_obj is not None:
+                        backend_obj.close()
 
             else:
                 # Simulation mode (system self-testing)

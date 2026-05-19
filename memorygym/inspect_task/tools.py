@@ -6,7 +6,6 @@ from inspect_ai.tool import Tool, ToolError, tool
 
 from typing import Any
 
-from memorygym.memory.backends.chromadb_backend import ChromaDBBackend
 from memorygym.memory.budget import MemoryBudget
 
 # Type alias for any backend implementing store/search/get/forget/list
@@ -15,7 +14,7 @@ MemoryBackend = Any
 
 def create_memory_tools(
     budget: int = 30,
-    backend_type: str = "chromadb",
+    backend_type: str = "markdown",
     collection_name: str = "memorygym",
     backend: MemoryBackend | None = None,
 ) -> tuple[list[Tool], MemoryBudget, MemoryBackend, dict]:
@@ -23,7 +22,7 @@ def create_memory_tools(
 
     Args:
         budget: Total write budget.
-        backend_type: Backend type (currently only "chromadb").
+        backend_type: Backend type ("markdown" by default, or "chromadb").
         collection_name: Collection name for ChromaDB backend.
         backend: Pre-created backend (overrides backend_type).
 
@@ -32,7 +31,14 @@ def create_memory_tools(
         mutable flags like free_edit for correction handling.
     """
     if backend is None:
-        backend = ChromaDBBackend(collection_name=collection_name)
+        if backend_type == "chromadb":
+            from memorygym.memory.backends.chromadb_backend import ChromaDBBackend
+            backend = ChromaDBBackend(collection_name=collection_name)
+        elif backend_type == "markdown":
+            from memorygym.memory.backends.markdown_backend import MarkdownBackend
+            backend = MarkdownBackend()
+        else:
+            raise ValueError(f"Unsupported backend_type: {backend_type}")
 
     mem_budget = MemoryBudget(total_writes=budget)
     state = {"free_edit": False}

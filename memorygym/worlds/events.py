@@ -239,12 +239,15 @@ class EventGeneratorMixin:
         # Use template-specific correction timing
         ct_min, ct_max = self.correction_timing
         corr_frac = rng.uniform(ct_min, ct_max)
-        correction_batch = max(1, int(n_batches * corr_frac))
+        correction_batch = min(n_batches - 1, max(0, int(n_batches * corr_frac)))
         contra_frac = rng.uniform(0.7, 0.9)
-        contradiction_batch = min(
-            n_batches - 1,
-            max(correction_batch + 1, int(n_batches * contra_frac)),
-        )
+        if n_batches > 1:
+            contradiction_batch = min(
+                n_batches - 1,
+                max(correction_batch + 1, int(n_batches * contra_frac)),
+            )
+        else:
+            contradiction_batch = 0
 
         # Track introduced entities for question generation
         introduced: list[EntitySpec] = []

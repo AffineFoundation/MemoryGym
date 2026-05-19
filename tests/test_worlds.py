@@ -740,6 +740,23 @@ def test_session_breaks():
         break  # One template is enough for structural tests
 
 
+def test_single_batch_stream_emits_corrections():
+    """Small custom evals with one ingest batch must still test corrections."""
+    from memorygym.worlds import ALL_TEMPLATES
+
+    tmpl = ALL_TEMPLATES["company"]()
+    world = tmpl.generate_world(seed=2, n_entities=10)
+    corrections = tmpl.generate_corrections(world, Random(2 + 3333), 1)
+    assert corrections
+
+    stream = tmpl.generate_stream(
+        world, Random(2 + 5555), corrections,
+        stored_names=set(), n_questions=1, entities_per_batch=10,
+        contradictions=[], n_sessions=1)
+
+    assert sum(1 for e in stream if e["type"] == "correction") == len(corrections)
+
+
 def test_cross_session_correction():
     """Multi-session: at least 1 correction target is in a different session
     than its correction event, guaranteeing cross-session update testing."""
