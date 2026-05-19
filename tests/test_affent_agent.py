@@ -1,10 +1,12 @@
 import json
+from types import SimpleNamespace
 
 from memorygym.agents.affent_agent import (
     _apply_memory_budget,
     _load_memory_state,
     _parse_trace,
     _resolve_affentctl,
+    _run_affent_turn,
     _write_affent_memory_entries,
 )
 from memorygym.memory.budget import MemoryBudget
@@ -54,6 +56,93 @@ def test_parse_affent_trace_memory_tool(tmp_path):
     assert turn.api_calls == 1
     assert turn.error is None
     assert turn.turns[0]["tool_calls"][0]["name"] == "memory"
+
+
+def test_parse_affent_trace_prefers_full_result_over_summary(tmp_path):
+    """When affent emits both `result` (full) and `result_summary`
+    (truncated UI preview), the parser must record the full one so
+    downstream JSON parsing succeeds for large memory responses.
+    """
+    # 5 KB payload exceeds affent's 4 KB result_summary cap; only the
+    # `result` field still carries valid JSON.
+    big_entries = [f"entry-{i:03d}" for i in range(250)]
+    full_json = json.dumps({"ok": True, "target": "memory", "entries": big_entries})
+    truncated = full_json[:4096] + "..."  # mimics affent previewN()
+
+    trace = tmp_path / "trace.jsonl"
+    events = [
+        _event("tool.request", {
+            "tool": "memory",
+            "args": {"action": "add", "target": "memory", "content": "x"},
+        }),
+        _event("tool.result", {
+            "result_summary": truncated,
+            "result": full_json,
+        }),
+        _event("turn.end", {"reason": "completed"}),
+    ]
+    trace.write_text("\n".join(json.dumps(e) for e in events))
+
+    turn = _parse_trace(trace)
+    assert len(turn.turns) == 1
+    captured = turn.turns[0]["tool_results"][0]
+    assert captured.startswith("[tool] ")
+    body = captured[len("[tool] "):]
+    parsed = json.loads(body)  # MUST parse — would fail without the fix
+    assert parsed["ok"] is True
+    assert len(parsed["entries"]) == 250
+
+
+def test_parse_affent_trace_falls_back_to_summary_when_no_result(tmp_path):
+    """Old affent binaries do not emit the `result` field. The parser
+    must fall back to `result_summary` so legacy traces still work.
+    """
+    trace = tmp_path / "trace.jsonl"
+    events = [
+        _event("tool.request", {
+            "tool": "memory",
+            "args": {"action": "add", "target": "memory", "content": "y"},
+        }),
+        _event("tool.result", {
+            "result_summary": '{"ok":true,"target":"memory"}',
+        }),
+        _event("turn.end", {"reason": "completed"}),
+    ]
+    trace.write_text("\n".join(json.dumps(e) for e in events))
+
+    turn = _parse_trace(trace)
+    captured = turn.turns[0]["tool_results"][0]
+    assert "ok" in captured
+
+
+def test_run_affent_turn_passes_optional_timeout_flags(tmp_path, monkeypatch):
+    captured = {}
+
+    def fake_run(cmd, **kwargs):
+        captured["cmd"] = cmd
+        trace_path = cmd[cmd.index("--trace") + 1]
+        with open(trace_path, "w") as f:
+            f.write(json.dumps(_event("message.done", {"text": "ok"})))
+        return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+    monkeypatch.setenv("MEMORYGYM_AFFENT_CALL_TIMEOUT", "15m")
+    monkeypatch.setenv("MEMORYGYM_AFFENT_RETRY_TRANSIENT", "0")
+    monkeypatch.setattr("memorygym.agents.affent_agent.subprocess.run", fake_run)
+
+    turn = _run_affent_turn(
+        affent_bin="/bin/affentctl",
+        workspace=tmp_path,
+        model="model",
+        base_url="http://example/v1",
+        api_key="key",
+        session_id="s",
+        prompt="hi",
+        system_prompt="sys",
+    )
+
+    assert turn.answer == "ok"
+    assert captured["cmd"][captured["cmd"].index("--max-call-timeout") + 1] == "15m"
+    assert captured["cmd"][captured["cmd"].index("--retry-transient") + 1] == "0"
 
 
 def test_parse_affent_trace_final_text_fallback(tmp_path):

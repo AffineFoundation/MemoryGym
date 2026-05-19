@@ -187,7 +187,14 @@ def _parse_trace(
                 if action in ("add", "replace", "remove"):
                     turn.writes += 1
         elif etype == "tool.result":
-            tool_results.append(f"[tool] {data.get('result_summary', '')}")
+            # Prefer the full, untruncated `result` field added in affent's
+            # SSE schema; fall back to `result_summary` for older binaries.
+            # result_summary is a UI-preview capped at 4 KiB and may carry
+            # truncated (unparseable) JSON for large memory responses.
+            full = data.get("result")
+            if full is None:
+                full = data.get("result_summary", "")
+            tool_results.append(f"[tool] {full}")
         elif etype == "message.done":
             turn.final_text = _strip_think(str(data.get("text", ""))).strip()
         elif etype == "usage":
@@ -235,6 +242,8 @@ def _run_affent_turn(
         return _AffentTurn(error="affent turn skipped: no wallclock remaining")
     trace_path = workspace / "traces" / f"{time.time_ns()}.jsonl"
     trace_path.parent.mkdir(parents=True, exist_ok=True)
+    affent_call_timeout = os.environ.get("MEMORYGYM_AFFENT_CALL_TIMEOUT", "").strip()
+    affent_retries = os.environ.get("MEMORYGYM_AFFENT_RETRY_TRANSIENT", "").strip()
     cmd = [
         affent_bin, "run",
         "--workspace", str(workspace),
@@ -249,6 +258,10 @@ def _run_affent_turn(
         "--quiet",
         "--system-prompt", system_prompt,
     ]
+    if affent_call_timeout:
+        cmd.extend(["--max-call-timeout", affent_call_timeout])
+    if affent_retries:
+        cmd.extend(["--retry-transient", affent_retries])
     t0 = time.time()
     try:
         env = os.environ.copy()
