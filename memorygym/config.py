@@ -4,12 +4,13 @@ Single source of truth for API URL and key resolution.
 All modules should use get_api_config() instead of reading env vars directly.
 
 Environment variables (in priority order):
-    API_KEY  — project-specific key
-    CHUTES_API_KEY     — Chutes platform key (backward compat)
-    OPENAI_API_KEY     — OpenAI key (fallback)
+    DASHSCOPE_API_KEY  — DashScope key; preferred default provider
+    CHUTES_API_KEY     — Chutes platform key
+    OPENAI_API_KEY     — OpenAI key
+    API_KEY            — project-specific fallback key
 
-    API_URL  — custom API endpoint
-    (default: https://llm.chutes.ai/v1)
+    API_URL            — custom API endpoint
+    (default: DashScope when DASHSCOPE_API_KEY is set, else Chutes)
 """
 
 from __future__ import annotations
@@ -17,7 +18,18 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass
 
+QWEN_FALLBACK_BASE_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1"
+QWEN_FALLBACK_MODEL = "qwen3.6-27b"
+
 _DEFAULT_API_URL = "https://llm.chutes.ai/v1"
+
+
+def _looks_like_dashscope(url: str | None) -> bool:
+    return bool(url and "dashscope.aliyuncs.com" in url)
+
+
+def _looks_like_chutes(url: str | None) -> bool:
+    return bool(url and "chutes.ai" in url)
 
 
 @dataclass(frozen=True)
@@ -45,21 +57,39 @@ def get_api_config(
     Raises:
         RuntimeError: If no API key can be found.
     """
-    key = (
-        api_key
-        or os.environ.get("CHUTES_API_KEY")
-        or os.environ.get("OPENAI_API_KEY")
-        or os.environ.get("API_KEY")
-    )
+    requested_url = api_url or os.environ.get("API_URL")
+
+    if api_key:
+        key = api_key
+    elif _looks_like_dashscope(requested_url):
+        key = (
+            os.environ.get("DASHSCOPE_API_KEY")
+            or os.environ.get("API_KEY")
+            or os.environ.get("OPENAI_API_KEY")
+        )
+    elif _looks_like_chutes(requested_url):
+        key = (
+            os.environ.get("CHUTES_API_KEY")
+            or os.environ.get("API_KEY")
+            or os.environ.get("OPENAI_API_KEY")
+        )
+    else:
+        key = (
+            os.environ.get("DASHSCOPE_API_KEY")
+            or os.environ.get("CHUTES_API_KEY")
+            or os.environ.get("OPENAI_API_KEY")
+            or os.environ.get("API_KEY")
+        )
     if not key:
         raise RuntimeError(
-            "No API key found. Set CHUTES_API_KEY, "
-            "or OPENAI_API_KEY or API_KEY environment variable."
+            "No API key found. Set DASHSCOPE_API_KEY, CHUTES_API_KEY, "
+            "OPENAI_API_KEY, or API_KEY environment variable."
         )
 
     url = (
         api_url
         or os.environ.get("API_URL")
+        or (QWEN_FALLBACK_BASE_URL if os.environ.get("DASHSCOPE_API_KEY") else None)
         or _DEFAULT_API_URL
     )
 

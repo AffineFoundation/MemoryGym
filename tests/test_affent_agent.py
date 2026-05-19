@@ -147,10 +147,12 @@ def test_run_affent_turn_passes_optional_timeout_flags(tmp_path, monkeypatch):
 
     assert turn.answer == "ok"
     assert captured["cmd"][captured["cmd"].index("--max-call-timeout") + 1] == "15m"
+    assert captured["cmd"][captured["cmd"].index("--memory-max-chars") + 1] == "12000,1375"
     assert captured["cmd"][captured["cmd"].index("--retry-transient") + 1] == "0"
 
 
-def test_new_judge_client_requires_explicit_chutes_key(monkeypatch):
+def test_new_judge_client_requires_explicit_judge_key(monkeypatch):
+    monkeypatch.delenv("DASHSCOPE_API_KEY", raising=False)
     monkeypatch.delenv("CHUTES_API_KEY", raising=False)
     monkeypatch.setenv("API_KEY", "dummy-target-model-key")
 

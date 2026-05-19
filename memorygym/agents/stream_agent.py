@@ -506,11 +506,17 @@ def run_stream_agent(
     cfg = get_api_config(api_key=api_key, api_url=api_base)
     client = OpenAI(api_key=cfg.api_key, base_url=cfg.api_url)
 
-    # Judge client: always use Chutes public API with TEE models.
+    # Judge client: use a trusted provider, never the evaluated model endpoint.
     # Must NOT use miner's base_url — miner-controlled endpoints can
     # return garbage verdicts to inflate scores.
-    _judge_key = os.environ.get("CHUTES_API_KEY") or cfg.api_key
-    judge_client = OpenAI(api_key=_judge_key, base_url="https://llm.chutes.ai/v1")
+    from memorygym.config import QWEN_FALLBACK_BASE_URL
+
+    _dashscope_key = os.environ.get("DASHSCOPE_API_KEY")
+    if _dashscope_key:
+        judge_client = OpenAI(api_key=_dashscope_key, base_url=QWEN_FALLBACK_BASE_URL)
+    else:
+        _judge_key = os.environ.get("CHUTES_API_KEY") or cfg.api_key
+        judge_client = OpenAI(api_key=_judge_key, base_url="https://llm.chutes.ai/v1")
 
     if backend is None:
         from memorygym.memory.backends.markdown_backend import MarkdownBackend

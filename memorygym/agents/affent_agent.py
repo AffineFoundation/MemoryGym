@@ -26,7 +26,7 @@ from memorygym.agents._tool_helpers import (
     format_documents as _format_documents,
 )
 from memorygym.agents.stream_agent import AgentResult
-from memorygym.config import get_api_config
+from memorygym.config import QWEN_FALLBACK_BASE_URL, get_api_config
 from memorygym.evaluation.llm_judge import llm_judge_validate_sync
 from memorygym.evaluation.validators import validate_with_fallback
 from memorygym.memory.budget import MemoryBudget
@@ -55,6 +55,7 @@ Rules:
 
 _MEMORY_DELIM = "\n§\n"
 _AFFENT_MEMORY_REL = Path(".affent") / "MEMORY.md"
+_DEFAULT_AFFENT_MEMORY_MAX_CHARS = "12000,1375"
 
 
 def _strip_think(text: str) -> str:
@@ -164,6 +165,9 @@ def _stored_contents(workspace: Path) -> list[str]:
 
 
 def _new_judge_client() -> OpenAI | None:
+    dashscope_key = os.environ.get("DASHSCOPE_API_KEY", "").strip()
+    if dashscope_key:
+        return OpenAI(api_key=dashscope_key, base_url=QWEN_FALLBACK_BASE_URL)
     key = os.environ.get("CHUTES_API_KEY", "").strip()
     if not key:
         return None
@@ -261,6 +265,10 @@ def _run_affent_turn(
     trace_path = workspace / "traces" / f"{time.time_ns()}.jsonl"
     trace_path.parent.mkdir(parents=True, exist_ok=True)
     affent_call_timeout = os.environ.get("MEMORYGYM_AFFENT_CALL_TIMEOUT", "").strip()
+    affent_memory_max_chars = os.environ.get(
+        "MEMORYGYM_AFFENT_MEMORY_MAX_CHARS",
+        _DEFAULT_AFFENT_MEMORY_MAX_CHARS,
+    ).strip()
     affent_retries = os.environ.get("MEMORYGYM_AFFENT_RETRY_TRANSIENT", "").strip()
     cmd = [
         affent_bin, "run",
@@ -278,6 +286,8 @@ def _run_affent_turn(
     ]
     if affent_call_timeout:
         cmd.extend(["--max-call-timeout", affent_call_timeout])
+    if affent_memory_max_chars:
+        cmd.extend(["--memory-max-chars", affent_memory_max_chars])
     if affent_retries:
         cmd.extend(["--retry-transient", affent_retries])
     t0 = time.time()

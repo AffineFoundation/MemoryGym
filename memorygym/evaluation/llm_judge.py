@@ -12,6 +12,8 @@ import re
 
 import os as _os
 
+from memorygym.config import QWEN_FALLBACK_MODEL
+
 
 def _judge_model_list() -> list[str]:
     """Return judge model preference order.
@@ -26,6 +28,8 @@ def _judge_model_list() -> list[str]:
     single = _os.environ.get("MEMORYGYM_JUDGE_MODEL", "").strip()
     if single:
         return [single]
+    if _os.environ.get("DASHSCOPE_API_KEY", "").strip():
+        return [QWEN_FALLBACK_MODEL]
     return [
         # Chutes public utilization currently shows these as active.
         # Keep defaults conservative: avoid stale catalog-only names.
@@ -54,10 +58,17 @@ JUDGE_MODELS = (
     _judge_model_list()
 )
 
-# Total timeout for all judge attempts (seconds).
-# Per-question judge timeout. Keeps retrying across all TEE models
-# with 10s backoff until this limit. Aligned with eval proxy_timeout.
-JUDGE_TIMEOUT_S = 600
+def _judge_timeout_s() -> int:
+    raw = _os.environ.get("MEMORYGYM_JUDGE_TIMEOUT_S", "60").strip()
+    try:
+        return max(1, int(raw))
+    except ValueError:
+        return 60
+
+
+# Total timeout for all judge attempts for one answer. The evaluated agent
+# model is not constrained by this; it only bounds judge latency.
+JUDGE_TIMEOUT_S = _judge_timeout_s()
 
 _VERDICT_RE = re.compile(r"(VERDICT_CORRECT|VERDICT_INCORRECT)", re.IGNORECASE)
 

@@ -4,7 +4,11 @@ from __future__ import annotations
 
 import pytest
 
-from memorygym.evaluation.llm_judge import _judge_model_list, _parse_verdict
+from memorygym.evaluation.llm_judge import (
+    _judge_model_list,
+    _judge_timeout_s,
+    _parse_verdict,
+)
 
 
 class TestVerdictInjection:
@@ -54,18 +58,21 @@ class TestVerdictInjection:
 
 class TestJudgeModelList:
     def test_multi_model_override_takes_precedence(self, monkeypatch):
+        monkeypatch.delenv("DASHSCOPE_API_KEY", raising=False)
         monkeypatch.setenv("MEMORYGYM_JUDGE_MODELS", "model/a, model/b,,model/c")
         monkeypatch.setenv("MEMORYGYM_JUDGE_MODEL", "model/single")
 
         assert _judge_model_list() == ["model/a", "model/b", "model/c"]
 
     def test_single_model_override_backcompat(self, monkeypatch):
+        monkeypatch.delenv("DASHSCOPE_API_KEY", raising=False)
         monkeypatch.delenv("MEMORYGYM_JUDGE_MODELS", raising=False)
         monkeypatch.setenv("MEMORYGYM_JUDGE_MODEL", "model/single")
 
         assert _judge_model_list() == ["model/single"]
 
     def test_defaults_include_current_active_chutes_models(self, monkeypatch):
+        monkeypatch.delenv("DASHSCOPE_API_KEY", raising=False)
         monkeypatch.delenv("MEMORYGYM_JUDGE_MODELS", raising=False)
         monkeypatch.delenv("MEMORYGYM_JUDGE_MODEL", raising=False)
 
@@ -78,6 +85,23 @@ class TestJudgeModelList:
         assert "MiniMaxAI/MiniMax-M2" in models
         assert "zai-org/GLM-5.1-TEE" in models
         assert "Qwen/Qwen3-235B-A22B-Instruct-2507" not in models
+
+    def test_dashscope_key_uses_qwen_fallback_judge(self, monkeypatch):
+        monkeypatch.delenv("MEMORYGYM_JUDGE_MODELS", raising=False)
+        monkeypatch.delenv("MEMORYGYM_JUDGE_MODEL", raising=False)
+        monkeypatch.setenv("DASHSCOPE_API_KEY", "sk-dashscope")
+
+        assert _judge_model_list() == ["qwen3.6-27b"]
+
+
+class TestJudgeTimeout:
+    def test_default_judge_timeout_is_60s(self, monkeypatch):
+        monkeypatch.delenv("MEMORYGYM_JUDGE_TIMEOUT_S", raising=False)
+        assert _judge_timeout_s() == 60
+
+    def test_judge_timeout_env_override(self, monkeypatch):
+        monkeypatch.setenv("MEMORYGYM_JUDGE_TIMEOUT_S", "9")
+        assert _judge_timeout_s() == 9
 
 
 class TestAnswerSanitization:
