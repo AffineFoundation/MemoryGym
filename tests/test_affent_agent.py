@@ -12,6 +12,7 @@ from memorygym.agents.affent_agent import (
     _resolve_affentctl,
     _run_affent_turn,
     _write_affent_memory_entries,
+    run_affent_agent,
 )
 from memorygym.memory.budget import MemoryBudget
 
@@ -267,6 +268,47 @@ def test_apply_memory_budget_skips_write_when_no_mutations(tmp_path):
     assert writes == 0
     assert after_mtime == before_mtime, "MEMORY.md must not be rewritten on no-op turn"
     assert _read_affent_memory_entries(tmp_path) == ["alpha", "beta"]
+
+
+def test_run_affent_agent_cleans_owned_temp_workspace(tmp_path, monkeypatch):
+    owned = tmp_path / "owned"
+
+    monkeypatch.setattr(
+        "memorygym.agents.affent_agent.tempfile.mkdtemp",
+        lambda prefix: str(owned),
+    )
+    monkeypatch.setattr(
+        "memorygym.agents.affent_agent._resolve_affentctl",
+        lambda explicit=None: "/bin/true",
+    )
+
+    run_affent_agent(
+        model="model",
+        stream=[],
+        api_base="http://example/v1",
+        api_key="key",
+    )
+
+    assert not owned.exists()
+
+
+def test_run_affent_agent_preserves_explicit_workspace(tmp_path, monkeypatch):
+    workspace = tmp_path / "explicit"
+
+    monkeypatch.setattr(
+        "memorygym.agents.affent_agent._resolve_affentctl",
+        lambda explicit=None: "/bin/true",
+    )
+
+    run_affent_agent(
+        model="model",
+        stream=[],
+        api_base="http://example/v1",
+        api_key="key",
+        workspace=str(workspace),
+    )
+
+    assert workspace.exists()
 
 
 def test_apply_memory_budget_replays_successful_memory_calls(tmp_path):

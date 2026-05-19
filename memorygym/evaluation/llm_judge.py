@@ -10,19 +10,46 @@ from __future__ import annotations
 
 import re
 
-# Judge model list: uses env override or defaults to Chutes API models.
-# MEMORYGYM_JUDGE_MODEL env var overrides the list (for local vLLM eval).
 import os as _os
-_JUDGE_MODEL_OVERRIDE = _os.environ.get("MEMORYGYM_JUDGE_MODEL")
-JUDGE_MODELS = (
-    [_JUDGE_MODEL_OVERRIDE] if _JUDGE_MODEL_OVERRIDE else [
-        # High reliability TEE (tested working)
+
+
+def _judge_model_list() -> list[str]:
+    """Return judge model preference order.
+
+    MEMORYGYM_JUDGE_MODELS accepts a comma-separated preference list.
+    MEMORYGYM_JUDGE_MODEL is kept as a backwards-compatible single-model
+    override, primarily for local vLLM / SGLang validation.
+    """
+    multi = _os.environ.get("MEMORYGYM_JUDGE_MODELS", "").strip()
+    if multi:
+        return [m.strip() for m in multi.split(",") if m.strip()]
+    single = _os.environ.get("MEMORYGYM_JUDGE_MODEL", "").strip()
+    if single:
+        return [single]
+    return [
+        # Current mainstream Chutes/open models. Ordered for reliable
+        # factual judging before falling back to smaller/faster models.
+        "openai/gpt-oss-120b",
+        "Qwen/Qwen3-235B-A22B-Instruct-2507",
+        "Qwen/Qwen3-235B-A22B-Thinking-2507",
+        "moonshotai/Kimi-K2-Instruct-0905",
+        "moonshotai/Kimi-K2-Instruct",
+        "Qwen/Qwen3-Coder-480B-A35B-Instruct-FP8",
+        "Qwen/Qwen3-Next-80B-A3B-Instruct",
+        "Qwen/Qwen3-Next-80B-A3B-Thinking",
+        "MiniMaxAI/MiniMax-M2",
+        "zai-org/GLM-4.6",
+        "zai-org/GLM-4.6-FP8",
+        "deepseek-ai/DeepSeek-V3.1",
+        "deepseek-ai/DeepSeek-V3.1-Terminus",
+        "deepseek-ai/DeepSeek-V3.2-Exp",
+        "deepseek-ai/DeepSeek-R1-0528",
+        "deepseek-ai/DeepSeek-R1-0528-Qwen3-8B",
+        "unsloth/gemma-3-27b-it",
+        # Older / intermittently available TEE names kept last so they
+        # remain usable where available without slowing the common path.
         "openai/gpt-oss-120b-TEE",
         "Qwen/Qwen3-235B-A22B-Instruct-2507-TEE",
-        # Non-TEE fallbacks (fast, high availability)
-        "unsloth/gemma-3-27b-it",
-        "Qwen/Qwen3-235B-A22B-Instruct-2507",
-        # TEE models (intermittent availability)
         "deepseek-ai/DeepSeek-V3-0324-TEE",
         "Qwen/Qwen3.5-397B-A17B-TEE",
         "moonshotai/Kimi-K2.5-TEE",
@@ -30,6 +57,10 @@ JUDGE_MODELS = (
         "zai-org/GLM-5-TEE",
         "Qwen/Qwen3-32B-TEE",
     ]
+
+
+JUDGE_MODELS = (
+    _judge_model_list()
 )
 
 # Total timeout for all judge attempts (seconds).

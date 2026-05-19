@@ -448,6 +448,7 @@ def run_affent_agent(
     """Run MemoryGym using affent as the evaluation agent."""
     cfg = get_api_config(api_key=api_key, api_url=api_base)
     affentctl = _resolve_affentctl(affent_bin)
+    owns_workspace = workspace is None
     workspace_path = Path(workspace) if workspace else Path(tempfile.mkdtemp(prefix="memorygym_affent_"))
     workspace_path.mkdir(parents=True, exist_ok=True)
     system_prompt = AFFENT_MEMORY_SYSTEM_PROMPT.format(budget=write_budget)
@@ -667,3 +668,5 @@ def run_affent_agent(
                 judge_client.close()
             except Exception:
                 pass
+        if owns_workspace:
+            shutil.rmtree(workspace_path, ignore_errors=True)

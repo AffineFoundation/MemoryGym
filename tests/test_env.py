@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from concurrent.futures import ThreadPoolExecutor
 
 import pytest
 
@@ -23,11 +24,8 @@ class TestParseTaskId:
 
     def test_out_of_range_raises(self):
         from memorygym.env import _parse_task_id
-        from memorygym.worlds import TEMPLATE_REGISTRY
         with pytest.raises(ValueError):
             _parse_task_id(-1)
-        with pytest.raises(ValueError):
-            _parse_task_id(len(TEMPLATE_REGISTRY))
 
     def test_stability_contract(self):
         """First 10 entries must never change — this IS the contract."""
@@ -43,6 +41,12 @@ class TestParseTaskId:
         from memorygym.env import _parse_task_id
         for tid in range(10):
             assert _parse_task_id(tid) == _parse_task_id(tid)
+
+    def test_large_task_id_wraps_by_registry(self):
+        from memorygym.env import _parse_task_id
+        from memorygym.worlds import TEMPLATE_REGISTRY
+
+        assert _parse_task_id(len(TEMPLATE_REGISTRY)) == TEMPLATE_REGISTRY[0]
 
 
 class TestActorInit:
@@ -123,3 +127,37 @@ class TestActorEvaluate:
             _run(actor.evaluate(
                 model="test", base_url="http://fake",
                 tier="impossible"))
+
+    def test_affent_workspace_gets_unique_eval_subdir(self, tmp_path, monkeypatch):
+        from memorygym.env import _run_evaluation
+        from memorygym.protocol import TIERS
+
+        seen: list[str] = []
+
+        def fake_run_affent_agent(**kwargs):
+            seen.append(kwargs["workspace"])
+            return [], 0, [], None, []
+
+        monkeypatch.setattr(
+            "memorygym.agents.affent_agent.run_affent_agent",
+            fake_run_affent_agent,
+        )
+
+        def run_once():
+            _run_evaluation(
+                model="test",
+                base_url="http://fake/v1",
+                api_key="key",
+                seed=0,
+                template_name="company",
+                tier="lite",
+                tier_cfg=TIERS["lite"],
+                affent_workspace=str(tmp_path),
+            )
+
+        with ThreadPoolExecutor(max_workers=4) as pool:
+            list(pool.map(lambda _: run_once(), range(4)))
+
+        assert len(seen) == 4
+        assert len(set(seen)) == 4
+        assert all(str(tmp_path) in workspace for workspace in seen)

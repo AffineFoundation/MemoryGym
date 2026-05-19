@@ -295,7 +295,7 @@ def _run_evaluation(
 
             workspace = affent_workspace
             if workspace:
-                workspace = str(Path(workspace) / f"{template_name}_s{seed}")
+                workspace = str(Path(workspace) / eval_id)
             agent_results, writes_used, stored, eval_error, traj = run_affent_agent(
                 model=model,
                 stream=stream,

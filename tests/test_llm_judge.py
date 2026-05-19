@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from memorygym.evaluation.llm_judge import _parse_verdict
+from memorygym.evaluation.llm_judge import _judge_model_list, _parse_verdict
 
 
 class TestVerdictInjection:
@@ -50,6 +50,33 @@ class TestVerdictInjection:
     def test_reason_extraction(self):
         _, reason = _parse_verdict("VERDICT_CORRECT\nThe values match exactly.")
         assert "values match" in reason.lower()
+
+
+class TestJudgeModelList:
+    def test_multi_model_override_takes_precedence(self, monkeypatch):
+        monkeypatch.setenv("MEMORYGYM_JUDGE_MODELS", "model/a, model/b,,model/c")
+        monkeypatch.setenv("MEMORYGYM_JUDGE_MODEL", "model/single")
+
+        assert _judge_model_list() == ["model/a", "model/b", "model/c"]
+
+    def test_single_model_override_backcompat(self, monkeypatch):
+        monkeypatch.delenv("MEMORYGYM_JUDGE_MODELS", raising=False)
+        monkeypatch.setenv("MEMORYGYM_JUDGE_MODEL", "model/single")
+
+        assert _judge_model_list() == ["model/single"]
+
+    def test_defaults_include_current_mainstream_models(self, monkeypatch):
+        monkeypatch.delenv("MEMORYGYM_JUDGE_MODELS", raising=False)
+        monkeypatch.delenv("MEMORYGYM_JUDGE_MODEL", raising=False)
+
+        models = _judge_model_list()
+
+        assert "openai/gpt-oss-120b" in models
+        assert "Qwen/Qwen3-235B-A22B-Instruct-2507" in models
+        assert "moonshotai/Kimi-K2-Instruct-0905" in models
+        assert "MiniMaxAI/MiniMax-M2" in models
+        assert "zai-org/GLM-4.6" in models
+        assert "deepseek-ai/DeepSeek-V3.1" in models
 
 
 class TestAnswerSanitization:
