@@ -27,35 +27,26 @@ def _judge_model_list() -> list[str]:
     if single:
         return [single]
     return [
-        # Current mainstream Chutes/open models. Ordered for reliable
-        # factual judging before falling back to smaller/faster models.
-        "openai/gpt-oss-120b",
-        "Qwen/Qwen3-235B-A22B-Instruct-2507",
-        "Qwen/Qwen3-235B-A22B-Thinking-2507",
-        "moonshotai/Kimi-K2-Instruct-0905",
-        "moonshotai/Kimi-K2-Instruct",
-        "Qwen/Qwen3-Coder-480B-A35B-Instruct-FP8",
-        "Qwen/Qwen3-Next-80B-A3B-Instruct",
-        "Qwen/Qwen3-Next-80B-A3B-Thinking",
-        "MiniMaxAI/MiniMax-M2",
-        "zai-org/GLM-4.6",
-        "zai-org/GLM-4.6-FP8",
-        "deepseek-ai/DeepSeek-V3.1",
-        "deepseek-ai/DeepSeek-V3.1-Terminus",
-        "deepseek-ai/DeepSeek-V3.2-Exp",
-        "deepseek-ai/DeepSeek-R1-0528",
-        "deepseek-ai/DeepSeek-R1-0528-Qwen3-8B",
-        "unsloth/gemma-3-27b-it",
-        # Older / intermittently available TEE names kept last so they
-        # remain usable where available without slowing the common path.
-        "openai/gpt-oss-120b-TEE",
-        "Qwen/Qwen3-235B-A22B-Instruct-2507-TEE",
+        # Chutes public utilization currently shows these as active.
+        # Keep defaults conservative: avoid stale catalog-only names.
+        "Qwen/Qwen3-32B-TEE",
+        "deepseek-ai/DeepSeek-V3.2-TEE",
+        "deepseek-ai/DeepSeek-V3.1-TEE",
         "deepseek-ai/DeepSeek-V3-0324-TEE",
-        "Qwen/Qwen3.5-397B-A17B-TEE",
+        "zai-org/GLM-5.1-TEE",
+        "moonshotai/Kimi-K2.6-TEE",
         "moonshotai/Kimi-K2.5-TEE",
         "MiniMaxAI/MiniMax-M2.5-TEE",
         "zai-org/GLM-5-TEE",
-        "Qwen/Qwen3-32B-TEE",
+        "zai-org/GLM-4.7-TEE",
+        "deepseek-ai/DeepSeek-R1-0528-TEE",
+        "Qwen/Qwen3.5-397B-A17B-TEE",
+        "tngtech/DeepSeek-TNG-R1T2-Chimera-TEE",
+        "Qwen/Qwen3-Next-80B-A3B-Instruct",
+        "zai-org/GLM-5-Turbo",
+        "google/gemma-4-31B-turbo-TEE",
+        "Qwen/Qwen3-32B-NVFP4-TEE",
+        "MiniMaxAI/MiniMax-M2",
     ]
 
 

@@ -65,18 +65,19 @@ class TestJudgeModelList:
 
         assert _judge_model_list() == ["model/single"]
 
-    def test_defaults_include_current_mainstream_models(self, monkeypatch):
+    def test_defaults_include_current_active_chutes_models(self, monkeypatch):
         monkeypatch.delenv("MEMORYGYM_JUDGE_MODELS", raising=False)
         monkeypatch.delenv("MEMORYGYM_JUDGE_MODEL", raising=False)
 
         models = _judge_model_list()
 
-        assert "openai/gpt-oss-120b" in models
-        assert "Qwen/Qwen3-235B-A22B-Instruct-2507" in models
-        assert "moonshotai/Kimi-K2-Instruct-0905" in models
+        assert "Qwen/Qwen3-32B-TEE" in models
+        assert "deepseek-ai/DeepSeek-V3.2-TEE" in models
+        assert "deepseek-ai/DeepSeek-V3.1-TEE" in models
+        assert "moonshotai/Kimi-K2.6-TEE" in models
         assert "MiniMaxAI/MiniMax-M2" in models
-        assert "zai-org/GLM-4.6" in models
-        assert "deepseek-ai/DeepSeek-V3.1" in models
+        assert "zai-org/GLM-5.1-TEE" in models
+        assert "Qwen/Qwen3-235B-A22B-Instruct-2507" not in models
 
 
 class TestAnswerSanitization:
