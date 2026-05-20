@@ -47,10 +47,11 @@ Store entity facts in compact records like: EntityName | attr: value, attr: valu
 Rules:
 - Documents contain more entities than your budget allows; be selective.
 - Corrections must update affected stored memory with action="replace" when possible.
-- Questions must be answered directly from the persistent memory snapshot in your system prompt.
-- For questions, do not call tools unless you are updating memory; answer in the final assistant message.
+- Questions are real user interactions: answer from persistent memory and the
+  current question, and maintain memory when it improves future usefulness.
 - If the answer is not in memory, answer exactly: I don't have enough information.
-- Do not use unstored conversation context as memory.
+- Do not use hidden metadata, external sources, or unstored document context as
+  factual memory.
 """
 
 _MEMORY_DELIM = "\n§\n"
@@ -603,9 +604,11 @@ def run_affent_agent(
                 content = (
                     f"=== Event {event_idx+1}/{total_events} [QUESTION] ===\n\n"
                     f"Question:\n{question_text}\n\n"
-                    "Answer directly from your persistent memory snapshot. "
-                    "Do not call tools for answering. If the answer is not in memory, "
-                    "answer exactly: I don't have enough information."
+                    "Answer using only your persistent memory and this question. "
+                    "You may maintain memory if it helps future interactions. "
+                    "Do not use hidden metadata, external sources, or unstored "
+                    "document context. If the answer is not in memory, answer "
+                    "exactly: I don't have enough information."
                 )
                 before_entries = _read_affent_memory_entries(workspace_path)
                 turn = _run_affent_turn(
