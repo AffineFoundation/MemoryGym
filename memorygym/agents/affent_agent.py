@@ -43,6 +43,9 @@ Use the memory tool with target="memory":
 - action="remove" only when a stored entry is clearly obsolete.
 
 Store entity facts in compact records like: EntityName | attr: value, attr: value.
+Use affent's topic memory naturally: choose durable topic names when they help
+organize information, and use topic="core" only for facts that must always be
+in the prompt.
 
 Rules:
 - Documents contain more entities than your budget allows; be selective.
@@ -55,8 +58,10 @@ Rules:
 """
 
 _MEMORY_DELIM = "\n§\n"
-_AFFENT_MEMORY_REL = Path(".affent") / "MEMORY.md"
-_DEFAULT_AFFENT_MEMORY_MAX_CHARS = "12000,1375"
+_AFFENT_MEMORY_DIR_REL = Path(".affent") / "memory"
+_AFFENT_USER_REL = Path(".affent") / "USER.md"
+_TIMESTAMP_RE = re.compile(r"^\[\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z\]\n")
+_TOPIC_RE = re.compile(r"[^a-z0-9_-]+")
 
 
 def _strip_think(text: str) -> str:
@@ -125,24 +130,65 @@ def _load_memory_state(workspace: Path) -> dict[str, Any]:
     }
 
 
-def _memory_path(workspace: Path) -> Path:
-    return workspace / _AFFENT_MEMORY_REL
+def _memory_dir(workspace: Path) -> Path:
+    return workspace / _AFFENT_MEMORY_DIR_REL
 
 
-def _read_affent_memory_entries(workspace: Path) -> list[str]:
-    path = _memory_path(workspace)
-    if not path.exists():
+def _memory_user_path(workspace: Path) -> Path:
+    return workspace / _AFFENT_USER_REL
+
+
+def _clear_affent_user_memory(workspace: Path) -> None:
+    path = _memory_user_path(workspace)
+    path.unlink(missing_ok=True)
+    Path(str(path) + ".lock").unlink(missing_ok=True)
+
+
+def _read_memory_file(path: Path) -> list[str]:
+    if not path.exists() or path.is_dir():
         return []
     text = path.read_text().strip()
     if not text:
         return []
-    return [p.strip() for p in text.split(_MEMORY_DELIM) if p.strip()]
+    entries = []
+    for part in text.split(_MEMORY_DELIM):
+        content = _TIMESTAMP_RE.sub("", part.strip()).strip()
+        if content:
+            entries.append(content)
+    return entries
 
 
-def _write_affent_memory_entries(workspace: Path, entries: list[str]) -> None:
-    """Atomic write: tempfile in the same directory, then rename. A
-    crash mid-write leaves the previous file intact."""
-    path = _memory_path(workspace)
+def _normalize_affent_topic(topic: str | None) -> str:
+    topic = (topic or "").strip()
+    if not topic:
+        return "general"
+    if topic == "core":
+        return "core"
+    normalized = _TOPIC_RE.sub("", topic.lower())
+    return normalized or "general"
+
+
+def _read_affent_memory_state(workspace: Path) -> list[dict[str, str]]:
+    """Read affent workspace memory from the v2 topic layout."""
+    state: list[dict[str, str]] = []
+    mem_dir = _memory_dir(workspace)
+    for content in _read_memory_file(mem_dir / "core.md"):
+        state.append({"topic": "core", "content": content})
+    topics_dir = mem_dir / "topics"
+    if topics_dir.exists():
+        for path in sorted(topics_dir.glob("*.md")):
+            topic = _normalize_affent_topic(path.stem)
+            for content in _read_memory_file(path):
+                state.append({"topic": topic, "content": content})
+    return state
+
+
+def _read_affent_memory_entries(workspace: Path) -> list[str]:
+    """Return user-visible memory contents for MemoryGym scoring."""
+    return [entry["content"] for entry in _read_affent_memory_state(workspace)]
+
+
+def _write_memory_file_atomic(path: Path, entries: list[str]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     fd, tmp_name = tempfile.mkstemp(dir=str(path.parent), prefix=".mem-", suffix=".tmp")
     try:
@@ -154,6 +200,34 @@ def _write_affent_memory_entries(workspace: Path, entries: list[str]) -> None:
     except Exception:
         Path(tmp_name).unlink(missing_ok=True)
         raise
+
+
+def _write_affent_memory_state(workspace: Path, state: list[dict[str, str]]) -> None:
+    """Write the MemoryGym-accepted state using affent's v2 layout.
+
+    The evaluated agent may organize memory into affent topics. MemoryGym
+    replays successful mutations against its write budget, then rewrites the
+    workspace memory to that accepted state so later turns cannot benefit from
+    over-budget mutations that affent already executed on disk.
+    """
+    mem_dir = _memory_dir(workspace)
+    if mem_dir.exists():
+        shutil.rmtree(mem_dir)
+
+    by_topic: dict[str, list[str]] = {}
+    for entry in state:
+        content = entry.get("content", "").strip()
+        if not content:
+            continue
+        topic = _normalize_affent_topic(entry.get("topic"))
+        by_topic.setdefault(topic, []).append(content)
+
+    for topic, entries in sorted(by_topic.items()):
+        if topic == "core":
+            path = mem_dir / "core.md"
+        else:
+            path = mem_dir / "topics" / f"{topic}.md"
+        _write_memory_file_atomic(path, entries)
 
 
 def _stored_contents(workspace: Path) -> list[str]:
@@ -263,13 +337,14 @@ def _run_affent_turn(
 ) -> _AffentTurn:
     if timeout is not None and timeout <= 0:
         return _AffentTurn(error="affent turn skipped: no wallclock remaining")
+    _clear_affent_user_memory(workspace)
     trace_path = workspace / "traces" / f"{time.time_ns()}.jsonl"
     trace_path.parent.mkdir(parents=True, exist_ok=True)
     affent_call_timeout = os.environ.get("MEMORYGYM_AFFENT_CALL_TIMEOUT", "").strip()
     affent_memory_max_chars = os.environ.get(
-        "MEMORYGYM_AFFENT_MEMORY_MAX_CHARS",
-        _DEFAULT_AFFENT_MEMORY_MAX_CHARS,
-    ).strip()
+        "MEMORYGYM_AFFENT_MEMORY_MAX_CHARS", "").strip()
+    affent_memory_topic_max_chars = os.environ.get(
+        "MEMORYGYM_AFFENT_MEMORY_TOPIC_MAX_CHARS", "").strip()
     affent_retries = os.environ.get("MEMORYGYM_AFFENT_RETRY_TRANSIENT", "").strip()
     cmd = [
         affent_bin, "run",
@@ -279,6 +354,7 @@ def _run_affent_turn(
         "--prompt", "-",
         "--session-id", session_id,
         "--memory-only",
+        "--memory-user-store", str(_memory_user_path(workspace)),
         "--max-turns", str(max_turns),
         "--trace", str(trace_path),
         "--trace-skip-deltas",
@@ -289,6 +365,8 @@ def _run_affent_turn(
         cmd.extend(["--max-call-timeout", affent_call_timeout])
     if affent_memory_max_chars:
         cmd.extend(["--memory-max-chars", affent_memory_max_chars])
+    if affent_memory_topic_max_chars:
+        cmd.extend(["--memory-topic-max-chars", affent_memory_topic_max_chars])
     if affent_retries:
         cmd.extend(["--retry-transient", affent_retries])
     t0 = time.time()
@@ -358,29 +436,40 @@ def _correction_applied(turns: list[dict], entity_name: str, new_val: str) -> bo
 
 
 def _tool_result_ok(result: str | None) -> bool:
+    data = _tool_result_data(result)
+    return bool(data and data.get("ok"))
+
+
+def _tool_result_data(result: str | None) -> dict[str, Any] | None:
     if not result:
-        return False
+        return None
     if result.startswith("[tool] "):
         result = result[len("[tool] "):]
     try:
-        data = json.loads(result)
+        return json.loads(result)
     except json.JSONDecodeError:
-        return False
-    return bool(data.get("ok"))
+        return None
 
 
-def _find_unique(entries: list[str], old_text: str) -> int | None:
-    hits = [i for i, e in enumerate(entries) if old_text in e]
+def _find_unique(
+    entries: list[dict[str, str]],
+    old_text: str,
+    topic: str,
+) -> int | None:
+    hits = [
+        i for i, e in enumerate(entries)
+        if e.get("topic") == topic and old_text in e.get("content", "")
+    ]
     if len(hits) == 1:
         return hits[0]
-    if len(hits) > 1 and len({entries[i] for i in hits}) == 1:
+    if len(hits) > 1 and len({entries[i].get("content", "") for i in hits}) == 1:
         return hits[0]
     return None
 
 
 def _apply_memory_budget(
     workspace: Path,
-    before_entries: list[str],
+    before_state: list[dict[str, str]],
     turns: list[dict],
     budget: MemoryBudget,
     *,
@@ -390,42 +479,52 @@ def _apply_memory_budget(
 
     The benchmark enforces the budget here by replaying successful
     memory tool calls and overwriting the workspace memory with the
-    accepted state. When the resulting entries equal before_entries,
+    accepted state. When the resulting entries equal before_state,
     skips the disk write.
     """
-    entries = list(before_entries)
+    entries = [dict(entry) for entry in before_state]
     writes = 0
+    saw_memory_call = False
     for turn in turns:
         calls = turn.get("tool_calls", [])
         results = turn.get("tool_results", [])
         for i, call in enumerate(calls):
             if call.get("name") != "memory":
                 continue
+            saw_memory_call = True
             args = call.get("arguments", {})
             if args.get("target", "memory") != "memory":
                 continue
-            if not _tool_result_ok(results[i] if i < len(results) else None):
+            result = _tool_result_data(results[i] if i < len(results) else None)
+            if not result or not result.get("ok"):
                 continue
 
             action = args.get("action")
+            topic = _normalize_affent_topic(
+                str(result.get("topic") or args.get("topic") or ""))
             costs_write = not (free_replace and action in ("replace", "remove"))
             if costs_write and not budget.can_write():
                 continue
             if action == "add":
                 content = str(args.get("content", "")).strip()
-                if not content or content in entries:
+                if not content:
                     continue
-                entries.append(content)
+                if any(
+                    e.get("topic") == topic and e.get("content") == content
+                    for e in entries
+                ):
+                    continue
+                entries.append({"topic": topic, "content": content})
             elif action == "replace":
                 old = str(args.get("old_text", "")).strip()
                 content = str(args.get("content", "")).strip()
-                idx = _find_unique(entries, old)
+                idx = _find_unique(entries, old, topic)
                 if idx is None or not content:
                     continue
-                entries[idx] = content
+                entries[idx] = {"topic": topic, "content": content}
             elif action == "remove":
                 old = str(args.get("old_text", "")).strip()
-                idx = _find_unique(entries, old)
+                idx = _find_unique(entries, old, topic)
                 if idx is None:
                     continue
                 del entries[idx]
@@ -436,8 +535,9 @@ def _apply_memory_budget(
                 budget.consume_write()
                 writes += 1
 
-    if entries != before_entries:
-        _write_affent_memory_entries(workspace, entries)
+    _clear_affent_user_memory(workspace)
+    if saw_memory_call or entries != before_state:
+        _write_affent_memory_state(workspace, entries)
     return writes
 
 
@@ -506,7 +606,7 @@ def run_affent_agent(
                     "with action=\"add\" and target=\"memory\". Stop when the budget is exhausted."
                 )
                 entities_seen += len(entity_names)
-                before_entries = _read_affent_memory_entries(workspace_path)
+                before_state = _read_affent_memory_state(workspace_path)
                 turn = _run_affent_turn(
                     affent_bin=affentctl, workspace=workspace_path,
                     model=model, base_url=cfg.api_url, api_key=cfg.api_key,
@@ -517,7 +617,7 @@ def run_affent_agent(
                     timeout=(deadline - time.time()) if deadline else None,
                 )
                 turn.writes = _apply_memory_budget(
-                    workspace_path, before_entries, turn.turns, budget)
+                    workspace_path, before_state, turn.turns, budget)
                 if not quiet:
                     print(f"           {turn.api_calls} calls, {turn.elapsed:.1f}s  {_budget_bar(budget.writes_used, write_budget)}")
                 trajectory.append({
@@ -549,7 +649,7 @@ def run_affent_agent(
                     "action=\"replace\" and target=\"memory\" to update it. "
                     "Replacement edits are free for this event."
                 )
-                before_entries = _read_affent_memory_entries(workspace_path)
+                before_state = _read_affent_memory_state(workspace_path)
                 turn = _run_affent_turn(
                     affent_bin=affentctl, workspace=workspace_path,
                     model=model, base_url=cfg.api_url, api_key=cfg.api_key,
@@ -560,7 +660,7 @@ def run_affent_agent(
                     timeout=(deadline - time.time()) if deadline else None,
                 )
                 turn.writes = _apply_memory_budget(
-                    workspace_path, before_entries, turn.turns, budget,
+                    workspace_path, before_state, turn.turns, budget,
                     free_replace=True,
                 )
                 chain = _extract_action_chain(turn.turns)
@@ -610,7 +710,7 @@ def run_affent_agent(
                     "document context. If the answer is not in memory, answer "
                     "exactly: I don't have enough information."
                 )
-                before_entries = _read_affent_memory_entries(workspace_path)
+                before_state = _read_affent_memory_state(workspace_path)
                 turn = _run_affent_turn(
                     affent_bin=affentctl, workspace=workspace_path,
                     model=model, base_url=cfg.api_url, api_key=cfg.api_key,
@@ -619,7 +719,7 @@ def run_affent_agent(
                     timeout=(deadline - time.time()) if deadline else None,
                 )
                 turn.writes = _apply_memory_budget(
-                    workspace_path, before_entries, turn.turns, budget)
+                    workspace_path, before_state, turn.turns, budget)
                 answer = turn.answer or ""
                 gt = str(event["answer"])
                 ok, reason = validate_with_fallback(
