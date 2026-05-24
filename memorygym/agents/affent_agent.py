@@ -321,16 +321,39 @@ def _parse_trace(
     return turn
 
 
+def _write_eval_config(workspace: Path, system_prompt: str) -> Path:
+    """Write a JSON config for affent's --config flag.
+
+    Centralizes all fixed eval settings so the CLI only carries
+    per-turn dynamic arguments (prompt, session-id, max-turns, trace).
+    """
+    cfg = {
+        "eval_mode": True,
+        "memory": {
+            "only": True,
+            "user_store": str(_memory_user_path(workspace)),
+        },
+        "system_prompt": system_prompt,
+        "temperature": "0",
+        "quiet": True,
+        "trace_skip_deltas": True,
+    }
+    path = workspace / ".memorygym-eval-config.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(cfg))
+    return path
+
+
 def _run_affent_turn(
     *,
     affent_bin: str,
     workspace: Path,
     model: str,
-    base_url: str,
     api_key: str,
+    base_url: str,
+    config_path: Path,
     session_id: str,
     prompt: str,
-    system_prompt: str,
     max_turns: int = 8,
     timeout: float | None = None,
     allow_max_turns_with_tools: bool = False,
@@ -340,35 +363,17 @@ def _run_affent_turn(
     _clear_affent_user_memory(workspace)
     trace_path = workspace / "traces" / f"{time.time_ns()}.jsonl"
     trace_path.parent.mkdir(parents=True, exist_ok=True)
-    affent_call_timeout = os.environ.get("MEMORYGYM_AFFENT_CALL_TIMEOUT", "").strip()
-    affent_memory_max_chars = os.environ.get(
-        "MEMORYGYM_AFFENT_MEMORY_MAX_CHARS", "").strip()
-    affent_memory_topic_max_chars = os.environ.get(
-        "MEMORYGYM_AFFENT_MEMORY_TOPIC_MAX_CHARS", "").strip()
-    affent_retries = os.environ.get("MEMORYGYM_AFFENT_RETRY_TRANSIENT", "").strip()
     cmd = [
         affent_bin, "run",
+        "--config", str(config_path),
         "--workspace", str(workspace),
         "--model", model,
         "--base-url", base_url,
         "--prompt", "-",
         "--session-id", session_id,
-        "--memory-only",
-        "--memory-user-store", str(_memory_user_path(workspace)),
         "--max-turns", str(max_turns),
         "--trace", str(trace_path),
-        "--trace-skip-deltas",
-        "--quiet",
-        "--system-prompt", system_prompt,
     ]
-    if affent_call_timeout:
-        cmd.extend(["--max-call-timeout", affent_call_timeout])
-    if affent_memory_max_chars:
-        cmd.extend(["--memory-max-chars", affent_memory_max_chars])
-    if affent_memory_topic_max_chars:
-        cmd.extend(["--memory-topic-max-chars", affent_memory_topic_max_chars])
-    if affent_retries:
-        cmd.extend(["--retry-transient", affent_retries])
     t0 = time.time()
     try:
         env = os.environ.copy()
@@ -565,6 +570,7 @@ def run_affent_agent(
     system_prompt = AFFENT_MEMORY_SYSTEM_PROMPT.format(budget=write_budget)
     budget = MemoryBudget(total_writes=write_budget)
     judge_client = _new_judge_client()
+    eval_config = _write_eval_config(workspace_path, system_prompt)
 
     results: list[AgentResult] = []
     trajectory: list[dict] = [{"event_idx": -1, "type": "system", "content": system_prompt}]
@@ -609,9 +615,9 @@ def run_affent_agent(
                 before_state = _read_affent_memory_state(workspace_path)
                 turn = _run_affent_turn(
                     affent_bin=affentctl, workspace=workspace_path,
-                    model=model, base_url=cfg.api_url, api_key=cfg.api_key,
+                    model=model, api_key=cfg.api_key, base_url=cfg.api_url,
+                    config_path=eval_config,
                     session_id=f"memorygym_{seed}_{event_idx}", prompt=content,
-                    system_prompt=system_prompt,
                     max_turns=1,
                     allow_max_turns_with_tools=True,
                     timeout=(deadline - time.time()) if deadline else None,
@@ -652,9 +658,9 @@ def run_affent_agent(
                 before_state = _read_affent_memory_state(workspace_path)
                 turn = _run_affent_turn(
                     affent_bin=affentctl, workspace=workspace_path,
-                    model=model, base_url=cfg.api_url, api_key=cfg.api_key,
+                    model=model, api_key=cfg.api_key, base_url=cfg.api_url,
+                    config_path=eval_config,
                     session_id=f"memorygym_{seed}_{event_idx}", prompt=content,
-                    system_prompt=system_prompt,
                     max_turns=3,
                     allow_max_turns_with_tools=True,
                     timeout=(deadline - time.time()) if deadline else None,
@@ -713,9 +719,9 @@ def run_affent_agent(
                 before_state = _read_affent_memory_state(workspace_path)
                 turn = _run_affent_turn(
                     affent_bin=affentctl, workspace=workspace_path,
-                    model=model, base_url=cfg.api_url, api_key=cfg.api_key,
+                    model=model, api_key=cfg.api_key, base_url=cfg.api_url,
+                    config_path=eval_config,
                     session_id=f"memorygym_{seed}_{event_idx}", prompt=content,
-                    system_prompt=system_prompt,
                     timeout=(deadline - time.time()) if deadline else None,
                 )
                 turn.writes = _apply_memory_budget(
