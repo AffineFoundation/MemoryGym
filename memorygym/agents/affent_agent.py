@@ -301,7 +301,8 @@ def _parse_trace(
         elif etype == "turn.end" and data.get("reason") not in (None, "completed"):
             reason = data.get("reason")
             if not (allow_max_turns_with_tools and reason == "max_turns" and tool_calls):
-                turn.error = f"affent turn ended: {reason}"
+                if turn.error is None:
+                    turn.error = f"affent turn ended: {reason}"
 
     if turn.answer is None and turn.final_text:
         turn.answer = turn.final_text.strip()
