@@ -1,7 +1,7 @@
 FROM golang:1.22-bookworm AS affent-builder
 
 ARG AFFENT_REPO=https://github.com/AffineFoundation/affent.git
-ARG AFFENT_REF=main
+ARG AFFENT_REF=0e72b844da02f31b40c9893fbd3d4c4bd19fede9
 
 RUN git init /src/affent \
     && cd /src/affent \
