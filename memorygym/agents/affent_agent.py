@@ -68,6 +68,12 @@ def _strip_think(text: str) -> str:
     return re.sub(r"<think>.*?</think>\s*", "", text, flags=re.DOTALL)
 
 
+def _is_infra_error(error: str | None) -> bool:
+    if not error:
+        return False
+    return "max_turns" not in error
+
+
 @dataclass
 class _AffentTurn:
     answer: str | None = None
@@ -642,9 +648,10 @@ def run_affent_agent(
                     "infra_error": turn.error,
                 })
                 if turn.error:
-                    eval_error = eval_error or turn.error
+                    if _is_infra_error(turn.error):
+                        eval_error = eval_error or turn.error
                     if not quiet:
-                        print(f"           INFRA ERROR: {turn.error[:80]}")
+                        print(f"           {'INFRA ERROR' if _is_infra_error(turn.error) else 'SKIP'}: {turn.error[:80]}")
                     continue
 
             elif event_type == "correction":
@@ -699,9 +706,10 @@ def run_affent_agent(
                     mark = "OK" if correction_ok else "MISS"
                     print(f"           [{mark}] {chain}  {_budget_bar(budget.writes_used, write_budget)}")
                 if turn.error:
-                    eval_error = eval_error or turn.error
+                    if _is_infra_error(turn.error):
+                        eval_error = eval_error or turn.error
                     if not quiet:
-                        print(f"           INFRA ERROR: {turn.error[:80]}")
+                        print(f"           {'INFRA ERROR' if _is_infra_error(turn.error) else 'SKIP'}: {turn.error[:80]}")
                     continue
 
             elif event_type == "question":
@@ -783,9 +791,10 @@ def run_affent_agent(
                     "infra_error": turn.error,
                 })
                 if turn.error:
-                    eval_error = eval_error or turn.error
+                    if _is_infra_error(turn.error):
+                        eval_error = eval_error or turn.error
                     if not quiet:
-                        print(f"           INFRA ERROR: {turn.error[:80]}")
+                        print(f"           {'INFRA ERROR' if _is_infra_error(turn.error) else 'SKIP'}: {turn.error[:80]}")
                     continue
 
         stored = _stored_contents(workspace_path)
