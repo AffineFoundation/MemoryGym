@@ -69,13 +69,10 @@ def _strip_think(text: str) -> str:
 
 
 def _is_infra_error(error: str | None) -> bool:
-    """True only for errors in our evaluation infrastructure, not the model endpoint."""
+    """Model capability errors (max_turns) are not infra errors; everything else is."""
     if not error:
         return False
-    model_errors = ("max_turns", "timed out", "stream ended", "context deadline",
-                    "llm_request", "llm_stream", "401", "429", "500", "502", "503")
-    e = error.lower()
-    return not any(sig in e for sig in model_errors)
+    return "max_turns" not in error
 
 
 @dataclass
