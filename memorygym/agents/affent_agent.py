@@ -642,8 +642,10 @@ def run_affent_agent(
                     "infra_error": turn.error,
                 })
                 if turn.error:
-                    eval_error = turn.error
-                    break
+                    eval_error = eval_error or turn.error
+                    if not quiet:
+                        print(f"           INFRA ERROR: {turn.error[:80]}")
+                    continue
 
             elif event_type == "correction":
                 if not quiet:
@@ -697,8 +699,10 @@ def run_affent_agent(
                     mark = "OK" if correction_ok else "MISS"
                     print(f"           [{mark}] {chain}  {_budget_bar(budget.writes_used, write_budget)}")
                 if turn.error:
-                    eval_error = turn.error
-                    break
+                    eval_error = eval_error or turn.error
+                    if not quiet:
+                        print(f"           INFRA ERROR: {turn.error[:80]}")
+                    continue
 
             elif event_type == "question":
                 if world is not None and template is not None:
@@ -779,8 +783,10 @@ def run_affent_agent(
                     "infra_error": turn.error,
                 })
                 if turn.error:
-                    eval_error = turn.error
-                    break
+                    eval_error = eval_error or turn.error
+                    if not quiet:
+                        print(f"           INFRA ERROR: {turn.error[:80]}")
+                    continue
 
         stored = _stored_contents(workspace_path)
         return results, budget.writes_used, stored, eval_error, trajectory
