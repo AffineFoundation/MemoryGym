@@ -369,11 +369,7 @@ def _run_evaluation(
         write_budget=write_budget,
     )
 
-    valid = total > 0
-    if valid:
-        final_score = axis_scores["composite"]
-    else:
-        final_score = 0.0
+    has_infra_error = eval_error is not None
 
     extra = {
         "model": model,
@@ -399,11 +395,11 @@ def _run_evaluation(
 
     result = {
         "task_name": f"memorygym:{template_name}:{tier}",
-        "score": final_score,
-        "success": valid,
+        "score": axis_scores["composite"],
+        "success": not has_infra_error,
         "time_taken": 0.0,  # filled by caller
         "extra": extra,
     }
-    if not valid:
-        result["error"] = eval_error or "no questions answered"
+    if has_infra_error:
+        result["error"] = eval_error
     return result
