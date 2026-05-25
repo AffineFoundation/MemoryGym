@@ -369,11 +369,11 @@ def _run_evaluation(
         write_budget=write_budget,
     )
 
-    has_error = eval_error is not None
-    if has_error or writes_used == 0 or len(stored_names) == 0:
-        final_score = 0.0
-    else:
+    valid = total > 0
+    if valid:
         final_score = axis_scores["composite"]
+    else:
+        final_score = 0.0
 
     extra = {
         "model": model,
@@ -396,16 +396,14 @@ def _run_evaluation(
         "conversation": conversation,
         "version": __version__,
     }
-    if has_error:
-        extra["error"] = eval_error
 
     result = {
         "task_name": f"memorygym:{template_name}:{tier}",
         "score": final_score,
-        "success": total > 0 and not has_error,
+        "success": valid,
         "time_taken": 0.0,  # filled by caller
         "extra": extra,
     }
-    if has_error:
-        result["error"] = eval_error
+    if not valid:
+        result["error"] = eval_error or "no questions answered"
     return result
