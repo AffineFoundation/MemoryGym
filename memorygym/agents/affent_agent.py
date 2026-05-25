@@ -338,7 +338,7 @@ def _write_eval_config(workspace: Path, system_prompt: str) -> Path:
         "temperature": "0",
         "quiet": True,
         "trace_skip_deltas": True,
-        "max_call_timeout": "5m",
+        "max_call_timeout": "10m",
         "retry_transient": 10,
     }
     path = workspace / ".memorygym-eval-config.json"
