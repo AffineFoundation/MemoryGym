@@ -38,7 +38,7 @@ def test_seed_not_in_visible_ids():
     """V11: Seed must not appear in sample ID or task name."""
     from memorygym.worlds.eval_task import worldbench
     task = worldbench(seed=42, template="company", n_entities=20,
-                      n_questions=5, write_budget=10, backend="mock")
+                      n_questions=5, write_budget=10, backend="markdown")
     # Task name and sample ID must not contain the seed
     assert "42" not in task.name, (
         f"Task name '{task.name}' should not contain seed '42'")

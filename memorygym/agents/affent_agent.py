@@ -62,6 +62,37 @@ _AFFENT_MEMORY_DIR_REL = Path(".affent") / "memory"
 _AFFENT_USER_REL = Path(".affent") / "USER.md"
 _TIMESTAMP_RE = re.compile(r"^\[\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z\]\n")
 _TOPIC_RE = re.compile(r"[^a-z0-9_-]+")
+# affent bounds each topic at 4400 chars, so topic count is also a storage
+# capacity control. Keep enough topics for realistic organization and retrieval,
+# but not enough for models to bypass summarization pressure by sharding raw
+# documents across many files.
+_AFFENT_MEMORY_MAX_TOPICS = 8
+_AFFENT_TURN_RETRIES = 2
+_AFFENT_RETRYABLE_ERROR_TOKENS = (
+    "unexpected eof",
+    "stream ended without finish",
+    "stream read:",
+    "context deadline exceeded",
+    "remoteprotocolerror",
+    "server disconnected without sending a response",
+    "connection reset by peer",
+    "broken pipe",
+    "rate limit",
+    "too many requests",
+    "503",
+    "502",
+    "504",
+    "upstream",
+    "timeout",
+    "llm_request failed",
+    "llm_stream failed",
+)
+_AFFENT_NON_RETRYABLE_ERROR_TOKENS = (
+    "max_turns",
+    "context overflow",
+    "affent turn timed out",
+    "wallclock_exhausted",
+)
 
 
 def _strip_think(text: str) -> str:
@@ -72,7 +103,17 @@ def _is_infra_error(error: str | None) -> bool:
     """Model capability errors (max_turns) are not infra errors; everything else is."""
     if not error:
         return False
-    return "max_turns" not in error
+    return "max_turns" not in error.lower()
+
+
+def _is_retryable_affent_error(error: str | None) -> bool:
+    """Return True when a turn failure is likely transient infra noise."""
+    if not error:
+        return False
+    lower = error.lower()
+    if any(token in lower for token in _AFFENT_NON_RETRYABLE_ERROR_TOKENS):
+        return False
+    return any(token in lower for token in _AFFENT_RETRYABLE_ERROR_TOKENS)
 
 
 @dataclass
@@ -84,6 +125,7 @@ class _AffentTurn:
     api_calls: int = 0
     elapsed: float = 0.0
     error: str | None = None
+    stop_reason: str | None = None
     turns: list[dict] = field(default_factory=list)
 
 
@@ -195,6 +237,14 @@ def _read_affent_memory_entries(workspace: Path) -> list[str]:
     return [entry["content"] for entry in _read_affent_memory_state(workspace)]
 
 
+def _write_affent_memory_entries(workspace: Path, entries: list[str]) -> None:
+    """Write entries to the default topic using affent's v2 layout."""
+    _write_affent_memory_state(
+        workspace,
+        [{"topic": "general", "content": entry} for entry in entries],
+    )
+
+
 def _write_memory_file_atomic(path: Path, entries: list[str]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     fd, tmp_name = tempfile.mkstemp(dir=str(path.parent), prefix=".mem-", suffix=".tmp")
@@ -256,11 +306,7 @@ def _new_judge_client() -> OpenAI | None:
     return OpenAI(api_key=key, base_url="https://llm.chutes.ai/v1")
 
 
-def _parse_trace(
-    trace_path: Path,
-    *,
-    allow_max_turns_with_tools: bool = False,
-) -> _AffentTurn:
+def _parse_trace(trace_path: Path) -> _AffentTurn:
     turn = _AffentTurn()
     tool_calls: list[dict] = []
     tool_results: list[str] = []
@@ -307,9 +353,11 @@ def _parse_trace(
             turn.error = str(data.get("message", "affent error"))
         elif etype == "turn.end" and data.get("reason") not in (None, "completed"):
             reason = data.get("reason")
-            if not (allow_max_turns_with_tools and reason == "max_turns" and tool_calls):
-                if turn.error is None:
-                    turn.error = f"affent turn ended: {reason}"
+            turn.stop_reason = str(reason)
+            if reason == "max_turns":
+                continue
+            if turn.error is None:
+                turn.error = f"affent turn ended: {reason}"
 
     if turn.answer is None and turn.final_text:
         turn.answer = turn.final_text.strip()
@@ -325,6 +373,8 @@ def _parse_trace(
         }
         if turn.answer is not None:
             detail["answer"] = turn.answer
+        if turn.stop_reason is not None:
+            detail["stop_reason"] = turn.stop_reason
         turn.turns.append(detail)
     return turn
 
@@ -340,6 +390,7 @@ def _write_eval_config(workspace: Path, system_prompt: str) -> Path:
         "memory": {
             "only": True,
             "user_store": str(_memory_user_path(workspace)),
+            "max_topics": _AFFENT_MEMORY_MAX_TOPICS,
         },
         "system_prompt": system_prompt,
         "temperature": "0",
@@ -366,7 +417,6 @@ def _run_affent_turn(
     prompt: str,
     max_turns: int = 8,
     timeout: float | None = None,
-    allow_max_turns_with_tools: bool = False,
 ) -> _AffentTurn:
     if timeout is not None and timeout <= 0:
         return _AffentTurn(error="affent turn skipped: no wallclock remaining")
@@ -382,6 +432,7 @@ def _run_affent_turn(
         "--prompt", "-",
         "--session-id", session_id,
         "--max-turns", str(max_turns),
+        "--memory-max-topics", str(_AFFENT_MEMORY_MAX_TOPICS),
         "--trace", str(trace_path),
     ]
     t0 = time.time()
@@ -402,15 +453,12 @@ def _run_affent_turn(
     except subprocess.TimeoutExpired:
         return _AffentTurn(error="affent turn timed out", elapsed=time.time() - t0)
 
-    turn = _parse_trace(
-        trace_path,
-        allow_max_turns_with_tools=allow_max_turns_with_tools,
-    )
+    turn = _parse_trace(trace_path)
     turn.elapsed = time.time() - t0
     if (
         proc.returncode != 0
         and turn.error is None
-        and not (allow_max_turns_with_tools and proc.returncode == 2 and turn.turns)
+        and not (proc.returncode == 2 and turn.stop_reason == "max_turns")
     ):
         turn.error = f"affentctl exited {proc.returncode}: {proc.stderr[-300:]}"
     if turn.final_text == "" and proc.stdout.strip():
@@ -418,6 +466,54 @@ def _run_affent_turn(
         if turn.answer is None:
             turn.answer = turn.final_text
     return turn
+
+
+def _run_affent_turn_with_retries(
+    *,
+    affent_bin: str,
+    workspace: Path,
+    model: str,
+    api_key: str,
+    base_url: str,
+    config_path: Path,
+    session_id: str,
+    prompt: str,
+    before_state: list[dict[str, str]],
+    max_turns: int = 8,
+    timeout: float | None = None,
+    retry_attempts: int = _AFFENT_TURN_RETRIES,
+    quiet: bool = False,
+) -> _AffentTurn:
+    """Run a turn and retry transient transport failures."""
+    attempts = max(1, retry_attempts + 1)
+    last_turn: _AffentTurn | None = None
+    for attempt in range(1, attempts + 1):
+        if attempt > 1:
+            _write_affent_memory_state(workspace, before_state)
+            if not quiet:
+                print(
+                    f"           RETRY {attempt - 1}/{retry_attempts}: "
+                    f"{(last_turn.error or '')[:80]}"
+                )
+        turn_session_id = (
+            session_id if attempt == 1 else f"{session_id}_retry{attempt - 1}"
+        )
+        turn = _run_affent_turn(
+            affent_bin=affent_bin,
+            workspace=workspace,
+            model=model,
+            api_key=api_key,
+            base_url=base_url,
+            config_path=config_path,
+            session_id=turn_session_id,
+            prompt=prompt,
+            max_turns=max_turns,
+            timeout=timeout,
+        )
+        last_turn = turn
+        if not _is_retryable_affent_error(turn.error):
+            return turn
+    return last_turn or _AffentTurn(error="affent turn failed unexpectedly")
 
 
 def _correction_applied(turns: list[dict], entity_name: str, new_val: str) -> bool:
@@ -623,14 +719,15 @@ def run_affent_agent(
                 )
                 entities_seen += len(entity_names)
                 before_state = _read_affent_memory_state(workspace_path)
-                turn = _run_affent_turn(
+                turn = _run_affent_turn_with_retries(
                     affent_bin=affentctl, workspace=workspace_path,
                     model=model, api_key=cfg.api_key, base_url=cfg.api_url,
                     config_path=eval_config,
                     session_id=f"memorygym_{seed}_{event_idx}", prompt=content,
                     max_turns=1,
-                    allow_max_turns_with_tools=True,
+                    before_state=before_state,
                     timeout=(deadline - time.time()) if deadline else None,
+                    quiet=quiet,
                 )
                 turn.writes = _apply_memory_budget(
                     workspace_path, before_state, turn.turns, budget)
@@ -647,6 +744,7 @@ def run_affent_agent(
                     "budget_remaining": budget.remaining(),
                     "turns": turn.turns,
                     "infra_error": turn.error,
+                    "stop_reason": turn.stop_reason,
                 })
                 if turn.error:
                     if _is_infra_error(turn.error):
@@ -669,14 +767,15 @@ def run_affent_agent(
                     "Replacement edits are free for this event."
                 )
                 before_state = _read_affent_memory_state(workspace_path)
-                turn = _run_affent_turn(
+                turn = _run_affent_turn_with_retries(
                     affent_bin=affentctl, workspace=workspace_path,
                     model=model, api_key=cfg.api_key, base_url=cfg.api_url,
                     config_path=eval_config,
                     session_id=f"memorygym_{seed}_{event_idx}", prompt=content,
                     max_turns=3,
-                    allow_max_turns_with_tools=True,
+                    before_state=before_state,
                     timeout=(deadline - time.time()) if deadline else None,
+                    quiet=quiet,
                 )
                 turn.writes = _apply_memory_budget(
                     workspace_path, before_state, turn.turns, budget,
@@ -702,6 +801,7 @@ def run_affent_agent(
                     "correction_applied": correction_ok,
                     "turns": turn.turns,
                     "infra_error": turn.error,
+                    "stop_reason": turn.stop_reason,
                 })
                 if not quiet:
                     mark = "OK" if correction_ok else "MISS"
@@ -733,12 +833,14 @@ def run_affent_agent(
                     "exactly: I don't have enough information."
                 )
                 before_state = _read_affent_memory_state(workspace_path)
-                turn = _run_affent_turn(
+                turn = _run_affent_turn_with_retries(
                     affent_bin=affentctl, workspace=workspace_path,
                     model=model, api_key=cfg.api_key, base_url=cfg.api_url,
                     config_path=eval_config,
                     session_id=f"memorygym_{seed}_{event_idx}", prompt=content,
+                    before_state=before_state,
                     timeout=(deadline - time.time()) if deadline else None,
+                    quiet=quiet,
                 )
                 turn.writes = _apply_memory_budget(
                     workspace_path, before_state, turn.turns, budget)
@@ -790,6 +892,7 @@ def run_affent_agent(
                     "elapsed": round(turn.elapsed, 2),
                     "turns": turn.turns,
                     "infra_error": turn.error,
+                    "stop_reason": turn.stop_reason,
                 })
                 if turn.error:
                     if _is_infra_error(turn.error):

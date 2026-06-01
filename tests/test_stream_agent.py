@@ -811,7 +811,7 @@ def test_run_stream_agent_continues_past_infra_failures(monkeypatch):
     assert eval_error is not None, "expected eval_error to be set"
     assert (
         "provider_unreachable" in eval_error
-        or "too_many_infra_failures" in eval_error
+        or "infra_failure" in eval_error
     ), f"unexpected eval_error: {eval_error}"
     # Trajectory entries record the infra error rather than crashing.
     assert any(
@@ -820,10 +820,12 @@ def test_run_stream_agent_continues_past_infra_failures(monkeypatch):
     ), "trajectory must record infra_error markers"
 
 
-def test_run_stream_agent_partial_completion_under_threshold(monkeypatch):
-    """When fewer than half of questions hit infra-fail, eval should
-    return without setting eval_error so the partially-completed
-    sample is still scored (efficiency: don't throw away good data)."""
+def test_run_stream_agent_any_infra_failure_invalidates_eval(monkeypatch):
+    """Any unrecovered infra-fail must set eval_error.
+
+    A partial score after provider timeout/capacity failure is not purely
+    caused by model capability, even if most questions were answered.
+    """
     from memorygym.agents import stream_agent as sa
     from memorygym.worlds import ALL_TEMPLATES
 
@@ -832,8 +834,8 @@ def test_run_stream_agent_partial_completion_under_threshold(monkeypatch):
     class _Stub:
         def create(self, **kwargs):
             state["calls"] += 1
-            # Fail every 5th call only — sparse 429 pattern
-            if state["calls"] % 5 == 0:
+            # One event exhausts the retry budget, then later calls recover.
+            if 5 <= state["calls"] <= 15:
                 raise Exception("Error code: 429 - capacity")
             text = (
                 '<tool_call>{"name": "submit_answer", '
@@ -889,10 +891,10 @@ def test_run_stream_agent_partial_completion_under_threshold(monkeypatch):
         quiet=True,
     )
 
-    # Most questions should have been answered (model abstained, but no
-    # infra error). eval_error must remain None so the sample is scored.
-    assert eval_error is None, (
-        f"expected no eval_error for sparse failures, got: {eval_error}")
+    # Most questions should have been answered, but the one infra-failed
+    # question still makes the measured score invalid.
+    assert eval_error is not None
+    assert "infra_failure" in eval_error
     infra_q = sum(1 for r in results if r.error)
     assert infra_q < len(results) / 2, (
         f"too many infra-failed questions: {infra_q}/{len(results)}")

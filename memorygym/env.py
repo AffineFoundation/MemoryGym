@@ -402,4 +402,5 @@ def _run_evaluation(
     }
     if has_infra_error:
         result["error"] = eval_error
+        extra["error"] = eval_error
     return result

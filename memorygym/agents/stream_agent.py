@@ -552,12 +552,20 @@ def run_stream_agent(
     # individual LLM calls exhaust their retry budget and surface as
     # stats.error. Historically a single such failure broke the whole
     # event loop, discarding any progress. Now: we mark the failed event
-    # as a no-op and continue. Hard-abort only if many *consecutive*
-    # failures suggest the provider is fully down.
+    # as a no-op and continue, but the overall evaluation is invalid
+    # because the resulting score no longer reflects only model capability.
+    # Hard-abort only if many *consecutive* failures suggest the provider is
+    # fully down.
     infra_fail_count = 0           # consecutive infra failures
-    infra_fail_total_q = 0         # total infra-failed questions
     INFRA_FAIL_HARD_ABORT = 8      # consecutive cap → assume provider down
-    INFRA_FAIL_QUESTION_RATIO = 0.5  # >50% questions infra-failed → invalid
+
+    def _mark_infra_invalid(event_idx: int, event_type: str, error: str) -> None:
+        nonlocal eval_error
+        if eval_error is None:
+            eval_error = (
+                f"infra_failure: event {event_idx+1}/{total_events} "
+                f"{event_type}: {error[:160]}"
+            )
 
     # Soft wallclock budget — finalize before the validator's hard server
     # kill at proxy_timeout (default 7210s). When breached, stop
@@ -694,6 +702,7 @@ def run_stream_agent(
             })
             if stats.error:
                 print(f"  INFRA-FAIL (continuing): {stats.error[:100]}")
+                _mark_infra_invalid(event_idx, event_type, stats.error)
                 infra_fail_count += 1
                 if infra_fail_count >= INFRA_FAIL_HARD_ABORT:
                     eval_error = (f"provider_unreachable: {infra_fail_count} "
@@ -797,6 +806,7 @@ def run_stream_agent(
             })
             if stats.error:
                 print(f"  INFRA-FAIL (continuing): {stats.error[:100]}")
+                _mark_infra_invalid(event_idx, event_type, stats.error)
                 infra_fail_count += 1
                 if infra_fail_count >= INFRA_FAIL_HARD_ABORT:
                     eval_error = (f"provider_unreachable: {infra_fail_count} "
@@ -874,8 +884,8 @@ def run_stream_agent(
                     "turns": stats.turns,
                     "infra_error": stats.error,
                 })
+                _mark_infra_invalid(event_idx, event_type, stats.error)
                 infra_fail_count += 1
-                infra_fail_total_q += 1
                 if infra_fail_count >= INFRA_FAIL_HARD_ABORT:
                     eval_error = (f"provider_unreachable: {infra_fail_count} "
                                   f"consecutive infra failures; last="
@@ -1100,16 +1110,6 @@ def run_stream_agent(
                 if result_idx_counter in judged_indices:
                     t_entry["correct"] = results[result_idx_counter].correct
                 result_idx_counter += 1
-
-    # Mark eval invalid if a clear majority of questions infra-failed.
-    # Below this threshold we still return the partial result and let
-    # the agent earn whatever credit it deserves — efficiency comes
-    # from preserving partial samples, not from binary all-or-nothing.
-    if eval_error is None and results:
-        infra_q = sum(1 for r in results if r.error)
-        if infra_q / len(results) > INFRA_FAIL_QUESTION_RATIO:
-            eval_error = (f"too_many_infra_failures: {infra_q}/{len(results)} "
-                          f"questions could not reach eval model")
 
     # If wallclock fired before any QUESTION event was reached, the model
     # never had a chance to demonstrate capability. Without an eval_error

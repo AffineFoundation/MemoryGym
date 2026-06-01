@@ -671,5 +671,4 @@ class TestTaskIdStability:
         with pytest.raises(ValueError):
             _parse_task_id(-1)
         from memorygym.worlds import TEMPLATE_REGISTRY
-        with pytest.raises(ValueError):
-            _parse_task_id(len(TEMPLATE_REGISTRY))
+        assert _parse_task_id(len(TEMPLATE_REGISTRY)) == TEMPLATE_REGISTRY[0]

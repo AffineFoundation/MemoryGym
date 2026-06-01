@@ -10,7 +10,8 @@ RUN git init /src/affent \
     && git checkout --detach FETCH_HEAD \
     && go build -trimpath -ldflags="-s -w" -o /out/affentctl ./cmd/affentctl \
     && /out/affentctl run --help 2>&1 | grep -q -- "-memory-only" \
-    || (echo "affentctl must support --memory-only; set AFFENT_REF to a memory-enabled affent ref" >&2; exit 1)
+    && /out/affentctl run --help 2>&1 | grep -q -- "-memory-max-topics" \
+    || (echo "affentctl must support --memory-only and --memory-max-topics; set AFFENT_REF to a topic-configurable memory ref" >&2; exit 1)
 
 FROM python:3.11-slim
 

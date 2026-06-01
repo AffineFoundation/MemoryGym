@@ -11,6 +11,8 @@ from memorygym.agents.affent_agent import (
     _read_affent_memory_entries,
     _resolve_affentctl,
     _run_affent_turn,
+    _run_affent_turn_with_retries,
+    _write_eval_config,
     _write_affent_memory_entries,
     run_affent_agent,
 )
@@ -120,7 +122,20 @@ def test_parse_affent_trace_falls_back_to_summary_when_no_result(tmp_path):
     assert "ok" in captured
 
 
-def test_run_affent_turn_passes_optional_timeout_flags(tmp_path, monkeypatch):
+def test_write_eval_config_sets_balanced_topic_limit(tmp_path):
+    path = _write_eval_config(tmp_path, "sys")
+    cfg = json.loads(path.read_text())
+
+    # Topic count must permit real organization while preserving summarization
+    # pressure through affent's per-topic char limit.
+    assert cfg["memory"]["max_topics"] == 8
+    assert "topic_max_chars" not in cfg["memory"]
+    assert cfg["memory"]["user_store"] == str(tmp_path / ".affent" / "USER.md")
+    assert cfg["max_call_timeout"] == "10m"
+    assert cfg["retry_transient"] == 10
+
+
+def test_run_affent_turn_passes_config_and_timeout(tmp_path, monkeypatch):
     captured = {}
 
     def fake_run(cmd, **kwargs):
@@ -130,9 +145,8 @@ def test_run_affent_turn_passes_optional_timeout_flags(tmp_path, monkeypatch):
             f.write(json.dumps(_event("message.done", {"text": "ok"})))
         return SimpleNamespace(returncode=0, stdout="", stderr="")
 
-    monkeypatch.setenv("MEMORYGYM_AFFENT_CALL_TIMEOUT", "15m")
-    monkeypatch.setenv("MEMORYGYM_AFFENT_RETRY_TRANSIENT", "0")
     monkeypatch.setattr("memorygym.agents.affent_agent.subprocess.run", fake_run)
+    config = _write_eval_config(tmp_path, "sys")
 
     turn = _run_affent_turn(
         affent_bin="/bin/affentctl",
@@ -140,15 +154,72 @@ def test_run_affent_turn_passes_optional_timeout_flags(tmp_path, monkeypatch):
         model="model",
         base_url="http://example/v1",
         api_key="key",
+        config_path=config,
         session_id="s",
         prompt="hi",
-        system_prompt="sys",
     )
 
     assert turn.answer == "ok"
-    assert captured["cmd"][captured["cmd"].index("--max-call-timeout") + 1] == "15m"
-    assert captured["cmd"][captured["cmd"].index("--memory-max-chars") + 1] == "12000,1375"
-    assert captured["cmd"][captured["cmd"].index("--retry-transient") + 1] == "0"
+    assert captured["cmd"][captured["cmd"].index("--config") + 1] == str(config)
+    assert captured["cmd"][captured["cmd"].index("--memory-max-topics") + 1] == "8"
+
+
+def test_run_affent_turn_retries_transient_failure(tmp_path, monkeypatch):
+    calls = []
+    restores = []
+
+    def fake_restore(workspace, before_state):
+        restores.append([dict(x) for x in before_state])
+
+    def fake_turn(**kwargs):
+        calls.append(kwargs["session_id"])
+        if len(calls) == 1:
+            return SimpleNamespace(
+                answer=None,
+                final_text="",
+                writes=0,
+                searches=0,
+                api_calls=0,
+                elapsed=0.0,
+                error="affentctl exited 3: [llm_stream] stream read: unexpected EOF",
+                stop_reason=None,
+                turns=[],
+            )
+        return SimpleNamespace(
+            answer="ok",
+            final_text="ok",
+            writes=0,
+            searches=0,
+            api_calls=1,
+            elapsed=0.0,
+            error=None,
+            stop_reason="completed",
+            turns=[{"content": "ok"}],
+        )
+
+    monkeypatch.setattr(
+        "memorygym.agents.affent_agent._write_affent_memory_state",
+        fake_restore,
+    )
+    monkeypatch.setattr("memorygym.agents.affent_agent._run_affent_turn", fake_turn)
+
+    turn = _run_affent_turn_with_retries(
+        affent_bin="/bin/affentctl",
+        workspace=tmp_path,
+        model="model",
+        base_url="http://example/v1",
+        api_key="key",
+        config_path=_write_eval_config(tmp_path, "sys"),
+        session_id="s",
+        prompt="hi",
+        before_state=[{"topic": "general", "content": "alpha"}],
+        quiet=True,
+    )
+
+    assert calls == ["s", "s_retry1"]
+    assert len(restores) == 1
+    assert turn.answer == "ok"
+    assert turn.error is None
 
 
 def test_new_judge_client_requires_explicit_judge_key(monkeypatch):
@@ -253,10 +324,10 @@ def test_write_affent_memory_entries_atomic_no_temp_leftovers(tmp_path):
 
 def test_apply_memory_budget_skips_write_when_no_mutations(tmp_path):
     """Question events trigger _apply_memory_budget with no memory
-    tool calls. The function must not rewrite MEMORY.md when nothing
+    tool calls. The function must not rewrite the memory file when nothing
     changed — preserves mtime and avoids needless disk churn."""
     _write_affent_memory_entries(tmp_path, ["alpha", "beta"])
-    mem_file = tmp_path / ".affent" / "MEMORY.md"
+    mem_file = tmp_path / ".affent" / "memory" / "topics" / "general.md"
     before_mtime = mem_file.stat().st_mtime_ns
 
     # A pure question turn: model just answered, no tool calls.
@@ -264,7 +335,11 @@ def test_apply_memory_budget_skips_write_when_no_mutations(tmp_path):
     budget = MemoryBudget(total_writes=10)
     time.sleep(0.01)  # ensure mtime would change if a write happened
 
-    writes = _apply_memory_budget(tmp_path, ["alpha", "beta"], turns, budget)
+    before_state = [
+        {"topic": "general", "content": "alpha"},
+        {"topic": "general", "content": "beta"},
+    ]
+    writes = _apply_memory_budget(tmp_path, before_state, turns, budget)
 
     after_mtime = mem_file.stat().st_mtime_ns
     assert writes == 0

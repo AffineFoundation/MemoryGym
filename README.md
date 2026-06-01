@@ -39,7 +39,8 @@ pip install -e ".[chromadb]"
 
 The Docker image builds `affentctl` from the public affent repository.
 `AFFENT_REF` must point to a ref whose `affentctl run` supports
-`--memory-only`; the Docker build checks this and fails fast otherwise.
+`--memory-only` and `--memory-max-topics`; the Docker build checks this and
+fails fast otherwise.
 Override the source or ref when needed:
 
 ```bash

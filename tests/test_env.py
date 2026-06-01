@@ -161,3 +161,145 @@ class TestActorEvaluate:
         assert len(seen) == 4
         assert len(set(seen)) == 4
         assert all(str(tmp_path) in workspace for workspace in seen)
+
+    def test_successful_result_has_no_top_level_error(self, monkeypatch):
+        from memorygym.agents.stream_agent import AgentResult
+        from memorygym.env import _run_evaluation
+        from memorygym.protocol import TIERS
+
+        def fake_run_stream_agent(**kwargs):
+            return (
+                [
+                    AgentResult(
+                        question="q",
+                        answer="",
+                        ground_truth="a",
+                        competency="retrieval",
+                        purpose="",
+                        correct=False,
+                        n_writes=0,
+                        n_searches=0,
+                    )
+                ],
+                0,
+                [],
+                None,
+                [],
+            )
+
+        monkeypatch.setattr(
+            "memorygym.env.run_stream_agent",
+            fake_run_stream_agent,
+        )
+
+        result = _run_evaluation(
+            model="test",
+            base_url="http://fake/v1",
+            api_key="key",
+            seed=0,
+            template_name="company",
+            tier="lite",
+            tier_cfg=TIERS["lite"],
+            agent_runner="stream",
+        )
+
+        assert result["success"] is True
+        assert "error" not in result
+
+    def test_invalid_result_sets_top_level_error(self, monkeypatch):
+        from memorygym.agents.stream_agent import AgentResult
+        from memorygym.env import _run_evaluation
+        from memorygym.protocol import TIERS
+
+        def fake_run_stream_agent(**kwargs):
+            return (
+                [
+                    AgentResult(
+                        question="q",
+                        answer="",
+                        ground_truth="a",
+                        competency="retrieval",
+                        purpose="",
+                        correct=False,
+                        n_writes=0,
+                        n_searches=0,
+                        error="Request timed out.",
+                    )
+                ],
+                0,
+                [],
+                "infra_failure: event 1 question: Request timed out.",
+                [],
+            )
+
+        monkeypatch.setattr(
+            "memorygym.env.run_stream_agent",
+            fake_run_stream_agent,
+        )
+
+        result = _run_evaluation(
+            model="test",
+            base_url="http://fake/v1",
+            api_key="key",
+            seed=0,
+            template_name="company",
+            tier="lite",
+            tier_cfg=TIERS["lite"],
+            agent_runner="stream",
+        )
+
+        assert result["success"] is False
+        assert result["error"].startswith("infra_failure")
+
+    def test_affent_max_turns_is_not_error(self, tmp_path):
+        import json
+
+        from memorygym.agents.affent_agent import _parse_trace
+
+        trace = tmp_path / "trace.jsonl"
+        trace.write_text(json.dumps({
+            "type": "turn.end",
+            "data": {"reason": "max_turns"},
+        }))
+
+        turn = _parse_trace(trace)
+
+        assert turn.error is None
+        assert turn.stop_reason == "max_turns"
+
+    def test_affent_returncode_2_max_turns_is_not_error(self, tmp_path, monkeypatch):
+        import json
+        from types import SimpleNamespace
+
+        from memorygym.agents.affent_agent import _run_affent_turn
+
+        def fake_run(cmd, **kwargs):
+            trace_path = cmd[cmd.index("--trace") + 1]
+            with open(trace_path, "w") as f:
+                f.write(json.dumps({
+                    "type": "turn.end",
+                    "data": {"reason": "max_turns"},
+                }))
+            return SimpleNamespace(returncode=2, stdout="", stderr="")
+
+        config = tmp_path / "config.json"
+        config.write_text("{}")
+        monkeypatch.setattr(
+            "memorygym.agents.affent_agent.subprocess.run",
+            fake_run,
+        )
+
+        turn = _run_affent_turn(
+            affent_bin="/bin/affentctl",
+            workspace=tmp_path,
+            model="model",
+            base_url="http://example/v1",
+            api_key="key",
+            config_path=config,
+            session_id="s",
+            prompt="hi",
+            max_turns=1,
+        )
+
+        assert turn.error is None
+        assert turn.stop_reason == "max_turns"
