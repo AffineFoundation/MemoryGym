@@ -106,6 +106,18 @@ def _is_infra_error(error: str | None) -> bool:
     return "max_turns" not in error.lower()
 
 
+def _is_wallclock_error(error: str | None) -> bool:
+    """Return True when an error comes from the outer soft wallclock budget."""
+    if not error:
+        return False
+    lower = error.lower()
+    return (
+        "wallclock" in lower
+        or "affent turn timed out" in lower
+        or "no wallclock remaining" in lower
+    )
+
+
 def _is_retryable_affent_error(error: str | None) -> bool:
     """Return True when a turn failure is likely transient infra noise."""
     if not error:
@@ -652,6 +664,61 @@ def _apply_memory_budget(
     return writes
 
 
+def _append_unanswered_questions(
+    results: list[AgentResult],
+    trajectory: list[dict],
+    stream: list[dict],
+    start_idx: int,
+    reason: str,
+) -> int:
+    """Count remaining questions as unanswered after a legal soft timeout."""
+    added = 0
+    for idx in range(start_idx, len(stream)):
+        event = stream[idx]
+        if event.get("type") != "question":
+            continue
+        question = event["question"]
+        gt = str(event["answer"])
+        competency = event["competency"]
+        purpose = event.get("purpose", "")
+        required = event.get("required_entities", [])
+        results.append(AgentResult(
+            question=question,
+            answer="",
+            ground_truth=gt,
+            competency=competency,
+            purpose=purpose,
+            correct=False,
+            n_writes=0,
+            n_searches=0,
+            required_entities=required,
+            validation_method="wallclock",
+            validation_reason=f"wallclock:unanswered_after_timeout({reason})",
+            api_calls=0,
+            elapsed=0.0,
+        ))
+        trajectory.append({
+            "event_idx": idx,
+            "type": "question",
+            "competency": competency,
+            "purpose": purpose,
+            "question": question,
+            "ground_truth": gt,
+            "agent_answer": "",
+            "correct": False,
+            "content": "",
+            "writes": 0,
+            "searches": 0,
+            "api_calls": 0,
+            "elapsed": 0.0,
+            "turns": [],
+            "infra_error": None,
+            "stop_reason": "unanswered_after_wallclock",
+        })
+        added += 1
+    return added
+
+
 def run_affent_agent(
     model: str,
     stream: list[dict],
@@ -690,7 +757,12 @@ def run_affent_agent(
     try:
         for event_idx, event in enumerate(stream):
             if deadline and time.time() >= deadline:
-                eval_error = f"wallclock_exhausted at event {event_idx}/{total_events}"
+                reason = f"wallclock_exhausted at event {event_idx}/{total_events}"
+                if results:
+                    _append_unanswered_questions(
+                        results, trajectory, stream, event_idx, reason)
+                else:
+                    eval_error = reason
                 break
             event_type = event["type"]
             label = f"[{event_idx+1}/{total_events}]"
@@ -747,10 +819,21 @@ def run_affent_agent(
                     "stop_reason": turn.stop_reason,
                 })
                 if turn.error:
-                    if _is_infra_error(turn.error):
-                        eval_error = eval_error or turn.error
+                    infra_error = _is_infra_error(turn.error)
+                    wallclock_error = _is_wallclock_error(turn.error)
+                    if infra_error:
+                        if wallclock_error and results:
+                            _append_unanswered_questions(
+                                results, trajectory, stream,
+                                event_idx + 1, turn.error)
+                        else:
+                            eval_error = eval_error or turn.error
                     if not quiet:
-                        print(f"           {'INFRA ERROR' if _is_infra_error(turn.error) else 'SKIP'}: {turn.error[:80]}")
+                        kind = "WALLCLOCK" if wallclock_error else (
+                            "INFRA ERROR" if infra_error else "SKIP")
+                        print(f"           {kind}: {turn.error[:80]}")
+                    if infra_error:
+                        break
                     continue
 
             elif event_type == "correction":
@@ -807,10 +890,21 @@ def run_affent_agent(
                     mark = "OK" if correction_ok else "MISS"
                     print(f"           [{mark}] {chain}  {_budget_bar(budget.writes_used, write_budget)}")
                 if turn.error:
-                    if _is_infra_error(turn.error):
-                        eval_error = eval_error or turn.error
+                    infra_error = _is_infra_error(turn.error)
+                    wallclock_error = _is_wallclock_error(turn.error)
+                    if infra_error:
+                        if wallclock_error and results:
+                            _append_unanswered_questions(
+                                results, trajectory, stream,
+                                event_idx + 1, turn.error)
+                        else:
+                            eval_error = eval_error or turn.error
                     if not quiet:
-                        print(f"           {'INFRA ERROR' if _is_infra_error(turn.error) else 'SKIP'}: {turn.error[:80]}")
+                        kind = "WALLCLOCK" if wallclock_error else (
+                            "INFRA ERROR" if infra_error else "SKIP")
+                        print(f"           {kind}: {turn.error[:80]}")
+                    if infra_error:
+                        break
                     continue
 
             elif event_type == "question":
@@ -895,10 +989,21 @@ def run_affent_agent(
                     "stop_reason": turn.stop_reason,
                 })
                 if turn.error:
-                    if _is_infra_error(turn.error):
-                        eval_error = eval_error or turn.error
+                    infra_error = _is_infra_error(turn.error)
+                    wallclock_error = _is_wallclock_error(turn.error)
+                    if infra_error:
+                        if wallclock_error and results:
+                            _append_unanswered_questions(
+                                results, trajectory, stream,
+                                event_idx + 1, turn.error)
+                        else:
+                            eval_error = eval_error or turn.error
                     if not quiet:
-                        print(f"           {'INFRA ERROR' if _is_infra_error(turn.error) else 'SKIP'}: {turn.error[:80]}")
+                        kind = "WALLCLOCK" if wallclock_error else (
+                            "INFRA ERROR" if infra_error else "SKIP")
+                        print(f"           {kind}: {turn.error[:80]}")
+                    if infra_error:
+                        break
                     continue
 
         stored = _stored_contents(workspace_path)

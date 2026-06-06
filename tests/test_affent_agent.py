@@ -23,6 +23,65 @@ def _event(event_type, data):
     return {"id": 1, "type": event_type, "data": data}
 
 
+def _affent_turn(
+    answer=None,
+    final_text="",
+    writes=0,
+    searches=0,
+    api_calls=0,
+    elapsed=0.0,
+    error=None,
+    stop_reason=None,
+    turns=None,
+):
+    return SimpleNamespace(
+        answer=answer,
+        final_text=final_text,
+        writes=writes,
+        searches=searches,
+        api_calls=api_calls,
+        elapsed=elapsed,
+        error=error,
+        stop_reason=stop_reason,
+        turns=turns or [],
+    )
+
+
+def _patch_affent_runner(monkeypatch, fake_turn):
+    monkeypatch.setattr(
+        "memorygym.agents.affent_agent._resolve_affentctl",
+        lambda explicit=None: "/bin/true",
+    )
+    monkeypatch.setattr(
+        "memorygym.agents.affent_agent._new_judge_client",
+        lambda: None,
+    )
+    monkeypatch.setattr(
+        "memorygym.agents.affent_agent._run_affent_turn_with_retries",
+        fake_turn,
+    )
+
+
+def _ingest_event(name, role):
+    return {
+        "type": "ingest",
+        "entity_names": [name],
+        "documents": [f"{name} | role: {role}"],
+    }
+
+
+def _question_event(question, answer, entity):
+    return {
+        "type": "question",
+        "question": question,
+        "answer": answer,
+        "competency": "retrieval",
+        "purpose": "recall",
+        "required_entities": [entity],
+        "source_attr": "role",
+    }
+
+
 def test_resolve_affentctl_from_path(tmp_path, monkeypatch):
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
@@ -386,6 +445,198 @@ def test_run_affent_agent_preserves_explicit_workspace(tmp_path, monkeypatch):
     )
 
     assert workspace.exists()
+
+
+def test_run_affent_agent_stops_sample_on_infra_error(tmp_path, monkeypatch):
+    calls = []
+
+    def fake_turn(**kwargs):
+        calls.append(kwargs["prompt"])
+        return _affent_turn(
+            error="affentctl exited 3: stream read: unexpected EOF",
+        )
+
+    _patch_affent_runner(monkeypatch, fake_turn)
+    stream = [_ingest_event("Alice", "engineer"), _ingest_event("Bob", "designer")]
+
+    results, writes_used, stored, eval_error, trajectory = run_affent_agent(
+        model="model",
+        stream=stream,
+        write_budget=2,
+        api_base="http://example/v1",
+        api_key="key",
+        workspace=str(tmp_path / "workspace"),
+        quiet=True,
+    )
+
+    assert results == []
+    assert writes_used == 0
+    assert stored == []
+    assert "unexpected EOF" in eval_error
+    assert len(calls) == 1
+    assert [event["type"] for event in trajectory] == ["system", "ingest"]
+
+
+def test_run_affent_agent_continues_on_max_turns_behavior(tmp_path, monkeypatch):
+    calls = []
+
+    def fake_turn(**kwargs):
+        calls.append(kwargs["prompt"])
+        return _affent_turn(
+            api_calls=1,
+            error="affent turn ended: max_turns",
+            stop_reason="max_turns",
+        )
+
+    _patch_affent_runner(monkeypatch, fake_turn)
+    stream = [_ingest_event("Alice", "engineer"), _ingest_event("Bob", "designer")]
+
+    results, writes_used, stored, eval_error, trajectory = run_affent_agent(
+        model="model",
+        stream=stream,
+        write_budget=2,
+        api_base="http://example/v1",
+        api_key="key",
+        workspace=str(tmp_path / "workspace"),
+        quiet=True,
+    )
+
+    assert results == []
+    assert writes_used == 0
+    assert stored == []
+    assert eval_error is None
+    assert len(calls) == 2
+    assert [event["type"] for event in trajectory] == [
+        "system",
+        "ingest",
+        "ingest",
+    ]
+
+
+def test_run_affent_agent_scores_remaining_questions_after_wallclock(
+    tmp_path, monkeypatch,
+):
+    calls = []
+
+    def fake_turn(**kwargs):
+        calls.append(kwargs["prompt"])
+        return _affent_turn(
+            answer="one",
+            final_text="one",
+            api_calls=1,
+            stop_reason="completed",
+            turns=[{"content": "one"}],
+        )
+
+    times = iter([100.0, 100.0, 100.0, 111.0])
+    monkeypatch.setattr(
+        "memorygym.agents.affent_agent.time.time",
+        lambda: next(times),
+    )
+    _patch_affent_runner(monkeypatch, fake_turn)
+    stream = [
+        _question_event("First?", "one", "Alice"),
+        _question_event("Second?", "two", "Bob"),
+    ]
+
+    results, writes_used, stored, eval_error, trajectory = run_affent_agent(
+        model="model",
+        stream=stream,
+        write_budget=2,
+        api_base="http://example/v1",
+        api_key="key",
+        workspace=str(tmp_path / "workspace"),
+        wallclock_budget=10.0,
+        quiet=True,
+    )
+
+    assert eval_error is None
+    assert writes_used == 0
+    assert stored == []
+    assert len(calls) == 1
+    assert len(results) == 2
+    assert results[0].correct is True
+    assert results[1].correct is False
+    assert results[1].validation_method == "wallclock"
+    assert trajectory[-1]["stop_reason"] == "unanswered_after_wallclock"
+
+
+def test_run_affent_agent_scores_question_timeout_after_entering_question(
+    tmp_path, monkeypatch,
+):
+    calls = []
+
+    def fake_turn(**kwargs):
+        calls.append(kwargs["prompt"])
+        return _affent_turn(
+            error="affent turn timed out",
+        )
+
+    _patch_affent_runner(monkeypatch, fake_turn)
+    stream = [
+        _question_event("First?", "one", "Alice"),
+        _question_event("Second?", "two", "Bob"),
+    ]
+
+    results, writes_used, stored, eval_error, trajectory = run_affent_agent(
+        model="model",
+        stream=stream,
+        write_budget=2,
+        api_base="http://example/v1",
+        api_key="key",
+        workspace=str(tmp_path / "workspace"),
+        quiet=True,
+    )
+
+    assert eval_error is None
+    assert writes_used == 0
+    assert stored == []
+    assert len(calls) == 1
+    assert len(results) == 2
+    assert results[0].answer == ""
+    assert results[0].correct is False
+    assert results[0].error == "affent turn timed out"
+    assert results[1].answer == ""
+    assert results[1].correct is False
+    assert results[1].validation_method == "wallclock"
+    assert trajectory[1]["type"] == "question"
+    assert trajectory[1]["infra_error"] == "affent turn timed out"
+    assert trajectory[2]["stop_reason"] == "unanswered_after_wallclock"
+
+
+def test_run_affent_agent_keeps_wallclock_invalid_before_questions(
+    tmp_path, monkeypatch,
+):
+    calls = []
+
+    def fake_turn(**kwargs):
+        calls.append(kwargs["prompt"])
+        return _affent_turn(
+            error="affent turn timed out",
+        )
+
+    _patch_affent_runner(monkeypatch, fake_turn)
+    stream = [
+        _ingest_event("Alice", "engineer"),
+        _question_event("First?", "one", "Alice"),
+    ]
+
+    results, writes_used, stored, eval_error, trajectory = run_affent_agent(
+        model="model",
+        stream=stream,
+        write_budget=2,
+        api_base="http://example/v1",
+        api_key="key",
+        workspace=str(tmp_path / "workspace"),
+        quiet=True,
+    )
+
+    assert results == []
+    assert writes_used == 0
+    assert stored == []
+    assert eval_error == "affent turn timed out"
+    assert len(calls) == 1
+    assert [event["type"] for event in trajectory] == ["system", "ingest"]
 
 
 def test_apply_memory_budget_replays_successful_memory_calls(tmp_path):
