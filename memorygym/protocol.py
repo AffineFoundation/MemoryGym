@@ -5,6 +5,7 @@ Defines official evaluation configurations for reproducible benchmarking.
 
 from __future__ import annotations
 
+import json
 import math
 from datetime import datetime, timezone
 from typing import Any
@@ -233,6 +234,29 @@ def format_leaderboard_entry(
     return entry
 
 
+def _format_tool_call(call: dict[str, Any], index: int) -> dict[str, Any]:
+    """Normalize a trajectory tool call to OpenAI-style tool_calls entry."""
+    name = call.get("name", "")
+    arguments = call.get("arguments", {}) or {}
+    if not isinstance(arguments, str):
+        arguments = json.dumps(arguments, ensure_ascii=False)
+    return {
+        "id": f"call_{index}",
+        "type": "function",
+        "function": {
+            "name": name,
+            "arguments": arguments,
+        },
+    }
+
+
+def _strip_tool_prefix(result_text: str) -> str:
+    text = result_text.strip()
+    if text.startswith("[tool]"):
+        return text[len("[tool]"):].strip()
+    return text
+
+
 def trajectory_to_conversation(trajectory: list[dict]) -> list[dict[str, Any]]:
     """Convert a trajectory log into a flat conversation list.
 
@@ -241,9 +265,10 @@ def trajectory_to_conversation(trajectory: list[dict]) -> list[dict[str, Any]]:
             turns with role/content/tool_calls/tool_results.
 
     Returns:
-        List of message dicts: [{"role": "system"|"user"|"assistant", "content": ...}, ...]
+        List of message dicts with assistant tool_calls and linked tool results.
     """
     conversation: list[dict[str, Any]] = []
+    call_counter = 0
     for event in trajectory:
         if event.get("type") == "system":
             conversation.append({
@@ -252,22 +277,34 @@ def trajectory_to_conversation(trajectory: list[dict]) -> list[dict[str, Any]]:
             })
             continue
 
-        # User message for this event
         content = event.get("content", "")
         if content:
             conversation.append({"role": "user", "content": content})
 
-        # Assistant turns
         for turn in event.get("turns", []):
-            if turn.get("role") == "assistant" and turn.get("content"):
-                conversation.append({
-                    "role": "assistant",
-                    "content": turn["content"],
-                })
-            # Tool results as user messages
-            for result_text in turn.get("tool_results", []):
-                conversation.append({
-                    "role": "user",
-                    "content": result_text,
-                })
+            if turn.get("role") != "assistant":
+                continue
+
+            tool_calls = turn.get("tool_calls") or []
+            assistant_msg: dict[str, Any] = {"role": "assistant"}
+            if turn.get("content"):
+                assistant_msg["content"] = turn["content"]
+            if tool_calls:
+                formatted_calls = []
+                for call in tool_calls:
+                    formatted_calls.append(_format_tool_call(call, call_counter))
+                    call_counter += 1
+                assistant_msg["tool_calls"] = formatted_calls
+            if assistant_msg.get("content") or assistant_msg.get("tool_calls"):
+                conversation.append(assistant_msg)
+
+            for i, result_text in enumerate(turn.get("tool_results", [])):
+                tool_msg: dict[str, Any] = {
+                    "role": "tool",
+                    "content": _strip_tool_prefix(result_text),
+                }
+                if i < len(tool_calls):
+                    tool_msg["tool_call_id"] = f"call_{call_counter - len(tool_calls) + i}"
+                    tool_msg["name"] = tool_calls[i].get("name", "")
+                conversation.append(tool_msg)
     return conversation
